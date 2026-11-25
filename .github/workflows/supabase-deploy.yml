@@ -64,21 +64,22 @@ jobs:
       - name: Sync Optional Edge Function Secrets
         if: steps.check_secrets.outputs.configured == 'true'
         run: |
+          REF="${{ steps.check_secrets.outputs.project_ref }}"
           if [ -n "$GEMINI_API_KEY" ]; then
-            supabase secrets set --project-ref "${{ steps.check_secrets.outputs.project_ref }}" GEMINI_API_KEY="$GEMINI_API_KEY"
+            supabase secrets set --remote="$REF" --yes GEMINI_API_KEY="$GEMINI_API_KEY"
           fi
           if [ -n "$SSLCOMMERZ_STORE_ID" ]; then
-            supabase secrets set --project-ref "${{ steps.check_secrets.outputs.project_ref }}" SSLCOMMERZ_STORE_ID="$SSLCOMMERZ_STORE_ID" SSLCOMMERZ_STORE_PASS="$SSLCOMMERZ_STORE_PASS"
+            supabase secrets set --remote="$REF" --yes SSLCOMMERZ_STORE_ID="$SSLCOMMERZ_STORE_ID" SSLCOMMERZ_STORE_PASS="$SSLCOMMERZ_STORE_PASS"
           fi
           if [ -n "$BKASH_APP_KEY" ]; then
-            supabase secrets set --project-ref "${{ steps.check_secrets.outputs.project_ref }}" BKASH_APP_KEY="$BKASH_APP_KEY"
+            supabase secrets set --remote="$REF" --yes BKASH_APP_KEY="$BKASH_APP_KEY"
           fi
 
       - name: Deploy All 4 Supabase Edge Functions
         if: steps.check_secrets.outputs.configured == 'true'
         run: |
           REF="${{ steps.check_secrets.outputs.project_ref }}"
-          supabase functions deploy ai-writing-assistant --project-ref "$REF"
-          supabase functions deploy wallet-payment --project-ref "$REF"
-          supabase functions deploy poke-dispatch --project-ref "$REF"
-          supabase functions deploy generate-certificate --project-ref "$REF"
+          supabase functions deploy ai-writing-assistant --remote="$REF" --yes
+          supabase functions deploy wallet-payment --remote="$REF" --yes
+          supabase functions deploy poke-dispatch --remote="$REF" --yes
+          supabase functions deploy generate-certificate --remote="$REF" --yes
