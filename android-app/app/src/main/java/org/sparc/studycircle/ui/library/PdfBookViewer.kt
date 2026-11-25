@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.sparc.studycircle.core.theme.LocalSparcPalette
+import org.sparc.studycircle.core.theme.tr
 import org.sparc.studycircle.ui.components.SparcScholarlyCard
 import java.io.File
 import java.io.FileOutputStream
@@ -94,13 +95,16 @@ fun NativePdfBookViewerCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = customPdfName ?: "নেটিভ PDF রিডার • $bookTitle",
+                    text = customPdfName ?: tr("নেটিভ PDF রিডার • $bookTitle", "Native PDF Reader • $bookTitle"),
                     style = MaterialTheme.typography.titleMedium,
                     color = p.text,
                     maxLines = 1
                 )
                 Text(
-                    text = "পৃষ্ঠা ${pageIndex + 1} / $totalPageCount • Pinch-to-Zoom সাপোর্টেড",
+                    text = tr(
+                        "পৃষ্ঠা ${pageIndex + 1} / $totalPageCount • Pinch-to-Zoom সাপোর্টেড",
+                        "Page ${pageIndex + 1} / $totalPageCount • Pinch-to-Zoom enabled"
+                    ),
                     fontSize = 11.5.sp,
                     color = p.muted
                 )
@@ -126,7 +130,7 @@ fun NativePdfBookViewerCard(
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        text = "PDF খুলুন",
+                        text = tr("PDF খুলুন", "Open PDF"),
                         color = p.primarySoftText,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
@@ -238,7 +242,7 @@ fun NativePdfBookViewerCard(
                     modifier = Modifier.clickable { onQuickHighlightPage(pageIndex + 1) }
                 ) {
                     Text(
-                        text = "হাইলাইট +",
+                        text = tr("হাইলাইট +", "Highlight +"),
                         color = p.accentText,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,

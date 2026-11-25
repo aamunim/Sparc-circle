@@ -93,6 +93,54 @@ class SupabaseRestClient(
     ): Result<SupabaseAuthSession> = withContext(Dispatchers.IO) {
         runCatching {
             check(isConfigured) { "Supabase URL not configured" }
+            if (password.length < 6) {
+                error("পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে (Password must be at least 6 characters)")
+            }
+
+            // Primary path: Call auth-register Edge Function (auto-confirms user via Admin API, ZERO 429 email limits!)
+            val edgePayload = buildJsonObject {
+                put("email", email.trim())
+                put("password", password)
+                put("name", fullName)
+                put("department", department)
+                put("skills", JsonArray(skills.map { JsonPrimitive(it) }))
+                put("referral_code", referralCode.trim())
+            }.toString()
+
+            val edgeReq = Request.Builder()
+                .url("${activeSupabaseUrl.trimEnd('/')}/functions/v1/auth-register")
+                .addHeader("apikey", activeAnonKey)
+                .addHeader("Authorization", "Bearer $activeAnonKey")
+                .post(edgePayload.toRequestBody("application/json".toMediaType()))
+                .build()
+
+            http.newCall(edgeReq).execute().use { edgeResp ->
+                val raw = edgeResp.body?.string() ?: "{}"
+                if (edgeResp.isSuccessful) {
+                    val obj = json.parseToJsonElement(raw).jsonObject
+                    val userObj = obj["user"]?.jsonObject
+                    val session = SupabaseAuthSession(
+                        userId = userObj?.get("id")?.jsonPrimitive?.content ?: "",
+                        email = email.trim(),
+                        accessToken = obj["access_token"]?.jsonPrimitive?.content ?: ""
+                    )
+                    currentSession = session
+                    return@runCatching session
+                }
+                if (edgeResp.code in 400..499 && edgeResp.code != 404) {
+                    val edgeErr = runCatching {
+                        json.parseToJsonElement(raw).jsonObject["error"]?.jsonPrimitive?.contentOrNull
+                    }.getOrNull() ?: "HTTP ${edgeResp.code}"
+                    if (edgeErr.contains("Invalid login credentials", ignoreCase = true) ||
+                        edgeErr.contains("already", ignoreCase = true)
+                    ) {
+                        error("এই ইমেইল দিয়ে আগেই অ্যাকাউন্ট খোলা আছে — অনুগ্রহ করে সঠিক পাসওয়ার্ড দিয়ে Sign In করুন (Email already registered).")
+                    }
+                    error(edgeErr)
+                }
+            }
+
+            // Fallback path (only if Edge Function not deployed yet): Standard GoTrue /auth/v1/signup (mailer_autoconfirm = true)
             val body = buildJsonObject {
                 put("email", email.trim())
                 put("password", password)
@@ -109,8 +157,17 @@ class SupabaseRestClient(
                 .build()
 
             val session = http.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) error("সাইন-আপ সম্পন্ন হয়নি (${resp.code})")
-                val obj = json.parseToJsonElement(resp.body?.string() ?: "{}").jsonObject
+                val respBody = resp.body?.string() ?: "{}"
+                if (!resp.isSuccessful) {
+                    val msg = runCatching {
+                        val errObj = json.parseToJsonElement(respBody).jsonObject
+                        errObj["msg"]?.jsonPrimitive?.contentOrNull
+                            ?: errObj["message"]?.jsonPrimitive?.contentOrNull
+                            ?: errObj["error_description"]?.jsonPrimitive?.contentOrNull
+                    }.getOrNull() ?: "HTTP ${resp.code}"
+                    error("Sign-up failed: $msg")
+                }
+                val obj = json.parseToJsonElement(respBody).jsonObject
                 val userObj = obj["user"]?.jsonObject
                 SupabaseAuthSession(
                     userId = userObj?.get("id")?.jsonPrimitive?.content ?: "",
@@ -119,36 +176,6 @@ class SupabaseRestClient(
                 )
             }
             currentSession = session
-
-            if (session.accessToken.isNotBlank() && session.userId.isNotBlank()) {
-                runCatching {
-                    val patchJson = buildJsonObject {
-                        put("skills", JsonArray(skills.map { JsonPrimitive(it) }))
-                        put("department", department)
-                    }.toString()
-                    val patchReq = Request.Builder()
-                        .url("${activeSupabaseUrl.trimEnd('/')}/rest/v1/profiles?id=eq.${session.userId}")
-                        .addHeader("apikey", activeAnonKey)
-                        .addHeader("Authorization", "Bearer ${session.accessToken}")
-                        .patch(patchJson.toRequestBody("application/json".toMediaType()))
-                        .build()
-                    http.newCall(patchReq).execute().close()
-
-                    if (referralCode.isNotBlank()) {
-                        val rpcBody = buildJsonObject {
-                            put("p_new_user_id", session.userId)
-                            put("p_referral_code", referralCode.trim())
-                        }.toString()
-                        val rpcReq = Request.Builder()
-                            .url("${activeSupabaseUrl.trimEnd('/')}/rest/v1/rpc/apply_referral_bonus")
-                            .addHeader("apikey", activeAnonKey)
-                            .addHeader("Authorization", "Bearer ${session.accessToken}")
-                            .post(rpcBody.toRequestBody("application/json".toMediaType()))
-                            .build()
-                        http.newCall(rpcReq).execute().close()
-                    }
-                }
-            }
             session
         }
     }
@@ -193,17 +220,19 @@ class SupabaseRestClient(
         prompt: String,
         content: String,
         minWords: Int,
-        maxWords: Int
+        maxWords: Int,
+        language: String = "bn"
     ): Result<AiWritingFeedback> = withContext(Dispatchers.IO) {
         runCatching {
             val words = content.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
             val wordCount = words.size
             val userGeminiKey = vaultConfig.geminiApiKey.trim()
+            val langName = if (language == "en") "English" else "Bengali"
 
             // 1. If Gemini API Key is added in App Settings, call Gemini 2.5 Flash directly!
             if (userGeminiKey.isNotBlank()) {
                 val sysText = """You are SPARC Study Circle's Academic Writing Coach.
-Do NOT rewrite the student's paper. Give constructive feedback in Bengali strictly as JSON with keys:
+Do NOT rewrite the student's paper. Give constructive feedback in $langName strictly as JSON with keys:
 - grammar_feedback (string[])
 - academic_tone_score (number 0-100)
 - tone_feedback (string)
@@ -254,7 +283,7 @@ Target Word Range: $minWords-$maxWords words (Current: $wordCount words)."""
                 put("chapter_no", chapterNo)
                 put("prompt", prompt)
                 put("content", content)
-                put("language", "bn")
+                put("language", language)
                 put("min_words", minWords)
                 put("max_words", maxWords)
             }.toString()

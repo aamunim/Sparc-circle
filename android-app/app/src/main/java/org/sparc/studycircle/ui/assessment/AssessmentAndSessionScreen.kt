@@ -32,6 +32,8 @@ import org.sparc.studycircle.core.domain.SparcDomainEngine
 import org.sparc.studycircle.core.model.*
 import org.sparc.studycircle.core.theme.LocalSparcPalette
 import org.sparc.studycircle.core.theme.SparcCrimson
+import org.sparc.studycircle.core.theme.tr
+import org.sparc.studycircle.core.theme.trContent
 import org.sparc.studycircle.ui.components.*
 
 @Composable
@@ -56,7 +58,11 @@ fun AssessmentAndSessionScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
             SparcSegmentedPills(
-                options = listOf("অনুশীলনী কুইজ", "লাইভ সেশন", "সুপারভাইজার ভিউ"),
+                options = listOf(
+                    tr("অনুশীলনী কুইজ", "Chapter Quiz"),
+                    tr("লাইভ সেশন", "Live Session"),
+                    tr("সুপারভাইজার ভিউ", "Supervisor View")
+                ),
                 selectedIndex = subTab,
                 onSelect = { subTab = it }
             )
@@ -81,7 +87,7 @@ fun AssessmentAndSessionScreen(
         InAppJitsiVideoDialog(
             session = sess,
             jitsiBaseUrl = jitsiBase,
-            displayName = state.currentUser.name,
+            displayName = trContent(state.currentUser.name),
             onDismiss = { activeJitsiSession = null }
         )
     }
@@ -116,7 +122,7 @@ private fun QuizAndCalibrationView(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = SparcDomainEngine.COMPASSIONATE_OVERDUE_MESSAGE,
+                    text = trContent(SparcDomainEngine.COMPASSIONATE_OVERDUE_MESSAGE),
                     color = p.accentText,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
@@ -132,12 +138,12 @@ private fun QuizAndCalibrationView(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "অধ্যায় ${chapter.chapterNo} • ${chapter.type.name} QUIZ",
+                    tr("অধ্যায় ${chapter.chapterNo} • ${chapter.type.name} QUIZ", "Chapter ${chapter.chapterNo} • ${chapter.type.name} QUIZ"),
                     style = MaterialTheme.typography.titleMedium,
                     color = p.primary
                 )
                 Text(
-                    "পাস ${chapter.type.passMarks}/${chapter.type.totalMarks}",
+                    tr("পাস ${chapter.type.passMarks}/${chapter.type.totalMarks}", "Pass ${chapter.type.passMarks}/${chapter.type.totalMarks}"),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = p.muted
@@ -149,7 +155,7 @@ private fun QuizAndCalibrationView(
             val q = chapter.questions[index]
             SparcScholarlyCard {
                 Text(
-                    text = "[${q.sectionCode}] ${q.promptBn}",
+                    text = "[${q.sectionCode}] ${trContent(q.promptBn)}",
                     style = MaterialTheme.typography.titleMedium,
                     color = p.text
                 )
@@ -157,6 +163,7 @@ private fun QuizAndCalibrationView(
                 if (q.isAutoScored) {
                     q.options.forEach { opt ->
                         val selected = draftAnswers[q.id] == opt
+                        val displayOpt = trContent(opt)
                         Surface(
                             shape = RoundedCornerShape(14.dp),
                             color = if (selected) p.primary else p.cardAlt,
@@ -167,7 +174,7 @@ private fun QuizAndCalibrationView(
                                 }
                         ) {
                             Text(
-                                text = if (selected) "✓ $opt" else opt,
+                                text = if (selected) "✓ $displayOpt" else displayOpt,
                                 color = if (selected) Color.White else p.text,
                                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp)
@@ -180,7 +187,7 @@ private fun QuizAndCalibrationView(
                         onValueChange = { if (!isLocked) draftAnswers = draftAnswers + (q.id to it) },
                         enabled = !isLocked,
                         minLines = 3,
-                        placeholder = { Text("বাংলা বা ইংরেজিতে আপনার উত্তর লিখুন...") },
+                        placeholder = { Text(tr("বাংলা বা ইংরেজিতে আপনার উত্তর লিখুন...", "Write your analytical response...")) },
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -194,13 +201,13 @@ private fun QuizAndCalibrationView(
                     ) {
                         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             q.lockedCorrectAnswer?.let { ans ->
-                                Text("✔ Answer Key: $ans", fontWeight = FontWeight.Bold, color = p.primarySoftText)
-                                Text(q.explanationBn, fontSize = 12.sp, color = p.primarySoftText)
+                                Text("✔ Answer Key: ${trContent(ans)}", fontWeight = FontWeight.Bold, color = p.primarySoftText)
+                                Text(trContent(q.explanationBn), fontSize = 12.sp, color = p.primarySoftText)
                             }
                             if (q.supervisorModelPoints.isNotEmpty()) {
-                                Text("মডেল পয়েন্টস:", fontWeight = FontWeight.Bold, color = p.primarySoftText)
+                                Text(tr("মডেল পয়েন্টস:", "Supervisor Model Points:"), fontWeight = FontWeight.Bold, color = p.primarySoftText)
                                 q.supervisorModelPoints.forEach { pt ->
-                                    Text("• $pt", fontSize = 12.sp, color = p.primarySoftText)
+                                    Text("• ${trContent(pt)}", fontSize = 12.sp, color = p.primarySoftText)
                                 }
                             }
                         }
@@ -215,7 +222,7 @@ private fun QuizAndCalibrationView(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("লার্নিং আউটকাম সেলফ-রেটিং", style = MaterialTheme.typography.titleMedium, color = p.text)
+                    Text(tr("লার্নিং আউটকাম সেলফ-রেটিং", "Learning Outcome Self-Rating"), style = MaterialTheme.typography.titleMedium, color = p.text)
                     Text("$selfRatingValue / 5", fontWeight = FontWeight.ExtraBold, color = p.primary)
                 }
                 Slider(
@@ -225,7 +232,11 @@ private fun QuizAndCalibrationView(
                     steps = 3
                 )
                 SparcPrimaryButton(
-                    text = if (!isLocked) "উত্তর জমা দিন ও Answer Key খুলুন" else "সেলফ-রেটিং আপডেট করুন ($selfRatingValue/5)",
+                    text = if (!isLocked) {
+                        tr("উত্তর জমা দিন ও Answer Key খুলুন", "Submit Answers & Unlock Answer Key")
+                    } else {
+                        tr("সেলফ-রেটিং আপডেট করুন ($selfRatingValue/5)", "Update Self-Rating ($selfRatingValue/5)")
+                    },
                     onClick = {
                         if (progress.stage.step < ProgressStage.READING_COMPLETED.step) {
                             repository.declareReadingCompleted(chapter)
@@ -267,7 +278,11 @@ private fun LiveSessionAndClinicView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("অনলাইন সেশন (পর্ব ১/২ • ৪০ মি.)", style = MaterialTheme.typography.titleMedium, color = p.text)
+                    Text(
+                        tr("অনলাইন সেশন (পর্ব ১/২ • ৪০ মি.)", "Online Session (Part 1/2 • 40 Min)"),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = p.text
+                    )
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = p.primarySoft,
@@ -276,7 +291,7 @@ private fun LiveSessionAndClinicView(
                         }
                     ) {
                         Text(
-                            text = if (mainSession.slideUploaded) "✓ স্লাইড যাচাইকৃত" else "+ স্লাইড আপলোড",
+                            text = if (mainSession.slideUploaded) tr("✓ স্লাইড যাচাইকৃত", "✓ Slides Verified") else tr("+ স্লাইড আপলোড", "+ Upload Slides"),
                             color = p.primarySoftText,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -294,12 +309,12 @@ private fun LiveSessionAndClinicView(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        VideoParticipantTile("তানভীর (Live)", Modifier.weight(1f))
-                        VideoParticipantTile("ড. নুসরাত জাহান", Modifier.weight(1f))
+                        VideoParticipantTile(trContent("তানভীর (Live)"), Modifier.weight(1f))
+                        VideoParticipantTile(trContent("ড. নুসরাত জাহান"), Modifier.weight(1f))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        VideoParticipantTile("ফারহান সাদিক", Modifier.weight(1f))
-                        VideoParticipantTile("মালিহা তাবাসসুম", Modifier.weight(1f))
+                        VideoParticipantTile(trContent("ফারহান সাদিক"), Modifier.weight(1f))
+                        VideoParticipantTile(trContent("মালিহা তাবাসসুম"), Modifier.weight(1f))
                     }
                 }
 
@@ -329,14 +344,17 @@ private fun LiveSessionAndClinicView(
 
         item {
             SparcScholarlyCard {
-                Text("মাসিক লাইভ রিসার্চ ক্লিনিক", style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(tr("মাসিক লাইভ রিসার্চ ক্লিনিক", "Monthly Live Research Clinic"), style = MaterialTheme.typography.titleMedium, color = p.text)
                 Text(
-                    "মাসের শেষ শনিবার রাত ৯:০০ • সিনিয়র গবেষকদের সাথে সরাসরি Q&A",
+                    tr(
+                        "মাসের শেষ শনিবার রাত ৯:০০ • সিনিয়র গবেষকদের সাথে সরাসরি Q&A",
+                        "Last Saturday of Month, 9:00 PM • Live Q&A with Senior Researchers"
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = p.muted
                 )
                 SparcPrimaryButton(
-                    text = "ক্লিনিকে জয়েন / প্রশ্ন জমা দিন",
+                    text = tr("ক্লিনিকে জয়েন / প্রশ্ন জমা দিন", "Join Clinic / Submit Question"),
                     onClick = { onJoinJitsi(clinicSession) }
                 )
             }
@@ -382,10 +400,14 @@ private fun SupervisorMobileGradingView() {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Needs Support (≥৩ রেড ফ্ল্যাগ)", style = MaterialTheme.typography.titleMedium, color = SparcCrimson)
+                    Text(
+                        tr("Needs Support (≥৩ রেড ফ্ল্যাগ)", "Needs Support (≥3 Red Flags)"),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = SparcCrimson
+                    )
                     Surface(shape = RoundedCornerShape(50), color = SparcCrimson.copy(alpha = 0.15f)) {
                         Text(
-                            "সাদিয়া ইসলাম",
+                            trContent("সাদিয়া ইসলাম"),
                             color = SparcCrimson,
                             fontSize = 11.5.sp,
                             fontWeight = FontWeight.Bold,
@@ -394,7 +416,10 @@ private fun SupervisorMobileGradingView() {
                     }
                 }
                 Text(
-                    "• ক্যালিব্রেশন: Over-confident (Self 4.5 • Score 38%)\n• প্রাপ্ত Poke সংখ্যা: ৫টি (বার্তা গোপন রাখা হয়েছে)",
+                    tr(
+                        "• ক্যালিব্রেশন: Over-confident (Self 4.5 • Score 38%)\n• প্রাপ্ত Poke সংখ্যা: ৫টি (বার্তা গোপন রাখা হয়েছে)",
+                        "• Calibration: Over-confident (Self 4.5 • Score 38%)\n• Pokes received: 5 (message bodies hidden for privacy)"
+                    ),
                     fontSize = 12.sp,
                     color = p.muted
                 )
@@ -403,9 +428,12 @@ private fun SupervisorMobileGradingView() {
 
         item {
             SparcScholarlyCard {
-                Text("সুপারভাইজার ম্যানুয়াল স্কোরিং [F–J]", style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(tr("সুপারভাইজার ম্যানুয়াল স্কোরিং [F–J]", "Supervisor Manual Scoring [F–J]"), style = MaterialTheme.typography.titleMedium, color = p.text)
                 Text(
-                    "“Sayings, Doings ও Relatings বিশ্লেষণ করে বিভাগে অংশগ্রহণমূলক সংলাপ তৈরি করা সম্ভব।”",
+                    tr(
+                        "“Sayings, Doings ও Relatings বিশ্লেষণ করে বিভাগে অংশগ্রহণমূলক সংলাপ তৈরি করা সম্ভব।”",
+                        "“Analyzing Sayings, Doings, and Relatings enables inclusive participatory dialogue across the department.”"
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = p.muted
                 )
@@ -431,7 +459,11 @@ private fun SupervisorMobileGradingView() {
                     }
                 }
                 SparcPrimaryButton(
-                    text = if (overrideApproved) "✓ স্কোর সংরক্ষিত ও Override সক্রিয়" else "স্কোর সংরক্ষণ ও Override অনুমোদন",
+                    text = if (overrideApproved) {
+                        tr("✓ স্কোর সংরক্ষিত ও Override সক্রিয়", "✓ Score Saved & Override Active")
+                    } else {
+                        tr("স্কোর সংরক্ষণ ও Override অনুমোদন", "Save Score & Approve Override")
+                    },
                     onClick = { overrideApproved = true }
                 )
             }
@@ -460,12 +492,12 @@ private fun InAppJitsiVideoDialog(
                         .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(session.title, style = MaterialTheme.typography.titleMedium, color = p.text, modifier = Modifier.weight(1f))
+                    Text(trContent(session.title), style = MaterialTheme.typography.titleMedium, color = p.text, modifier = Modifier.weight(1f))
                     Button(
                         onClick = onDismiss,
                         colors = ButtonDefaults.buttonColors(containerColor = SparcCrimson)
                     ) {
-                        Text("লিভ সেশন")
+                        Text(tr("লিভ সেশন", "Leave Session"))
                     }
                 }
                 AndroidView(

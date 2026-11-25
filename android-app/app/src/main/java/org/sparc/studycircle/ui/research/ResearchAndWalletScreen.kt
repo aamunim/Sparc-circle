@@ -28,7 +28,10 @@ import org.sparc.studycircle.core.data.SparcAppState
 import org.sparc.studycircle.core.data.SparcRepository
 import org.sparc.studycircle.core.domain.SparcDomainEngine
 import org.sparc.studycircle.core.model.PaymentMethod
+import org.sparc.studycircle.core.theme.LocalAppLanguage
 import org.sparc.studycircle.core.theme.LocalSparcPalette
+import org.sparc.studycircle.core.theme.tr
+import org.sparc.studycircle.core.theme.trContent
 import org.sparc.studycircle.ui.components.*
 import java.io.File
 import java.io.FileOutputStream
@@ -44,7 +47,11 @@ fun ResearchAndWalletScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
             SparcSegmentedPills(
-                options = listOf("AI রাইটিং ও টিম", "ক্রেডিট ওয়ালেট", "পডিয়াম ও সার্টিফিকেট"),
+                options = listOf(
+                    tr("AI রাইটিং ও টিম", "AI Writing & Team"),
+                    tr("ক্রেডিট ওয়ালেট", "Credit Wallet"),
+                    tr("পডিয়াম ও সার্টিফিকেট", "Podium & Cert")
+                ),
                 selectedIndex = subTab,
                 onSelect = { subTab = it }
             )
@@ -65,13 +72,17 @@ private fun AiWritingAndCoAuthorView(
     repository: SparcRepository
 ) {
     val p = LocalSparcPalette.current
+    val lang = LocalAppLanguage.current
     val scope = rememberCoroutineScope()
     val chapter = state.books.first().chapters.first()
     val progress = state.myChapterProgress[chapter.chapterNo]
-    var draft by remember(progress?.writingContent) {
+    val defaultDraftBn = "বিশ্ববিদ্যালয়ের সমাজবিজ্ঞান বিভাগে শিক্ষার্থীদের সক্রিয় গবেষণা অংশগ্রহণ বাড়াতে এই Research Site ও Felt-concern নির্ধারণ করা হয়েছে। শ্রেণিকক্ষের সংলাপ সংস্কৃতি (Relatings) ও পাঠদানের সময়সূচি (Doings) যৌথভাবে পর্যালোচনার মাধ্যমে পরিবর্তন আনা সম্ভব।"
+    val defaultDraftEn = "This Research Site and Felt-concern have been selected to strengthen active student inquiry in the Sociology department. Collaboratively reviewing classroom dialogue norms (Relatings) and seminar schedules (Doings) can foster sustainable academic transformation."
+
+    var draft by remember(progress?.writingContent, lang) {
         mutableStateOf(
             progress?.writingContent?.ifBlank { null }
-                ?: "বিশ্ববিদ্যালয়ের সমাজবিজ্ঞান বিভাগে শিক্ষার্থীদের সক্রিয় গবেষণা অংশগ্রহণ বাড়াতে এই Research Site ও Felt-concern নির্ধারণ করা হয়েছে। শ্রেণিকক্ষের সংলাপ সংস্কৃতি (Relatings) ও পাঠদানের সময়সূচি (Doings) যৌথভাবে পর্যালোচনার মাধ্যমে পরিবর্তন আনা সম্ভব।"
+                ?: if (lang == "en") defaultDraftEn else defaultDraftBn
         )
     }
     val wordCount = remember(draft) { draft.trim().split(Regex("\\s+")).count { it.isNotBlank() } }
@@ -125,8 +136,21 @@ private fun AiWritingAndCoAuthorView(
                         )
                         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("✨ Gemini AI Writing Coach", fontWeight = FontWeight.Bold, fontSize = 13.5.sp, color = p.text)
-                            Text("• Research Site ও অংশগ্রহণকারীর যুক্তি সুদৃঢ়", fontSize = 12.sp, color = p.muted)
-                            Text("• ২য় অনুচ্ছেদে প্যাসিভ বাক্য সংক্ষিপ্ত করুন", fontSize = 12.sp, color = p.muted)
+                            val liveTone = state.lastAiFeedback?.toneFeedback?.takeIf { it.isNotBlank() }
+                            if (liveTone != null) {
+                                Text("• $liveTone", fontSize = 12.sp, color = p.muted)
+                            } else {
+                                Text(
+                                    tr("• Research Site ও অংশগ্রহণকারীর যুক্তি সুদৃঢ়", "• Strong alignment between Research Site & stakeholders"),
+                                    fontSize = 12.sp,
+                                    color = p.muted
+                                )
+                                Text(
+                                    tr("• ২য় অনুচ্ছেদে প্যাসিভ বাক্য সংক্ষিপ্ত করুন", "• Tighten passive phrasing in the second paragraph"),
+                                    fontSize = 12.sp,
+                                    color = p.muted
+                                )
+                            }
                         }
                     }
                 }
@@ -148,7 +172,7 @@ private fun AiWritingAndCoAuthorView(
                             .clickable { scope.launch { repository.analyzeWritingWithAi(chapter, draft) } }
                     ) {
                         Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 12.dp)) {
-                            Text("AI ফিডব্যাক নিন", color = p.primarySoftText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(tr("AI ফিডব্যাক নিন", "Get AI Feedback"), color = p.primarySoftText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
                     Button(
@@ -157,7 +181,7 @@ private fun AiWritingAndCoAuthorView(
                         colors = ButtonDefaults.buttonColors(containerColor = p.primary),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("রাইটিং জমা দিন", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(tr("রাইটিং জমা দিন", "Submit Writing"), fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }
@@ -165,16 +189,21 @@ private fun AiWritingAndCoAuthorView(
 
         item {
             SparcScholarlyCard {
-                Text("স্মার্ট কো-অথর ম্যাচমেকিং (৪ সদস্যের টিম)", style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(
+                    tr("স্মার্ট কো-অথর ম্যাচমেকিং (৪ সদস্যের টিম)", "Smart Co-Author Matchmaking (4-Member Team)"),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = p.text
+                )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     coAuthors.forEachIndexed { idx, c ->
                         val skillLabel = c.complementarySkills.firstOrNull() ?: "Research"
+                        val firstName = trContent(c.user.name).split(" ").first()
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = if (idx % 2 == 0) p.primarySoft else p.accentSoft
                         ) {
                             Text(
-                                text = "${c.user.name.split(" ").first()} • $skillLabel",
+                                text = "$firstName • $skillLabel",
                                 color = if (idx % 2 == 0) p.primarySoftText else p.accentText,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
@@ -194,6 +223,7 @@ private fun CreditWalletAndSupervisionView(
     repository: SparcRepository
 ) {
     val p = LocalSparcPalette.current
+    val lang = LocalAppLanguage.current
     var selectedAmt by remember { mutableIntStateOf(1000) }
     var selectedMethod by remember { mutableStateOf(PaymentMethod.BKASH_PGW) }
     var trxIdInput by remember { mutableStateOf("") }
@@ -224,7 +254,10 @@ private fun CreditWalletAndSupervisionView(
                     color = Color.White.copy(alpha = 0.18f)
                 ) {
                     Text(
-                        text = "রেফারেল কোড: ${state.currentUser.referralCode} (+৳৫০ বোনাস)",
+                        text = tr(
+                            "রেফারেল কোড: ${state.currentUser.referralCode} (+৳৫০ বোনাস)",
+                            "Referral Code: ${state.currentUser.referralCode} (+৳50 Bonus)"
+                        ),
                         color = Color.White,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -236,7 +269,7 @@ private fun CreditWalletAndSupervisionView(
 
         item {
             SparcScholarlyCard {
-                Text("ক্রেডিট টপ-আপ করুন (ন্যূনতম ৳৫০০)", style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(tr("ক্রেডিট টপ-আপ করুন (ন্যূনতম ৳৫০০)", "Top Up Wallet Credits (Min ৳500)"), style = MaterialTheme.typography.titleMedium, color = p.text)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(500, 1000, 2000).forEach { amt ->
                         val active = selectedAmt == amt
@@ -275,7 +308,7 @@ private fun CreditWalletAndSupervisionView(
                         ) {
                             RadioButton(selected = active, onClick = { selectedMethod = pm })
                             Spacer(Modifier.width(6.dp))
-                            Text(pm.labelBn, fontWeight = FontWeight.SemiBold, color = p.text)
+                            Text(pm.label(lang), fontWeight = FontWeight.SemiBold, color = p.text)
                         }
                     }
                 }
@@ -291,7 +324,7 @@ private fun CreditWalletAndSupervisionView(
                 }
 
                 SparcPrimaryButton(
-                    text = "৳$selectedAmt ওয়ালেটে লোড করুন",
+                    text = tr("৳$selectedAmt ওয়ালেটে লোড করুন", "Add ৳$selectedAmt to Wallet"),
                     onClick = {
                         repository.topUpWallet(selectedAmt.toDouble(), selectedMethod, trxIdInput)
                         trxIdInput = ""
@@ -303,11 +336,26 @@ private fun CreditWalletAndSupervisionView(
         item {
             val deal = state.supervisionDeals.first()
             SparcScholarlyCard {
-                Text("পেইড সুপারভিশন ও নেগোসিয়েশন", style = MaterialTheme.typography.titleMedium, color = p.text)
-                Text("${deal.researchGroupName} • সুপারভাইজার: ${deal.supervisorName}", color = p.muted, fontSize = 12.5.sp)
-                Text("${deal.agreedSessions} সেশন চূড়ান্ত • ফি: ৳${deal.agreedFeeBdt.toInt()}", fontWeight = FontWeight.Bold, color = p.text)
+                Text(tr("পেইড সুপারভিশন ও নেগোসিয়েশন", "Paid Supervision & Negotiation"), style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(
+                    "${deal.researchGroupName} • ${tr("সুপারভাইজার", "Supervisor")}: ${trContent(deal.supervisorName)}",
+                    color = p.muted,
+                    fontSize = 12.5.sp
+                )
+                Text(
+                    tr(
+                        "${deal.agreedSessions} সেশন চূড়ান্ত • ফি: ৳${deal.agreedFeeBdt.toInt()}",
+                        "${deal.agreedSessions} sessions finalized • Fee: ৳${deal.agreedFeeBdt.toInt()}"
+                    ),
+                    fontWeight = FontWeight.Bold,
+                    color = p.text
+                )
                 SparcPrimaryButton(
-                    text = if (deal.isPaidViaWallet) "✓ ওয়ালেট থেকে পরিশোধিত" else "ওয়ালেট ক্রেডিট থেকে পরিশোধ করুন",
+                    text = if (deal.isPaidViaWallet) {
+                        tr("✓ ওয়ালেট থেকে পরিশোধিত", "✓ Settled via Wallet")
+                    } else {
+                        tr("ওয়ালেট ক্রেডিট থেকে পরিশোধ করুন", "Pay via Wallet Credits")
+                    },
                     enabled = !deal.isPaidViaWallet,
                     onClick = { repository.paySupervisionViaWallet(deal.id) }
                 )
@@ -333,7 +381,7 @@ private fun StreakLeaderboardAndCertificateView(state: SparcAppState) {
         // Researcher of the Month 3-Card Podium
         item {
             SparcScholarlyCard {
-                Text("Researcher of the Month পডিয়াম", style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(tr("Researcher of the Month পডিয়াম", "Researcher of the Month Podium"), style = MaterialTheme.typography.titleMedium, color = p.text)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -343,7 +391,7 @@ private fun StreakLeaderboardAndCertificateView(state: SparcAppState) {
                     val third = ranked.getOrNull(2)
 
                     if (second != null) {
-                        PodiumTile("#2 ${second.name.split(" ").first()}", "${second.gamificationPoints} pts", p.cardAlt, p.text, Modifier.weight(1f))
+                        PodiumTile("#2 ${trContent(second.name).split(" ").first()}", "${second.gamificationPoints} pts", p.cardAlt, p.text, Modifier.weight(1f))
                     }
                     if (first != null) {
                         Box(
@@ -355,13 +403,13 @@ private fun StreakLeaderboardAndCertificateView(state: SparcAppState) {
                             contentAlignment = Alignment.Center
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("#1 ${first.name.split(" ").first()}", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+                                Text("#1 ${trContent(first.name).split(" ").first()}", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
                                 Text("${first.gamificationPoints} pts", color = Color.White.copy(alpha = 0.85f), fontSize = 11.sp)
                             }
                         }
                     }
                     if (third != null) {
-                        PodiumTile("#3 ${third.name.split(" ").first()}", "${third.gamificationPoints} pts", p.accentSoft, p.accentText, Modifier.weight(1f))
+                        PodiumTile("#3 ${trContent(third.name).split(" ").first()}", "${third.gamificationPoints} pts", p.accentSoft, p.accentText, Modifier.weight(1f))
                     }
                 }
             }
@@ -370,11 +418,18 @@ private fun StreakLeaderboardAndCertificateView(state: SparcAppState) {
         // Streak Milestones
         item {
             SparcScholarlyCard {
-                Text("🔥 রিডিং স্ট্রিক মাইলফলক: ${state.currentUser.readingStreakDays} দিন সক্রিয়", style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(
+                    tr(
+                        "🔥 রিডিং স্ট্রিক মাইলফলক: ${state.currentUser.readingStreakDays} দিন সক্রিয়",
+                        "🔥 Reading Streak Milestones: ${state.currentUser.readingStreakDays} Days Active"
+                    ),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = p.text
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PodiumTile("৩ দিন", "সম্পন্ন ✓", p.primarySoft, p.primarySoftText, Modifier.weight(1f))
-                    PodiumTile("৭ দিন", "আনলকড 🔥", p.accentSoft, p.accentText, Modifier.weight(1f))
-                    PodiumTile("১৫ দিন", "লক্ষ্যমাত্রা", p.cardAlt, p.muted, Modifier.weight(1f))
+                    PodiumTile(tr("৩ দিন", "3 Days"), tr("সম্পন্ন ✓", "Done ✓"), p.primarySoft, p.primarySoftText, Modifier.weight(1f))
+                    PodiumTile(tr("৭ দিন", "7 Days"), tr("আনলকড 🔥", "Unlocked 🔥"), p.accentSoft, p.accentText, Modifier.weight(1f))
+                    PodiumTile(tr("১৫ দিন", "15 Days"), tr("লক্ষ্যমাত্রা", "Target"), p.cardAlt, p.muted, Modifier.weight(1f))
                 }
             }
         }
@@ -396,7 +451,7 @@ private fun StreakLeaderboardAndCertificateView(state: SparcAppState) {
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text("SPARC VERIFIED CERTIFICATE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = p.primary)
-                        Text(state.currentUser.name, style = MaterialTheme.typography.titleLarge, color = p.text)
+                        Text(trContent(state.currentUser.name), style = MaterialTheme.typography.titleLarge, color = p.text)
                         Text("QR ID: SPARC-2026-8F4A2C", fontSize = 11.5.sp, color = p.muted)
                     }
                 }
@@ -415,7 +470,7 @@ private fun StreakLeaderboardAndCertificateView(state: SparcAppState) {
                         colors = ButtonDefaults.buttonColors(containerColor = p.primary),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("LinkedIn শেয়ার", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                        Text(tr("LinkedIn শেয়ার", "Share on LinkedIn"), fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
                     }
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -432,7 +487,7 @@ private fun StreakLeaderboardAndCertificateView(state: SparcAppState) {
                             }
                     ) {
                         Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 11.dp)) {
-                            Text("Facebook শেয়ার", color = p.text, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                            Text(tr("Facebook শেয়ার", "Share on Facebook"), color = p.text, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
                         }
                     }
                 }

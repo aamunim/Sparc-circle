@@ -20,7 +20,10 @@ class MainActivity : ComponentActivity() {
             val state by repository.state.collectAsState()
             var showSplash by rememberSaveable { mutableStateOf(true) }
 
-            SparcTheme(visualTheme = state.visualTheme) {
+            SparcTheme(
+                visualTheme = state.visualTheme,
+                appLanguage = state.appLanguage
+            ) {
                 when {
                     showSplash -> SparcAnimatedSplashScreen(
                         onFinished = { showSplash = false }

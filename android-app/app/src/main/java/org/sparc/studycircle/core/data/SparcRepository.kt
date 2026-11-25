@@ -69,7 +69,10 @@ class SparcRepository(
     )
     val state: StateFlow<SparcAppState> = _state.asStateFlow()
 
-    fun updateApiVault(newVault: ApiKeyVaultConfig, bannerMsg: String = "API Key সংরক্ষিত হয়েছে!") {
+    private fun msg(bn: String, en: String): String =
+        if (_state.value.appLanguage == "en") en else bn
+
+    fun updateApiVault(newVault: ApiKeyVaultConfig, bannerMsg: String = msg("API Key সংরক্ষিত হয়েছে!", "API Key saved!")) {
         supabaseClient.vaultConfig = newVault
         onPersistApiVault(newVault)
         _state.update {
@@ -86,7 +89,11 @@ class SparcRepository(
         _state.update {
             it.copy(
                 visualTheme = theme,
-                statusBannerMessage = "থিম পরিবর্তন করা হয়েছে: ${theme.titleBn}"
+                statusBannerMessage = if (it.appLanguage == "en") {
+                    "Theme switched to: ${theme.titleBn}"
+                } else {
+                    "থিম পরিবর্তন করা হয়েছে: ${theme.titleBn}"
+                }
             )
         }
     }
@@ -102,8 +109,15 @@ class SparcRepository(
     }
 
     suspend fun signInWithEmail(email: String, password: String): Result<Unit> {
-        if (email.isBlank() || password.length < 4) {
-            return Result.failure(IllegalArgumentException("সঠিক ইমেইল ও কমপক্ষে ৪ অক্ষরের পাসওয়ার্ড দিন।"))
+        if (email.isBlank() || password.length < 6) {
+            return Result.failure(
+                IllegalArgumentException(
+                    msg(
+                        "সঠিক ইমেইল ও কমপক্ষে ৬ অক্ষরের পাসওয়ার্ড দিন।",
+                        "Please enter a valid email and a password of at least 6 characters."
+                    )
+                )
+            )
         }
         var remoteUserId: String? = null
         if (supabaseClient.isConfigured) {
@@ -132,7 +146,7 @@ class SparcRepository(
                 isAuthenticated = true,
                 currentUser = user,
                 directoryMembers = peers,
-                statusBannerMessage = "স্বাগতম, ${user.name}!"
+                statusBannerMessage = if (s.appLanguage == "en") "Welcome back, ${user.name}!" else "স্বাগতম, ${user.name}!"
             )
         }
         return Result.success(Unit)
@@ -146,8 +160,15 @@ class SparcRepository(
         skills: List<String>,
         referralCode: String
     ): Result<Unit> {
-        if (name.isBlank() || email.isBlank() || password.length < 4) {
-            return Result.failure(IllegalArgumentException("নাম, ইমেইল ও পাসওয়ার্ড পূরণ করুন।"))
+        if (name.isBlank() || email.isBlank() || password.length < 6) {
+            return Result.failure(
+                IllegalArgumentException(
+                    msg(
+                        "নাম, ইমেইল ও কমপক্ষে ৬ অক্ষরের পাসওয়ার্ড দিন।",
+                        "Please enter your name, email, and a password of at least 6 characters."
+                    )
+                )
+            )
         }
         val cleanName = name.trim()
         val cleanDept = department.ifBlank { "Sociology" }
@@ -187,10 +208,11 @@ class SparcRepository(
                 isAuthenticated = true,
                 currentUser = newUser,
                 directoryMembers = peers,
-                statusBannerMessage = if (refBonus > 0) {
-                    "অ্যাকাউন্ট তৈরি হয়েছে এবং +৳৫০ রেফারেল বোনাস যোগ হয়েছে!"
-                } else {
-                    "স্বাগতম $cleanName! আপনার গবেষক প্রোফাইল প্রস্তুত।"
+                statusBannerMessage = when {
+                    refBonus > 0 && s.appLanguage == "en" -> "Account created & +৳50 referral bonus credited!"
+                    refBonus > 0 -> "অ্যাকাউন্ট তৈরি হয়েছে এবং +৳৫০ রেফারেল বোনাস যোগ হয়েছে!"
+                    s.appLanguage == "en" -> "Welcome $cleanName! Your researcher profile is ready."
+                    else -> "স্বাগতম $cleanName! আপনার গবেষক প্রোফাইল প্রস্তুত।"
                 }
             )
         }
@@ -203,7 +225,7 @@ class SparcRepository(
         _state.update {
             it.copy(
                 isAuthenticated = true,
-                statusBannerMessage = "ডেমো গবেষক মোডে প্রবেশ করেছেন।"
+                statusBannerMessage = if (it.appLanguage == "en") "Entered Demo Researcher Mode." else "ডেমো গবেষক মোডে প্রবেশ করেছেন।"
             )
         }
     }
@@ -249,7 +271,7 @@ class SparcRepository(
                         amountBdt = 50.0,
                         status = "Verified",
                         reference = "REF-${appliedReferralCode.uppercase()}",
-                        description = "রেফারেল বোনাস (Invite & Earn)"
+                        description = if (s.appLanguage == "en") "Referral Bonus (Invite & Earn)" else "রেফারেল বোনাস (Invite & Earn)"
                     )
                 ) + s.walletHistory
             } else s.walletHistory
@@ -257,10 +279,11 @@ class SparcRepository(
             s.copy(
                 currentUser = updatedUser,
                 walletHistory = updatedHistory,
-                statusBannerMessage = if (validReferral) {
-                    "প্রোফাইল আপডেট হয়েছে এবং ৫০ টাকা রেফারেল বোনাস যোগ হয়েছে!"
-                } else {
-                    "প্রোফাইল ও স্কিল ট্যাগ সফলভাবে সংরক্ষিত হয়েছে।"
+                statusBannerMessage = when {
+                    validReferral && s.appLanguage == "en" -> "Profile updated & +৳50 referral bonus credited!"
+                    validReferral -> "প্রোফাইল আপডেট হয়েছে এবং ৫০ টাকা রেফারেল বোনাস যোগ হয়েছে!"
+                    s.appLanguage == "en" -> "Profile & skill tags saved successfully."
+                    else -> "প্রোফাইল ও স্কিল ট্যাগ সফলভাবে সংরক্ষিত হয়েছে।"
                 }
             )
         }
@@ -276,14 +299,18 @@ class SparcRepository(
                 senderName = s.currentUser.name,
                 receiverId = receiver.id,
                 body = body.trim(),
-                timestampLabel = "এইমাত্র"
+                timestampLabel = if (s.appLanguage == "en") "Just now" else "এইমাত্র"
             )
             s.copy(
                 messages = listOf(msg) + s.messages,
                 currentUser = s.currentUser.copy(
                     gamificationPoints = s.currentUser.gamificationPoints + 5
                 ),
-                statusBannerMessage = "${receiver.name}-কে আমন্ত্রণ বার্তা পাঠানো হয়েছে (+৫ পয়েন্ট)!"
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "Invitation sent to ${receiver.name} (+5 pts)!"
+                } else {
+                    "${receiver.name}-কে আমন্ত্রণ বার্তা পাঠানো হয়েছে (+৫ পয়েন্ট)!"
+                }
             )
         }
     }
@@ -291,11 +318,19 @@ class SparcRepository(
     // Section 2.3: Wallet Top-Up (SSLCommerz / bKash PGW / Manual TrxID >= 500 BDT)
     fun topUpWallet(amountBdt: Double, method: PaymentMethod, manualTrxId: String = "") {
         if (amountBdt < 500.0) {
-            _state.update { it.copy(statusBannerMessage = "ন্যূনতম ৫০০ টাকা ক্রেডিট লোড করতে হবে।") }
+            _state.update {
+                it.copy(
+                    statusBannerMessage = if (it.appLanguage == "en") "Minimum top-up is ৳500." else "ন্যূনতম ৫০০ টাকা ক্রেডিট লোড করতে হবে।"
+                )
+            }
             return
         }
         if (method == PaymentMethod.MANUAL_TRX && manualTrxId.trim().length < 6) {
-            _state.update { it.copy(statusBannerMessage = "সঠিক bKash/Nagad TrxID লিখুন।") }
+            _state.update {
+                it.copy(
+                    statusBannerMessage = if (it.appLanguage == "en") "Please enter a valid bKash/Nagad TrxID." else "সঠিক bKash/Nagad TrxID লিখুন।"
+                )
+            }
             return
         }
         _state.update { s ->
@@ -309,19 +344,20 @@ class SparcRepository(
                 id = UUID.randomUUID().toString(),
                 method = method,
                 amountBdt = amountBdt,
-                status = if (isInstantGateway) "Verified" else "Pending (অ্যাডমিন অনুমোদনের অপেক্ষায়)",
+                status = if (isInstantGateway) "Verified" else "Pending",
                 reference = ref,
-                description = "${method.labelBn} ওয়ালেট টপ-আপ"
+                description = "${method.label(s.appLanguage)} Top-Up"
             )
             s.copy(
                 currentUser = if (isInstantGateway) {
                     s.currentUser.copy(walletBalanceBdt = s.currentUser.walletBalanceBdt + amountBdt)
                 } else s.currentUser,
                 walletHistory = listOf(tx) + s.walletHistory,
-                statusBannerMessage = if (isInstantGateway) {
-                    "৳${amountBdt.toInt()} ওয়ালেটে যুক্ত হয়েছে!"
-                } else {
-                    "ম্যানুয়াল TrxID ($ref) জমা হয়েছে; অ্যাডমিন যাচাই করলে ব্যালেন্স যোগ হবে।"
+                statusBannerMessage = when {
+                    isInstantGateway && s.appLanguage == "en" -> "৳${amountBdt.toInt()} added to your wallet!"
+                    isInstantGateway -> "৳${amountBdt.toInt()} ওয়ালেটে যুক্ত হয়েছে!"
+                    s.appLanguage == "en" -> "Manual TrxID ($ref) submitted; pending admin verification."
+                    else -> "ম্যানুয়াল TrxID ($ref) জমা হয়েছে; অ্যাডমিন যাচাই করলে ব্যালেন্স যোগ হবে।"
                 }
             )
         }
@@ -362,7 +398,11 @@ class SparcRepository(
                     readingStreakDays = nextStreak,
                     gamificationPoints = s.currentUser.gamificationPoints + bonus
                 ),
-                statusBannerMessage = "হাইলাইট সংরক্ষিত (${visibility.labelBn}) এবং 🔥 রিডিং স্ট্রিক $nextStreak দিন!"
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "Highlight saved (${visibility.labelEn}) & 🔥 Reading Streak: $nextStreak days!"
+                } else {
+                    "হাইলাইট সংরক্ষিত (${visibility.labelBn}) এবং 🔥 রিডিং স্ট্রিক $nextStreak দিন!"
+                }
             )
         }
     }
@@ -370,14 +410,22 @@ class SparcRepository(
     // Section 3.5: Physical Book Order (Restricted to Admin, Teacher/Supervisor, SPARC Rep)
     fun placePhysicalBookOrder(book: BookItem, mode: String, address: String, phone: String) {
         if (address.isBlank() || phone.isBlank()) {
-            _state.update { it.copy(statusBannerMessage = "ঠিকানা ও ফোন নম্বর প্রদান করুন।") }
+            _state.update {
+                it.copy(
+                    statusBannerMessage = if (it.appLanguage == "en") "Please provide your delivery address and phone number." else "ঠিকানা ও ফোন নম্বর প্রদান করুন।"
+                )
+            }
             return
         }
         _state.update { s ->
             val cost = if (mode == "Purchase") book.physicalPriceBdt else 0.0
             if (cost > 0 && s.currentUser.walletBalanceBdt < cost) {
                 return@update s.copy(
-                    statusBannerMessage = "ওয়ালেটে পর্যাপ্ত ক্রেডিট নেই (প্রয়োজন ৳${cost.toInt()})।"
+                    statusBannerMessage = if (s.appLanguage == "en") {
+                        "Insufficient wallet balance (requires ৳${cost.toInt()})."
+                    } else {
+                        "ওয়ালেটে পর্যাপ্ত ক্রেডিট নেই (প্রয়োজন ৳${cost.toInt()})।"
+                    }
                 )
             }
             val order = PhysicalBookOrder(
@@ -389,14 +437,18 @@ class SparcRepository(
                 address = address.trim(),
                 phone = phone.trim(),
                 amountBdt = cost,
-                status = "SPARC প্রতিনিধির অনুমোদনের অপেক্ষায়"
+                status = "Pending SPARC Rep Approval"
             )
             s.copy(
                 currentUser = s.currentUser.copy(
                     walletBalanceBdt = s.currentUser.walletBalanceBdt - cost
                 ),
                 bookOrders = listOf(order) + s.bookOrders,
-                statusBannerMessage = "হার্ডকপি অর্ডারের অনুরোধ সফলভাবে প্লেস হয়েছে (গোপনীয়তা সুরক্ষিত)।"
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "Hardcopy order placed securely (visible only to SPARC Admin/Rep)."
+                } else {
+                    "হার্ডকপি অর্ডারের অনুরোধ সফলভাবে প্লেস হয়েছে (গোপনীয়তা সুরক্ষিত)।"
+                }
             )
         }
     }
@@ -412,7 +464,7 @@ class SparcRepository(
             }
             s.copy(
                 circles = updatedCircles,
-                statusBannerMessage = "নতুন সদস্য সার্কেলে যুক্ত হয়েছেন!"
+                statusBannerMessage = if (s.appLanguage == "en") "New member joined the circle!" else "নতুন সদস্য সার্কেলে যুক্ত হয়েছেন!"
             )
         }
     }
@@ -429,7 +481,7 @@ class SparcRepository(
             }
             s.copy(
                 circles = updatedCircles,
-                statusBannerMessage = "সুপারভাইজার নির্বাচনের ভোট রেকর্ড করা হয়েছে।"
+                statusBannerMessage = if (s.appLanguage == "en") "Supervisor vote recorded." else "সুপারভাইজার নির্বাচনের ভোট রেকর্ড করা হয়েছে।"
             )
         }
     }
@@ -468,7 +520,11 @@ class SparcRepository(
                         currentUser = s.currentUser.copy(
                             gamificationPoints = s.currentUser.gamificationPoints + 2
                         ),
-                        statusBannerMessage = "${receiver.name}-কে উৎসাহ বার্তা পাঠানো হয়েছে (${validation.deliveryMode.name})!"
+                        statusBannerMessage = if (s.appLanguage == "en") {
+                            "Motivation sent to ${receiver.name} (${validation.deliveryMode.name})!"
+                        } else {
+                            "${receiver.name}-কে উৎসাহ বার্তা পাঠানো হয়েছে (${validation.deliveryMode.name})!"
+                        }
                     )
                 }
             }
@@ -480,7 +536,7 @@ class SparcRepository(
         _state.update { s ->
             s.copy(
                 pokesToday = s.pokesToday.map { if (it.id == pokeId) it.copy(quickReply = quickReply) else it },
-                statusBannerMessage = "এক ট্যাপে রিপ্লাই পাঠানো হয়েছে: \"$quickReply\""
+                statusBannerMessage = if (s.appLanguage == "en") "Quick reply sent!" else "এক ট্যাপে রিপ্লাই পাঠানো হয়েছে: \"$quickReply\""
             )
         }
     }
@@ -489,7 +545,12 @@ class SparcRepository(
         _state.update {
             it.copy(
                 activeMuteScope = scope,
-                statusBannerMessage = if (scope == null) "Poke নোটিফিকেশন আনমিউট করা হয়েছে।" else "Poke ${scope.labelBn}-এর জন্য মিউট করা হয়েছে।"
+                statusBannerMessage = when {
+                    scope == null && it.appLanguage == "en" -> "Poke notifications unmuted."
+                    scope == null -> "Poke নোটিফিকেশন আনমিউট করা হয়েছে।"
+                    it.appLanguage == "en" -> "Poke muted for ${scope.labelEn}."
+                    else -> "Poke ${scope.labelBn}-এর জন্য মিউট করা হয়েছে।"
+                }
             )
         }
     }
@@ -536,7 +597,11 @@ class SparcRepository(
             s.copy(
                 myChapterProgress = s.myChapterProgress + (chapter.chapterNo to updated),
                 memberStageByUserId = s.memberStageByUserId + (s.currentUser.id to updated.stage),
-                statusBannerMessage = "পড়া শুরু হয়েছে! প্রতিদিন $dailyPages পৃষ্ঠা পড়লে $targetDays দিনে শেষ হবে।"
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "Reading started! $dailyPages pages/day finishes in $targetDays days."
+                } else {
+                    "পড়া শুরু হয়েছে! প্রতিদিন $dailyPages পৃষ্ঠা পড়লে $targetDays দিনে শেষ হবে।"
+                }
             )
         }
     }
@@ -545,7 +610,13 @@ class SparcRepository(
         _state.update { s ->
             val existing = s.myChapterProgress[chapterNo] ?: return@update s
             if (!SparcDomainEngine.canModifyExpectedDate(existing)) {
-                return@update s.copy(statusBannerMessage = "সম্ভাব্য শেষের তারিখ সর্বোচ্চ একবারই পরিবর্তন করা যায়।")
+                return@update s.copy(
+                    statusBannerMessage = if (s.appLanguage == "en") {
+                        "Expected completion date can only be modified once."
+                    } else {
+                        "সম্ভাব্য শেষের তারিখ সর্বোচ্চ একবারই পরিবর্তন করা যায়।"
+                    }
+                )
             }
             val updated = existing.copy(
                 expectedCompletionDaysFromToday = newDaysFromToday,
@@ -553,7 +624,11 @@ class SparcRepository(
             )
             s.copy(
                 myChapterProgress = s.myChapterProgress + (chapterNo to updated),
-                statusBannerMessage = "সম্ভাব্য শেষের তারিখ আপডেট করা হয়েছে (১/১ পরিবর্তন ব্যবহৃত)।"
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "Expected completion date updated (1/1 change used)."
+                } else {
+                    "সম্ভাব্য শেষের তারিখ আপডেট করা হয়েছে (১/১ পরিবর্তন ব্যবহৃত)।"
+                }
             )
         }
     }
@@ -585,7 +660,11 @@ class SparcRepository(
             s.copy(
                 myChapterProgress = s.myChapterProgress + (chapter.chapterNo to updated),
                 memberStageByUserId = s.memberStageByUserId + (s.currentUser.id to updated.stage),
-                statusBannerMessage = "অভিনন্দন! অনুশীলনী (Exercises) এখন আনলক হয়েছে।"
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "Congratulations! Chapter exercises are now unlocked."
+                } else {
+                    "অভিনন্দন! অনুশীলনী (Exercises) এখন আনলক হয়েছে।"
+                }
             )
         }
     }
@@ -599,11 +678,14 @@ class SparcRepository(
             val existing = s.myChapterProgress[chapter.chapterNo] ?: return@update s
             if (isReattempt && !SparcDomainEngine.canUseAutoScoreReattempt(existing)) {
                 return@update s.copy(
-                    statusBannerMessage = "প্রথম জমার ৪৮ ঘণ্টা পর শুধুমাত্র ১ বার অটো-স্কোরড অংশে রি-অ্যাটেম্পট করা যাবে।"
+                    statusBannerMessage = if (s.appLanguage == "en") {
+                        "A single auto-scored reattempt is allowed 48 hours after first submission."
+                    } else {
+                        "প্রথম জমার ৪৮ ঘণ্টা পর শুধুমাত্র ১ বার অটো-স্কোরড অংশে রি-অ্যাটেম্পট করা যাবে।"
+                    }
                 )
             }
             val autoOutcome = SparcDomainEngine.gradeAutoQuestions(chapter.questions, answers)
-            // Scale demo sample auto-score proportionally to realistic chapter auto pool (30/36 questions)
             val scaledAuto = (autoOutcome.autoScore * 11).coerceAtMost(25)
             val baseUpdated = existing.copy(
                 stage = ProgressStage.EXERCISES_SUBMITTED,
@@ -611,14 +693,18 @@ class SparcRepository(
                 firstAutoScore = existing.firstAutoScore ?: scaledAuto,
                 autoScore = scaledAuto,
                 reattemptUsed = if (isReattempt) true else existing.reattemptUsed,
-                supervisorScore = existing.supervisorScore ?: 18, // Demo supervisor F-J score
+                supervisorScore = existing.supervisorScore ?: 18,
                 genuinenessPassed = autoOutcome.genuinenessPassed
             )
             val evaluated = SparcDomainEngine.evaluateProgressVerification(baseUpdated, chapter.type)
             s.copy(
                 myChapterProgress = s.myChapterProgress + (chapter.chapterNo to evaluated),
                 memberStageByUserId = s.memberStageByUserId + (s.currentUser.id to evaluated.stage),
-                statusBannerMessage = "অনুশীলনী লক হয়েছে! উত্তরপত্র (Answer Key) ও আত্মমূল্যায়ন (Self-Rating) আনলক হয়েছে।"
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "Exercises submitted! Answer Key & Self-Rating are now unlocked."
+                } else {
+                    "অনুশীলনী লক হয়েছে! উত্তরপত্র (Answer Key) ও আত্মমূল্যায়ন (Self-Rating) আনলক হয়েছে।"
+                }
             )
         }
     }
@@ -633,10 +719,15 @@ class SparcRepository(
             s.copy(
                 myChapterProgress = s.myChapterProgress + (chapter.chapterNo to evaluated),
                 memberStageByUserId = s.memberStageByUserId + (s.currentUser.id to evaluated.stage),
-                statusBannerMessage = if (evaluated.stage == ProgressStage.LEARNING_VERIFIED) {
-                    "🎉 Learning Verified! পরবর্তী অধ্যায় ও শেয়ারেবল সোশ্যাল কার্ড আনলক হয়েছে!"
-                } else {
-                    "আত্মমূল্যায়ন সংরক্ষিত হয়েছে। Learning Verified হতে রাইটিং টাস্ক সম্পন্ন করুন।"
+                statusBannerMessage = when {
+                    evaluated.stage == ProgressStage.LEARNING_VERIFIED && s.appLanguage == "en" ->
+                        "🎉 Learning Verified! Next chapter & shareable card unlocked!"
+                    evaluated.stage == ProgressStage.LEARNING_VERIFIED ->
+                        "🎉 Learning Verified! পরবর্তী অধ্যায় ও শেয়ারেবল সোশ্যাল কার্ড আনলক হয়েছে!"
+                    s.appLanguage == "en" ->
+                        "Self-rating saved. Complete the writing task to reach Learning Verified."
+                    else ->
+                        "আত্মমূল্যায়ন সংরক্ষিত হয়েছে। Learning Verified হতে রাইটিং টাস্ক সম্পন্ন করুন।"
                 }
             )
         }
@@ -646,25 +737,37 @@ class SparcRepository(
         _state.update { s ->
             val target = s.sessions.find { it.id == sessionId } ?: return@update s
             if (target.hoursUntilSession < 24) {
-                return@update s.copy(statusBannerMessage = "সেশনের অন্তত ২৪ ঘণ্টা আগে স্লাইড আপলোড করতে হয়।")
+                return@update s.copy(
+                    statusBannerMessage = if (s.appLanguage == "en") {
+                        "Slides must be uploaded at least 24 hours before the session."
+                    } else {
+                        "সেশনের অন্তত ২৪ ঘণ্টা আগে স্লাইড আপলোড করতে হয়।"
+                    }
+                )
             }
             s.copy(
                 sessions = s.sessions.map {
                     if (it.id == sessionId) it.copy(slideUploaded = true, slideFileName = fileName) else it
                 },
-                statusBannerMessage = "স্লাইড ($fileName) সফলভাবে আপলোড হয়েছে!"
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "Slides ($fileName) uploaded successfully!"
+                } else {
+                    "স্লাইড ($fileName) সফলভাবে আপলোড হয়েছে!"
+                }
             )
         }
     }
 
     // Section 6.1: Chapter Writing Task + AI Writing Assistant
     suspend fun analyzeWritingWithAi(chapter: ChapterItem, draft: String) {
+        val lang = _state.value.appLanguage
         val feedback = supabaseClient.requestAiWritingFeedback(
             chapterNo = chapter.chapterNo,
             prompt = chapter.writingTaskPrompt,
             content = draft,
             minWords = chapter.minWords,
-            maxWords = chapter.maxWords
+            maxWords = chapter.maxWords,
+            language = lang
         ).getOrElse {
             SparcDomainEngine.generateLocalAiWritingFeedback(draft, chapter.minWords, chapter.maxWords)
         }
@@ -674,7 +777,15 @@ class SparcRepository(
     fun submitChapterWritingTask(chapter: ChapterItem, content: String) {
         val wordCount = content.trim().split(Regex("\\s+")).count { it.isNotBlank() }
         if (wordCount < 20) {
-            _state.update { it.copy(statusBannerMessage = "অনুগ্রহ করে বিস্তারিত একাডেমিক অনুচ্ছেদ লিখুন।") }
+            _state.update {
+                it.copy(
+                    statusBannerMessage = if (it.appLanguage == "en") {
+                        "Please write a detailed academic paragraph (at least 20 words)."
+                    } else {
+                        "অনুগ্রহ করে বিস্তারিত একাডেমিক অনুচ্ছেদ লিখুন।"
+                    }
+                )
+            }
             return
         }
         _state.update { s ->
@@ -695,10 +806,15 @@ class SparcRepository(
                     gamificationPoints = s.currentUser.gamificationPoints + 30,
                     earnedBadges = newBadges
                 ),
-                statusBannerMessage = if (evaluated.stage == ProgressStage.LEARNING_VERIFIED) {
-                    "রাইটিং টাস্ক জমা হয়েছে এবং অধ্যায়টি 'Learning Verified' হিসেবে উন্নীত হয়েছে!"
-                } else {
-                    "রাইটিং টাস্ক সংরক্ষিত হয়েছে (+৩০ পয়েন্ট)!"
+                statusBannerMessage = when {
+                    evaluated.stage == ProgressStage.LEARNING_VERIFIED && s.appLanguage == "en" ->
+                        "Writing task submitted & chapter promoted to Learning Verified!"
+                    evaluated.stage == ProgressStage.LEARNING_VERIFIED ->
+                        "রাইটিং টাস্ক জমা হয়েছে এবং অধ্যায়টি 'Learning Verified' হিসেবে উন্নীত হয়েছে!"
+                    s.appLanguage == "en" ->
+                        "Writing task saved (+30 points)!"
+                    else ->
+                        "রাইটিং টাস্ক সংরক্ষিত হয়েছে (+৩০ পয়েন্ট)!"
                 }
             )
         }
@@ -711,7 +827,11 @@ class SparcRepository(
             if (deal.isPaidViaWallet) return@update s
             if (s.currentUser.walletBalanceBdt < deal.agreedFeeBdt) {
                 return@update s.copy(
-                    statusBannerMessage = "ওয়ালেটে পর্যাপ্ত ব্যালেন্স নেই (প্রয়োজন ৳${deal.agreedFeeBdt.toInt()})। ওয়ালেট টপ-আপ করুন।"
+                    statusBannerMessage = if (s.appLanguage == "en") {
+                        "Insufficient wallet balance (requires ৳${deal.agreedFeeBdt.toInt()}). Please top up."
+                    } else {
+                        "ওয়ালেটে পর্যাপ্ত ব্যালেন্স নেই (প্রয়োজন ৳${deal.agreedFeeBdt.toInt()})। ওয়ালেট টপ-আপ করুন।"
+                    }
                 )
             }
             val tx = WalletTransactionItem(
@@ -720,7 +840,7 @@ class SparcRepository(
                 amountBdt = -deal.agreedFeeBdt,
                 status = "Verified",
                 reference = "SUP-${deal.id.take(6).uppercase()}",
-                description = "পেইড সুপারভিশন ফি (${deal.agreedSessions} সেশন)"
+                description = if (s.appLanguage == "en") "Paid Supervision (${deal.agreedSessions} sessions)" else "পেইড সুপারভিশন ফি (${deal.agreedSessions} সেশন)"
             )
             s.copy(
                 currentUser = s.currentUser.copy(
@@ -730,7 +850,11 @@ class SparcRepository(
                     if (it.id == dealId) it.copy(isPaidViaWallet = true) else it
                 },
                 walletHistory = listOf(tx) + s.walletHistory,
-                statusBannerMessage = "পেইড সুপারভিশন চুক্তি চূড়ান্ত এবং ওয়ালেট থেকে পরিশোধ সম্পন্ন!"
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "Supervision agreement settled via wallet!"
+                } else {
+                    "পেইড সুপারভিশন চুক্তি চূড়ান্ত এবং ওয়ালেট থেকে পরিশোধ সম্পন্ন!"
+                }
             )
         }
     }

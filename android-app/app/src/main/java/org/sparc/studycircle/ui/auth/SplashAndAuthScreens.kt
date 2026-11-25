@@ -34,6 +34,7 @@ import kotlinx.coroutines.launch
 import org.sparc.studycircle.core.data.SparcRepository
 import org.sparc.studycircle.core.model.SparcVisualTheme
 import org.sparc.studycircle.core.theme.LocalSparcPalette
+import org.sparc.studycircle.core.theme.tr
 import org.sparc.studycircle.ui.components.SparcPrimaryButton
 import org.sparc.studycircle.ui.components.SparcScholarlyCard
 import org.sparc.studycircle.ui.components.SparcSegmentedPills
@@ -96,10 +97,11 @@ fun SparcAnimatedSplashScreen(
                 fontWeight = FontWeight.ExtraBold
             )
             Text(
-                text = "বই পড়তে পড়তে লেখা শেখা",
+                text = tr("বই পড়তে পড়তে লেখা শেখা", "Learning Academic Writing While Reading"),
                 color = Color.White.copy(alpha = 0.9f),
                 fontSize = 15.sp,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(8.dp))
             CircularProgressIndicator(
@@ -144,13 +146,17 @@ fun SparcAuthScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Top Brand Banner + Quick Theme Cycle Button
+        // Top Brand Banner + Quick Language & Theme Toggle Pills
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.weight(1f)
+            ) {
                 Box(
                     modifier = Modifier
                         .size(44.dp)
@@ -162,33 +168,59 @@ fun SparcAuthScreen(
                 }
                 Column {
                     Text("SPARC Study Circle", style = MaterialTheme.typography.titleLarge, color = p.text)
-                    Text("বই পড়তে পড়তে লেখা শেখা", fontSize = 12.sp, color = p.muted)
+                    Text(
+                        tr("বই পড়তে পড়তে লেখা শেখা", "Learn Writing While Reading"),
+                        fontSize = 12.sp,
+                        color = p.muted
+                    )
                 }
             }
 
-            // Cycle Theme right on Auth Screen!
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = p.primarySoft,
-                modifier = Modifier.clickable {
-                    val themes = SparcVisualTheme.entries
-                    val next = themes[(themes.indexOf(state.visualTheme) + 1) % themes.size]
-                    repository.setVisualTheme(next)
-                }
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = p.cardAlt,
+                    border = BorderStroke(1.dp, p.border),
+                    modifier = Modifier.clickable {
+                        repository.setAppLanguage(if (state.appLanguage == "en") "bn" else "en")
+                    }
                 ) {
-                    Icon(Icons.Default.Palette, contentDescription = null, tint = p.primarySoftText, modifier = Modifier.size(15.dp))
-                    Text("থিম", color = p.primarySoftText, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = if (state.appLanguage == "en") "বাংলা" else "EN",
+                        color = p.text,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+
+                // Cycle Theme right on Auth Screen!
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = p.primarySoft,
+                    modifier = Modifier.clickable {
+                        val themes = SparcVisualTheme.entries
+                        val next = themes[(themes.indexOf(state.visualTheme) + 1) % themes.size]
+                        repository.setVisualTheme(next)
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(Icons.Default.Palette, contentDescription = null, tint = p.primarySoftText, modifier = Modifier.size(15.dp))
+                        Text(tr("থিম", "Theme"), color = p.primarySoftText, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
 
         SparcSegmentedPills(
-            options = listOf("লগইন (Sign In)", "নতুন অ্যাকাউন্ট (Sign Up)"),
+            options = listOf(
+                tr("লগইন (Sign In)", "Sign In"),
+                tr("নতুন অ্যাকাউন্ট (Sign Up)", "Create Account")
+            ),
             selectedIndex = mode,
             onSelect = {
                 mode = it
@@ -198,11 +230,15 @@ fun SparcAuthScreen(
 
         SparcScholarlyCard {
             if (mode == 1) {
-                Text("নতুন গবেষক প্রোফাইল তৈরি করুন", style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(
+                    tr("নতুন গবেষক প্রোফাইল তৈরি করুন", "Create Your Researcher Profile"),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = p.text
+                )
                 OutlinedTextField(
                     value = fullName,
                     onValueChange = { fullName = it },
-                    label = { Text("আপনার পূর্ণ নাম") },
+                    label = { Text(tr("আপনার পূর্ণ নাম", "Full Name")) },
                     singleLine = true,
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -210,19 +246,23 @@ fun SparcAuthScreen(
                 OutlinedTextField(
                     value = department,
                     onValueChange = { department = it },
-                    label = { Text("বিভাগ (Department)") },
+                    label = { Text(tr("বিভাগ (Department)", "Department")) },
                     singleLine = true,
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
-                Text("আপনার অ্যাকাউন্টে লগইন করুন", style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(
+                    tr("আপনার অ্যাকাউন্টে লগইন করুন", "Sign In to Your Account"),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = p.text
+                )
             }
 
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
-                label = { Text("ইমেইল (Academic / Personal Email)") },
+                label = { Text(tr("ইমেইল (Academic / Personal Email)", "Academic or Personal Email")) },
                 singleLine = true,
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -231,7 +271,7 @@ fun SparcAuthScreen(
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
-                label = { Text("পাসওয়ার্ড") },
+                label = { Text(tr("পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)", "Password (min 6 characters)")) },
                 singleLine = true,
                 visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
@@ -247,7 +287,12 @@ fun SparcAuthScreen(
             )
 
             if (mode == 1) {
-                Text("আপনার মূল দক্ষতা (কো-অথর ম্যাচমেকিং):", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = p.text)
+                Text(
+                    tr("আপনার মূল দক্ষতা (কো-অথর ম্যাচমেকিং):", "Core Skills (Co-Author Matchmaking):"),
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = p.text
+                )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     skillOptions.forEach { sk ->
                         val active = sk in selectedSkills
@@ -273,7 +318,7 @@ fun SparcAuthScreen(
                 OutlinedTextField(
                     value = referralCode,
                     onValueChange = { referralCode = it },
-                    label = { Text("রেফারেল কোড (ঐচ্ছিক — +৳৫০ বোনাস)") },
+                    label = { Text(tr("রেফারেল কোড (ঐচ্ছিক — +৳৫০ বোনাস)", "Referral Code (Optional — +৳50 Bonus)")) },
                     singleLine = true,
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -285,7 +330,11 @@ fun SparcAuthScreen(
             }
 
             SparcPrimaryButton(
-                text = if (isLoading) "অপেক্ষা করুন..." else if (mode == 0) "লগইন করুন" else "অ্যাকাউন্ট খুলুন ও শুরু করুন",
+                text = when {
+                    isLoading -> tr("অপেক্ষা করুন...", "Please wait...")
+                    mode == 0 -> tr("লগইন করুন", "Sign In")
+                    else -> tr("অ্যাকাউন্ট খুলুন ও শুরু করুন", "Create Account & Get Started")
+                },
                 enabled = !isLoading,
                 onClick = {
                     scope.launch {
@@ -334,8 +383,17 @@ fun SparcAuthScreen(
                     Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = p.accentText)
                 }
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("ডেমো গবেষক হিসেবে সরাসরি প্রবেশ করুন", fontWeight = FontWeight.Bold, fontSize = 13.5.sp, color = p.text)
-                    Text("পাসওয়ার্ড ছাড়াই ১ ট্যাপে সব ফিচার ও ১২টি স্ক্রিন টেস্ট করুন", fontSize = 11.5.sp, color = p.muted)
+                    Text(
+                        tr("ডেমো গবেষক হিসেবে সরাসরি প্রবেশ করুন", "Enter Instantly as Demo Researcher"),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.5.sp,
+                        color = p.text
+                    )
+                    Text(
+                        tr("পাসওয়ার্ড ছাড়াই ১ ট্যাপে সব ফিচার ও ১২টি স্ক্রিন টেস্ট করুন", "Explore all features & 12 screens in 1 tap without a password"),
+                        fontSize = 11.5.sp,
+                        color = p.muted
+                    )
                 }
             }
         }

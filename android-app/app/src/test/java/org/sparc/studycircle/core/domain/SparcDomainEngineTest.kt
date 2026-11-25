@@ -252,9 +252,22 @@ class SparcDomainEngineTest {
         )
         assertFalse(repo.state.value.isAuthenticated)
 
+        val shortPass = repo.registerResearcher(
+            name = "আরিফুল ইসলাম",
+            email = "ariful@du.ac.bd",
+            password = "123",
+            department = "Sociology",
+            skills = listOf("Data Analysis"),
+            referralCode = ""
+        )
+        assertTrue(shortPass.isFailure)
+
+        repo.setAppLanguage("en")
+        assertEquals("en", repo.state.value.appLanguage)
+
         val baseWallet = repo.state.value.currentUser.walletBalanceBdt
         val result = repo.registerResearcher(
-            name = "আরিফুল ইসলাম",
+            name = "Ariful Islam",
             email = "ariful@du.ac.bd",
             password = "secret123",
             department = "Sociology",
@@ -265,9 +278,7 @@ class SparcDomainEngineTest {
         assertTrue(repo.state.value.isAuthenticated)
         assertTrue(authFlag)
         assertEquals(baseWallet + 50.0, repo.state.value.currentUser.walletBalanceBdt, 0.01)
-
-        repo.setAppLanguage("en")
-        assertEquals("en", repo.state.value.appLanguage)
+        assertTrue(repo.state.value.statusBannerMessage?.contains("Account created") == true)
 
         repo.logout()
         assertFalse(repo.state.value.isAuthenticated)

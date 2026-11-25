@@ -23,6 +23,8 @@ import org.sparc.studycircle.core.data.SparcRepository
 import org.sparc.studycircle.core.domain.SparcDomainEngine
 import org.sparc.studycircle.core.model.UserProfile
 import org.sparc.studycircle.core.theme.LocalSparcPalette
+import org.sparc.studycircle.core.theme.tr
+import org.sparc.studycircle.core.theme.trContent
 import org.sparc.studycircle.ui.components.*
 
 private val ALL_DEPARTMENTS = listOf(
@@ -60,7 +62,10 @@ fun OnboardingAndDirectoryScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
             SparcSegmentedPills(
-                options = listOf("গবেষক ডিরেক্টরি", "প্রোফাইল ও স্কিল সেটআপ"),
+                options = listOf(
+                    tr("গবেষক ডিরেক্টরি", "Researcher Directory"),
+                    tr("প্রোফাইল ও স্কিল সেটআপ", "Profile & Skills Setup")
+                ),
                 selectedIndex = subTab,
                 onSelect = { subTab = it }
             )
@@ -84,7 +89,7 @@ fun OnboardingAndDirectoryScreen(
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        placeholder = { Text("গবেষক বা দক্ষতা দিয়ে খুঁজুন...") },
+                        placeholder = { Text(tr("গবেষক বা দক্ষতা দিয়ে খুঁজুন...", "Search researchers or skills...")) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         shape = RoundedCornerShape(16.dp),
                         singleLine = true,
@@ -106,7 +111,7 @@ fun OnboardingAndDirectoryScreen(
                                 modifier = Modifier.clickable { selectedDept = dept }
                             ) {
                                 Text(
-                                    text = if (dept == "All Depts") "সব বিভাগ" else dept,
+                                    text = if (dept == "All Depts") tr("সব বিভাগ", "All Depts") else dept,
                                     color = if (selected) Color.White else p.text,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
@@ -118,12 +123,13 @@ fun OnboardingAndDirectoryScreen(
                 }
 
                 items(filteredMembers, key = { it.id }) { member ->
+                    val memberName = trContent(member.name)
                     SparcScholarlyCard {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            SparcAvatarCircle(name = member.name, size = 44.dp)
+                            SparcAvatarCircle(name = memberName, size = 44.dp)
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(member.name, style = MaterialTheme.typography.titleMedium, color = p.text)
+                                Text(memberName, style = MaterialTheme.typography.titleMedium, color = p.text)
                                 Text(
                                     "${member.department} • ★ ${member.rating} • 🔥 ${member.readingStreakDays}d",
                                     fontSize = 12.sp,
@@ -180,8 +186,8 @@ fun OnboardingAndDirectoryScreen(
                     .padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Invite ${target.name}", style = MaterialTheme.typography.titleLarge, color = p.text)
-                Text("কুইক মেসেজ টেমপ্লেট বেছে নিন:", fontSize = 12.sp, color = p.muted)
+                Text("Invite ${trContent(target.name)}", style = MaterialTheme.typography.titleLarge, color = p.text)
+                Text(tr("কুইক মেসেজ টেমপ্লেট বেছে নিন:", "Choose a quick invitation template:"), fontSize = 12.sp, color = p.muted)
                 templates.forEachIndexed { idx, tpl ->
                     val selected = idx == chosenIdx
                     Surface(
@@ -197,7 +203,7 @@ fun OnboardingAndDirectoryScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = tpl,
+                                text = trContent(tpl),
                                 color = if (selected) p.primarySoftText else p.text,
                                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                                 modifier = Modifier.weight(1f)
@@ -209,7 +215,7 @@ fun OnboardingAndDirectoryScreen(
                     }
                 }
                 SparcPrimaryButton(
-                    text = "আমন্ত্রণ পাঠান (+৫ পয়েন্ট)",
+                    text = tr("আমন্ত্রণ পাঠান (+৫ পয়েন্ট)", "Send Invitation (+5 pts)"),
                     onClick = {
                         repository.sendInviteMessage(target, templates[chosenIdx])
                         inviteTarget = null
@@ -242,24 +248,28 @@ private fun OnboardingProfileSetupView(
         item {
             SparcScholarlyCard {
                 Text("STEP 2 OF 2 • RESEARCHER SETUP", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = p.primary)
-                Text("গবেষক প্রোফাইল ও দক্ষতা নির্বাচন", style = MaterialTheme.typography.titleLarge, color = p.text)
+                Text(
+                    tr("গবেষক প্রোফাইল ও দক্ষতা নির্বাচন", "Researcher Profile & Skill Tags"),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = p.text
+                )
 
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("গবেষকের নাম") },
+                    label = { Text(tr("গবেষকের নাম", "Researcher Name")) },
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = department,
                     onValueChange = { department = it },
-                    label = { Text("বিভাগ (Department)") },
+                    label = { Text(tr("বিভাগ (Department)", "Department")) },
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Text("রিসার্চ ইন্টারেস্ট:", style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(tr("রিসার্চ ইন্টারেস্ট:", "Research Interests:"), style = MaterialTheme.typography.titleMedium, color = p.text)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ALL_INTEREST_TAGS.forEach { tag ->
                         val active = tag in interests
@@ -281,7 +291,7 @@ private fun OnboardingProfileSetupView(
                     }
                 }
 
-                Text("কো-অথর ম্যাচমেকিং স্কিলস:", style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(tr("কো-অথর ম্যাচমেকিং স্কিলস:", "Co-Author Matchmaking Skills:"), style = MaterialTheme.typography.titleMedium, color = p.text)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ALL_SKILL_TAGS.forEach { sk ->
                         val active = sk in skills
@@ -315,18 +325,18 @@ private fun OnboardingProfileSetupView(
                         OutlinedTextField(
                             value = referralInput,
                             onValueChange = { referralInput = it },
-                            label = { Text("রেফারেল কোড") },
+                            label = { Text(tr("রেফারেল কোড", "Referral Code")) },
                             singleLine = true,
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
                         )
                         Spacer(Modifier.width(10.dp))
-                        Text("+৳৫০ বোনাস!", color = p.accentText, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+                        Text(tr("+৳৫০ বোনাস!", "+৳50 Bonus!"), color = p.accentText, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
                     }
                 }
 
                 SparcPrimaryButton(
-                    text = "প্রোফাইল সংরক্ষণ করুন",
+                    text = tr("প্রোফাইল সংরক্ষণ করুন", "Save Researcher Profile"),
                     onClick = { onSave(name, department, interests.toList(), skills.toList(), referralInput) }
                 )
             }

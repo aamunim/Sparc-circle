@@ -436,13 +436,16 @@ fun SparcSettingsBottomSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = "অ্যাপ সেটিংস ও API কনফিগারেশন",
+                text = tr("অ্যাপ সেটিংস ও API কনফিগারেশন", "App Settings & API Configuration"),
                 style = MaterialTheme.typography.titleLarge,
                 color = p.text
             )
 
             SparcSegmentedPills(
-                options = listOf("🎨 থিম ও ভাষা", "🔑 API Keys ম্যানেজার"),
+                options = listOf(
+                    tr("🎨 থিম ও ভাষা", "🎨 Theme & Language"),
+                    tr("🔑 API Keys ম্যানেজার", "🔑 API Keys")
+                ),
                 selectedIndex = settingsTab,
                 onSelect = { settingsTab = it }
             )
@@ -508,7 +511,7 @@ fun SparcSettingsBottomSheet(
                                         fontSize = 13.sp,
                                         color = if (active) p.primarySoftText else p.text
                                     )
-                                    Text(themeItem.subtitleBn, fontSize = 11.sp, color = p.muted)
+                                    Text(themeItem.subtitle(currentLanguage), fontSize = 11.sp, color = p.muted)
                                 }
                                 if (active) {
                                     Icon(Icons.Default.CheckCircle, contentDescription = null, tint = p.primary)
@@ -523,8 +526,16 @@ fun SparcSettingsBottomSheet(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("রিডিং স্ট্রিক ও Quiet Hours (১০ PM–৭ AM)", fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp)
-                            Text("অটো স্ট্রিক রিমাইন্ডার ও নাইট কিউ", fontSize = 11.sp, color = p.muted)
+                            Text(
+                                tr("রিডিং স্ট্রিক ও Quiet Hours (১০ PM–৭ AM)", "Reading Streak & Quiet Hours (10 PM–7 AM)"),
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.5.sp
+                            )
+                            Text(
+                                tr("অটো স্ট্রিক রিমাইন্ডার ও নাইট কিউ", "Auto streak reminders & night notification queue"),
+                                fontSize = 11.sp,
+                                color = p.muted
+                            )
                         }
                         Switch(checked = streakNotifications, onCheckedChange = { streakNotifications = it })
                     }
@@ -538,7 +549,7 @@ fun SparcSettingsBottomSheet(
                         border = BorderStroke(1.2.dp, SparcCrimson),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("লগআউট করুন (Sign Out)", color = SparcCrimson, fontWeight = FontWeight.Bold)
+                        Text(tr("লগআউট করুন (Sign Out)", "Sign Out"), color = SparcCrimson, fontWeight = FontWeight.Bold)
                     }
                     Spacer(Modifier.height(10.dp))
                 }
@@ -561,6 +572,7 @@ private fun ApiKeysVaultPanel(
     onUpdateVault: (org.sparc.studycircle.core.model.ApiKeyVaultConfig, String) -> Unit
 ) {
     val p = LocalSparcPalette.current
+    val isEn = LocalAppLanguage.current == "en"
     var geminiInput by remember(apiVault.geminiApiKey) { mutableStateOf(apiVault.geminiApiKey) }
     var bkashInput by remember(apiVault.bkashMerchantKey) { mutableStateOf(apiVault.bkashMerchantKey) }
     var sslInput by remember(apiVault.sslCommerzStoreId) { mutableStateOf(apiVault.sslCommerzStoreId) }
@@ -580,9 +592,9 @@ private fun ApiKeysVaultPanel(
             ) {
                 Text(
                     text = if (isSupabaseConnected)
-                        "✓ লাইভ Supabase ডাটাবেস সংযুক্ত আছে"
+                        tr("✓ লাইভ Supabase ডাটাবেস সংযুক্ত আছে", "✓ Connected to Live Supabase Database")
                     else
-                        "ℹ বর্তমানে অফলাইন ডেমো মোড চালু আছে",
+                        tr("ℹ বর্তমানে অফলাইন ডেমো মোড চালু আছে", "ℹ Running in Offline Demo Mode"),
                     color = if (isSupabaseConnected) p.primarySoftText else p.accentText,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
@@ -601,14 +613,14 @@ private fun ApiKeysVaultPanel(
                 onSave = {
                     onUpdateVault(
                         apiVault.copy(geminiApiKey = geminiInput.trim()),
-                        "Gemini API Key সফলভাবে যুক্ত হয়েছে!"
+                        if (isEn) "Gemini API Key saved!" else "Gemini API Key সফলভাবে যুক্ত হয়েছে!"
                     )
                 },
                 onRemove = {
                     geminiInput = ""
                     onUpdateVault(
                         apiVault.copy(geminiApiKey = ""),
-                        "Gemini API Key মুছে ফেলা হয়েছে।"
+                        if (isEn) "Gemini API Key removed." else "Gemini API Key মুছে ফেলা হয়েছে।"
                     )
                 }
             )
@@ -624,14 +636,14 @@ private fun ApiKeysVaultPanel(
                 onSave = {
                     onUpdateVault(
                         apiVault.copy(bkashMerchantKey = bkashInput.trim()),
-                        "bKash Merchant Key সংরক্ষিত হয়েছে!"
+                        if (isEn) "bKash Merchant Key saved!" else "bKash Merchant Key সংরক্ষিত হয়েছে!"
                     )
                 },
                 onRemove = {
                     bkashInput = ""
                     onUpdateVault(
                         apiVault.copy(bkashMerchantKey = ""),
-                        "bKash Merchant Key মুছে ফেলা হয়েছে।"
+                        if (isEn) "bKash Merchant Key removed." else "bKash Merchant Key মুছে ফেলা হয়েছে।"
                     )
                 }
             )
@@ -647,14 +659,14 @@ private fun ApiKeysVaultPanel(
                 onSave = {
                     onUpdateVault(
                         apiVault.copy(sslCommerzStoreId = sslInput.trim()),
-                        "SSLCommerz Key সংরক্ষিত হয়েছে!"
+                        if (isEn) "SSLCommerz Key saved!" else "SSLCommerz Key সংরক্ষিত হয়েছে!"
                     )
                 },
                 onRemove = {
                     sslInput = ""
                     onUpdateVault(
                         apiVault.copy(sslCommerzStoreId = ""),
-                        "SSLCommerz Key মুছে ফেলা হয়েছে।"
+                        if (isEn) "SSLCommerz Key removed." else "SSLCommerz Key মুছে ফেলা হয়েছে।"
                     )
                 }
             )
@@ -670,14 +682,14 @@ private fun ApiKeysVaultPanel(
                 onSave = {
                     onUpdateVault(
                         apiVault.copy(customJitsiServerUrl = jitsiInput.trim()),
-                        "কাস্টম ভিডিও সার্ভার URL সংরক্ষিত হয়েছে!"
+                        if (isEn) "Custom Jitsi Server URL saved!" else "কাস্টম ভিডিও সার্ভার URL সংরক্ষিত হয়েছে!"
                     )
                 },
                 onRemove = {
                     jitsiInput = ""
                     onUpdateVault(
                         apiVault.copy(customJitsiServerUrl = ""),
-                        "কাস্টম ভিডিও সার্ভার URL রিসেট করা হয়েছে।"
+                        if (isEn) "Custom Jitsi Server URL reset." else "কাস্টম ভিডিও সার্ভার URL রিসেট করা হয়েছে।"
                     )
                 }
             )
@@ -685,7 +697,7 @@ private fun ApiKeysVaultPanel(
 
         item {
             ApiKeySlotEditor(
-                title = "Custom Supabase URL (ঐচ্ছিক ওভাররাইড)",
+                title = tr("Custom Supabase URL (ঐচ্ছিক ওভাররাইড)", "Custom Supabase URL (Optional Override)"),
                 placeholder = "https://xxxx.supabase.co",
                 currentSaved = apiVault.customSupabaseUrl,
                 draftValue = supaUrlInput,
@@ -693,7 +705,7 @@ private fun ApiKeysVaultPanel(
                 onSave = {
                     onUpdateVault(
                         apiVault.copy(customSupabaseUrl = supaUrlInput.trim(), customSupabaseAnonKey = supaAnonInput.trim()),
-                        "কাস্টম Supabase সংযোগ সংরক্ষিত হয়েছে!"
+                        if (isEn) "Custom Supabase connection saved!" else "কাস্টম Supabase সংযোগ সংরক্ষিত হয়েছে!"
                     )
                 },
                 onRemove = {
@@ -701,7 +713,7 @@ private fun ApiKeysVaultPanel(
                     supaAnonInput = ""
                     onUpdateVault(
                         apiVault.copy(customSupabaseUrl = "", customSupabaseAnonKey = ""),
-                        "কাস্টম Supabase ওভাররাইড মুছে ফেলা হয়েছে।"
+                        if (isEn) "Custom Supabase override removed." else "কাস্টম Supabase ওভাররাইড মুছে ফেলা হয়েছে।"
                     )
                 }
             )
@@ -711,7 +723,7 @@ private fun ApiKeysVaultPanel(
             OutlinedTextField(
                 value = supaAnonInput,
                 onValueChange = { supaAnonInput = it },
-                label = { Text("Custom Supabase Anon Key (ঐচ্ছিক)") },
+                label = { Text(tr("Custom Supabase Anon Key (ঐচ্ছিক)", "Custom Supabase Anon Key (Optional)")) },
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -729,14 +741,14 @@ private fun ApiKeysVaultPanel(
                     supaAnonInput = ""
                     onUpdateVault(
                         org.sparc.studycircle.core.model.ApiKeyVaultConfig(),
-                        "সব কাস্টম API Key মুছে ফেলা হয়েছে।"
+                        if (isEn) "All custom API keys cleared." else "সব কাস্টম API Key মুছে ফেলা হয়েছে।"
                     )
                 },
                 shape = RoundedCornerShape(12.dp),
                 border = BorderStroke(1.dp, SparcCrimson),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("সব কাস্টম API Key মুছে ফেলুন (Clear All)", color = SparcCrimson, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                Text(tr("সব কাস্টম API Key মুছে ফেলুন (Clear All)", "Clear All Custom API Keys"), color = SparcCrimson, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
             }
         }
     }
@@ -754,9 +766,10 @@ private fun ApiKeySlotEditor(
 ) {
     val p = LocalSparcPalette.current
     val hasKey = currentSaved.isNotBlank()
+    val notSetLabel = tr("যুক্ত নেই", "Not set")
     val maskedPreview = if (currentSaved.length > 8) {
         "${currentSaved.take(5)}•••••${currentSaved.takeLast(3)}"
-    } else if (hasKey) "••••••" else "যুক্ত নেই"
+    } else if (hasKey) "••••••" else notSetLabel
 
     Surface(
         shape = RoundedCornerShape(16.dp),
@@ -779,7 +792,7 @@ private fun ApiKeySlotEditor(
                     color = if (hasKey) p.primarySoft else p.card
                 ) {
                     Text(
-                        text = if (hasKey) "✓ $maskedPreview" else "যুক্ত নেই",
+                        text = if (hasKey) "✓ $maskedPreview" else notSetLabel,
                         color = if (hasKey) p.primarySoftText else p.muted,
                         fontSize = 10.5.sp,
                         fontWeight = FontWeight.Bold,
@@ -805,7 +818,11 @@ private fun ApiKeySlotEditor(
                     colors = ButtonDefaults.buttonColors(containerColor = p.primary),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text(if (hasKey) "আপডেট করুন" else "যুক্ত করুন (Save)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (hasKey) tr("আপডেট করুন", "Update") else tr("যুক্ত করুন (Save)", "Save Key"),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
                 if (hasKey) {
                     OutlinedButton(
@@ -814,7 +831,7 @@ private fun ApiKeySlotEditor(
                         border = BorderStroke(1.dp, SparcCrimson),
                         modifier = Modifier.weight(0.8f)
                     ) {
-                        Text("মুছুন (Remove)", color = SparcCrimson, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(tr("মুছুন (Remove)", "Remove"), color = SparcCrimson, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }

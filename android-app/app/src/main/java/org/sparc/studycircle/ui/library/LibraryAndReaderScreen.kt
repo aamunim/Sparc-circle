@@ -22,6 +22,8 @@ import org.sparc.studycircle.core.domain.SparcDomainEngine
 import org.sparc.studycircle.core.model.BookItem
 import org.sparc.studycircle.core.model.HighlightVisibility
 import org.sparc.studycircle.core.theme.LocalSparcPalette
+import org.sparc.studycircle.core.theme.tr
+import org.sparc.studycircle.core.theme.trContent
 import org.sparc.studycircle.ui.components.*
 
 @Composable
@@ -38,7 +40,10 @@ fun LibraryAndReaderScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
             SparcSegmentedPills(
-                options = listOf("ডিজিটাল লাইব্রেরি", "স্মার্ট রিডার ও অডিও"),
+                options = listOf(
+                    tr("ডিজিটাল লাইব্রেরি", "Digital Library"),
+                    tr("স্মার্ট রিডার ও অডিও", "Smart Reader & Audio")
+                ),
                 selectedIndex = subTab,
                 onSelect = { subTab = it }
             )
@@ -119,7 +124,7 @@ private fun AcademicLibraryCatalogView(
                         if (book.isFirstChapterFree) {
                             Surface(shape = RoundedCornerShape(8.dp), color = p.accentSoft) {
                                 Text(
-                                    text = "১ম অধ্যায় ও কুইজ ফ্রি",
+                                    text = tr("১ম অধ্যায় ও কুইজ ফ্রি", "Chapter 1 & Quiz Free"),
                                     color = p.accentText,
                                     fontSize = 10.5.sp,
                                     fontWeight = FontWeight.Bold,
@@ -129,7 +134,10 @@ private fun AcademicLibraryCatalogView(
                         }
                         Text(book.title, style = MaterialTheme.typography.titleMedium, color = p.text)
                         Text(
-                            "${book.author} • ${book.totalChapters} অধ্যায় • ৳${book.physicalPriceBdt.toInt()}",
+                            tr(
+                                "${book.author} • ${book.totalChapters} অধ্যায় • ৳${book.physicalPriceBdt.toInt()}",
+                                "${book.author} • ${book.totalChapters} Chapters • ৳${book.physicalPriceBdt.toInt()}"
+                            ),
                             fontSize = 12.sp,
                             color = p.muted
                         )
@@ -143,7 +151,7 @@ private fun AcademicLibraryCatalogView(
                         colors = ButtonDefaults.buttonColors(containerColor = p.primary),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("ফ্রি অধ্যায় পড়ুন", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                        Text(tr("ফ্রি অধ্যায় পড়ুন", "Read Free Chapter"), fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
                     }
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -153,7 +161,7 @@ private fun AcademicLibraryCatalogView(
                             .clickable { onOrderHardcopy(book) }
                     ) {
                         Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 11.dp)) {
-                            Text("হার্ডকপি অর্ডার", color = p.text, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                            Text(tr("হার্ডকপি অর্ডার", "Order Hardcopy"), color = p.text, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
                         }
                     }
                 }
@@ -190,8 +198,8 @@ private fun SmartPaperReaderView(
                         bookId = book.id,
                         chapterNo = chapter.chapterNo,
                         pageNo = pageNo,
-                        selectedText = "PDF পৃষ্ঠা $pageNo হাইলাইট — $activeQuote",
-                        note = "PDF রিডার থেকে সংরক্ষিত",
+                        selectedText = "PDF Page $pageNo — $activeQuote",
+                        note = "Saved from PDF Reader",
                         isUnderline = false,
                         visibility = selectedPrivacy
                     )
@@ -202,7 +210,7 @@ private fun SmartPaperReaderView(
         // 2. Real Media3 ExoPlayer Audio Summary Player
         item {
             SparcAudioWaveformBar(
-                title = "বাংলা অডিও সামারি (ExoPlayer)",
+                title = tr("বাংলা অডিও সামারি (ExoPlayer)", "Chapter Audio Summary (ExoPlayer)"),
                 currentMs = audioController.currentPositionMs,
                 durationMs = audioController.durationMs,
                 speedLabel = "${audioController.speed}x",
@@ -222,10 +230,15 @@ private fun SmartPaperReaderView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("পেজ এস্টিমেটর ($targetDays দিনে শেষ)", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = p.text)
+                    Text(
+                        tr("পেজ এস্টিমেটর ($targetDays দিনে শেষ)", "Page Estimator (Finish in $targetDays days)"),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = p.text
+                    )
                     Surface(shape = RoundedCornerShape(8.dp), color = p.primarySoft) {
                         Text(
-                            "দৈনিক $dailyPages পৃষ্ঠা",
+                            tr("দৈনিক $dailyPages পৃষ্ঠা", "$dailyPages pages / day"),
                             color = p.primarySoftText,
                             fontSize = 11.5.sp,
                             fontWeight = FontWeight.Bold,
@@ -245,7 +258,11 @@ private fun SmartPaperReaderView(
         // 4. Highlight Privacy Selector & Bite-Sized Flash Notes
         item {
             SparcScholarlyCard(containerColor = p.readerPaper) {
-                Text("হাইলাইট প্রাইভেসি কন্ট্রোল ও ফ্ল্যাশ-নোটস", style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(
+                    tr("হাইলাইট প্রাইভেসি কন্ট্রোল ও ফ্ল্যাশ-নোটস", "Highlight Privacy Control & Flash Notes"),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = p.text
+                )
 
                 Surface(shape = RoundedCornerShape(12.dp), color = p.cardAlt) {
                     Row(modifier = Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -267,7 +284,7 @@ private fun SmartPaperReaderView(
                                             chapterNo = chapter.chapterNo,
                                             pageNo = 4,
                                             selectedText = activeQuote,
-                                            note = "প্রপোজালে উদ্ধৃত করব",
+                                            note = "Cite in proposal",
                                             isUnderline = false,
                                             visibility = vis
                                         )
@@ -287,7 +304,7 @@ private fun SmartPaperReaderView(
                 }
 
                 chapter.flashNotes.forEach { fn ->
-                    Text("• $fn", style = MaterialTheme.typography.bodyMedium, color = p.muted)
+                    Text("• ${trContent(fn)}", style = MaterialTheme.typography.bodyMedium, color = p.muted)
                 }
             }
         }
@@ -310,11 +327,14 @@ private fun HardcopyOrderDialog(
         containerColor = p.card,
         titleContentColor = p.text,
         textContentColor = p.text,
-        title = { Text("হার্ডকপি বই অর্ডার / সংগ্রহ") },
+        title = { Text(tr("হার্ডকপি বই অর্ডার / সংগ্রহ", "Order or Borrow Hardcopy Book")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "গোপনীয়তা: শুধুমাত্র SPARC অ্যাডমিন, শিক্ষক বা প্রতিনিধি দেখতে পাবেন।",
+                    tr(
+                        "গোপনীয়তা: শুধুমাত্র SPARC অ্যাডমিন, শিক্ষক বা প্রতিনিধি দেখতে পাবেন।",
+                        "Privacy: Visible strictly to SPARC Admin, Supervisor, or Representative."
+                    ),
                     fontSize = 12.sp,
                     color = p.primary
                 )
@@ -322,16 +342,16 @@ private fun HardcopyOrderDialog(
                     FilterChip(
                         selected = mode == "Purchase",
                         onClick = { mode = "Purchase" },
-                        label = { Text("ক্রয় (৳${book.physicalPriceBdt.toInt()})") }
+                        label = { Text(tr("ক্রয় (৳${book.physicalPriceBdt.toInt()})", "Buy (৳${book.physicalPriceBdt.toInt()})")) }
                     )
                     FilterChip(
                         selected = mode == "Borrow",
                         onClick = { mode = "Borrow" },
-                        label = { Text("সংগ্রহ (Borrow)") }
+                        label = { Text(tr("সংগ্রহ (Borrow)", "Borrow")) }
                     )
                 }
-                OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text("ঠিকানা") })
-                OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text("মোবাইল নম্বর") })
+                OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text(tr("ঠিকানা", "Delivery Address")) })
+                OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text(tr("মোবাইল নম্বর", "Phone Number")) })
             }
         },
         confirmButton = {
@@ -339,11 +359,11 @@ private fun HardcopyOrderDialog(
                 onClick = { onConfirm(mode, address, phone) },
                 colors = ButtonDefaults.buttonColors(containerColor = p.primary)
             ) {
-                Text("নিশ্চিত করুন")
+                Text(tr("নিশ্চিত করুন", "Confirm Order"))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("বাতিল", color = p.muted) }
+            TextButton(onClick = onDismiss) { Text(tr("বাতিল", "Cancel"), color = p.muted) }
         }
     )
 }

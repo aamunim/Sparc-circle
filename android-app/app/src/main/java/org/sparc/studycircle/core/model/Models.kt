@@ -5,20 +5,26 @@ import kotlinx.serialization.Serializable
 @Serializable
 enum class SparcVisualTheme(
     val titleBn: String,
-    val subtitleBn: String
+    val subtitleBn: String,
+    val subtitleEn: String
 ) {
     COBALT_SAAS(
         titleBn = "Cobalt SaaS (Light)",
-        subtitleBn = "Coursera / Brilliant ধাঁচের আল্ট্রা-ক্লিন সাদা ও ইলেকট্রিক ব্লু"
+        subtitleBn = "Coursera / Brilliant ধাঁচের আল্ট্রা-ক্লিন সাদা ও ইলেকট্রিক ব্লু",
+        subtitleEn = "Ultra-clean white & electric cobalt Coursera/Brilliant style"
     ),
     MIDNIGHT_GLASS(
         titleBn = "Midnight Glass (Dark)",
-        subtitleBn = "Linear / Audible ধাঁচের প্রিমিয়াম ডার্ক গ্লাসমরফিজম"
+        subtitleBn = "Linear / Audible ধাঁচের প্রিমিয়াম ডার্ক গ্লাসমরফিজম",
+        subtitleEn = "Premium dark glassmorphism Linear/Audible style"
     ),
     OCEAN_HERO(
         titleBn = "Ocean Hero (Layered)",
-        subtitleBn = "Blinkist / Headspace ধাঁচের কার্ভড টিল হিরো ও ডার্ক ফ্লোটিং ডক"
-    )
+        subtitleBn = "Blinkist / Headspace ধাঁচের কার্ভড টিল হিরো ও ডার্ক ফ্লোটিং ডক",
+        subtitleEn = "Curved ocean-teal hero header & floating dark capsule dock"
+    );
+
+    fun subtitle(lang: String): String = if (lang == "en") subtitleEn else subtitleBn
 }
 
 @Serializable
@@ -35,10 +41,12 @@ data class ApiKeyVaultConfig(
 enum class UserRole { MEMBER, SUPERVISOR, SPARC_REP, ADMIN }
 
 @Serializable
-enum class HighlightVisibility(val labelBn: String) {
-    PRIVATE("ব্যক্তিগত (Private)"),
-    SUPERVISOR("শুধু সুপারভাইজার"),
-    GROUP("গ্রুপ সদস্য")
+enum class HighlightVisibility(val labelBn: String, val labelEn: String) {
+    PRIVATE("ব্যক্তিগত (Private)", "Private"),
+    SUPERVISOR("শুধু সুপারভাইজার", "Supervisor Only"),
+    GROUP("গ্রুপ সদস্য", "Group Members");
+
+    fun label(lang: String): String = if (lang == "en") labelEn else labelBn
 }
 
 @Serializable
@@ -54,46 +62,54 @@ enum class ChapterType(
 }
 
 @Serializable
-enum class CircleStatus(val labelBn: String) {
-    FORMING("গঠন প্রক্রিয়াধীন"),
-    ACTIVE("সক্রিয় (Active)"),
-    COMPLETED("সম্পন্ন")
+enum class CircleStatus(val labelBn: String, val labelEn: String) {
+    FORMING("গঠন প্রক্রিয়াধীন", "Forming"),
+    ACTIVE("সক্রিয় (Active)", "Active"),
+    COMPLETED("সম্পন্ন", "Completed");
+
+    fun label(lang: String): String = if (lang == "en") labelEn else labelBn
 }
 
 @Serializable
 enum class SupervisorAssignmentType { MEMBER_VOTED, ADMIN_ASSIGNED }
 
 @Serializable
-enum class ProgressStage(val step: Int, val labelBn: String) {
-    NOT_STARTED(1, "শুরু হয়নি (Not Started)"),
-    READING_STARTED(2, "পড়া শুরু (Reading Started)"),
-    READING_IN_PROGRESS(3, "পড়া চলছে (In Progress)"),
-    READING_COMPLETED(4, "পড়া সম্পন্ন (Completed)"),
-    EXERCISES_SUBMITTED(5, "অনুশীলনী জমা (Submitted)"),
-    LEARNING_VERIFIED(6, "শিখন যাচাইকৃত (Verified)")
+enum class ProgressStage(val step: Int, val labelBn: String, val labelEn: String) {
+    NOT_STARTED(1, "শুরু হয়নি", "Not Started"),
+    READING_STARTED(2, "পড়া শুরু", "Reading Started"),
+    READING_IN_PROGRESS(3, "পড়া চলছে", "Reading in Progress"),
+    READING_COMPLETED(4, "পড়া সম্পন্ন", "Reading Completed"),
+    EXERCISES_SUBMITTED(5, "অনুশীলনী জমা", "Exercises Submitted"),
+    LEARNING_VERIFIED(6, "শিখন যাচাইকৃত", "Learning Verified");
+
+    fun label(lang: String): String = if (lang == "en") labelEn else labelBn
 }
 
 @Serializable
 enum class CalibrationFlag(val labelBn: String) {
-    OVER_CONFIDENT("Over-confident (আত্মমূল্যায়ন বেশি, নম্বর < ৫০%)"),
-    UNDER_CONFIDENT("Under-confident (আত্মমূল্যায়ন কম, নম্বর >= ৮০%)")
+    OVER_CONFIDENT("Over-confident (Self-rating >= 4, Score < 50%)"),
+    UNDER_CONFIDENT("Under-confident (Self-rating <= 2, Score >= 80%)")
 }
 
 @Serializable
 enum class PokeDeliveryMode { INSTANT, DAILY_SUMMARY, QUIET_HOURS_QUEUED, MUTED }
 
 @Serializable
-enum class MuteScope(val labelBn: String) {
-    HOURS_24("২৪ ঘণ্টা"),
-    DAYS_7("৭ দিন"),
-    ENTIRE_CHAPTER("পুরো অধ্যায়")
+enum class MuteScope(val labelBn: String, val labelEn: String) {
+    HOURS_24("২৪ ঘণ্টা", "24h"),
+    DAYS_7("৭ দিন", "7d"),
+    ENTIRE_CHAPTER("পুরো অধ্যায়", "Chapter");
+
+    fun label(lang: String): String = if (lang == "en") labelEn else labelBn
 }
 
 @Serializable
-enum class PaymentMethod(val labelBn: String) {
-    SSLCOMMERZ("SSLCommerz গেটওয়ে"),
-    BKASH_PGW("bKash পেমেন্ট গেটওয়ে"),
-    MANUAL_TRX("ম্যানুয়াল bKash/Nagad TrxID")
+enum class PaymentMethod(val labelBn: String, val labelEn: String) {
+    SSLCOMMERZ("SSLCommerz গেটওয়ে", "SSLCommerz Gateway"),
+    BKASH_PGW("bKash পেমেন্ট গেটওয়ে", "bKash Payment Gateway"),
+    MANUAL_TRX("ম্যানুয়াল bKash/Nagad TrxID", "Manual bKash/Nagad TrxID");
+
+    fun label(lang: String): String = if (lang == "en") labelEn else labelBn
 }
 
 @Serializable

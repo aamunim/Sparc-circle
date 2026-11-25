@@ -25,6 +25,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.sparc.studycircle.core.data.SparcRepository
 import org.sparc.studycircle.core.theme.LocalSparcPalette
+import org.sparc.studycircle.core.theme.tr
+import org.sparc.studycircle.core.theme.trContent
 import org.sparc.studycircle.ui.assessment.AssessmentAndSessionScreen
 import org.sparc.studycircle.ui.circle.StudyCircleScreen
 import org.sparc.studycircle.ui.components.SparcAvatarCircle
@@ -33,18 +35,21 @@ import org.sparc.studycircle.ui.library.LibraryAndReaderScreen
 import org.sparc.studycircle.ui.onboarding.OnboardingAndDirectoryScreen
 import org.sparc.studycircle.ui.research.ResearchAndWalletScreen
 
-enum class MainTab(val titleBn: String, val icon: ImageVector) {
-    DIRECTORY("ডিরেক্টরি", Icons.Default.People),
-    LIBRARY("লাইব্রেরি", Icons.AutoMirrored.Filled.MenuBook),
-    CIRCLE("সার্কেল", Icons.Default.Explore),
-    ASSESSMENT("মূল্যায়ন", Icons.AutoMirrored.Filled.FactCheck),
-    RESEARCH("রিসার্চ", Icons.Default.Science)
+enum class MainTab(val titleBn: String, val titleEn: String, val icon: ImageVector) {
+    DIRECTORY("ডিরেক্টরি", "Directory", Icons.Default.People),
+    LIBRARY("লাইব্রেরি", "Library", Icons.AutoMirrored.Filled.MenuBook),
+    CIRCLE("সার্কেল", "Circle", Icons.Default.Explore),
+    ASSESSMENT("মূল্যায়ন", "Assess", Icons.AutoMirrored.Filled.FactCheck),
+    RESEARCH("রিসার্চ", "Research", Icons.Default.Science);
+
+    fun label(lang: String): String = if (lang == "en") titleEn else titleBn
 }
 
 @Composable
 fun SparcMainScaffold(repository: SparcRepository) {
     val state by repository.state.collectAsState()
     val p = LocalSparcPalette.current
+    val displayUserName = trContent(state.currentUser.name)
 
     var currentTab by remember { mutableStateOf(MainTab.CIRCLE) }
     var researchInitialSubTab by remember { mutableIntStateOf(0) }
@@ -72,19 +77,19 @@ fun SparcMainScaffold(repository: SparcRepository) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         SparcAvatarCircle(
-                            name = state.currentUser.name,
+                            name = displayUserName,
                             size = 42.dp,
                             bgColor = Color.White.copy(alpha = 0.22f)
                         )
                         Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "স্বাগতম গবেষক",
+                                text = tr("স্বাগতম গবেষক", "Welcome Researcher"),
                                 fontSize = 11.sp,
                                 color = Color.White.copy(alpha = 0.82f)
                             )
                             Text(
-                                text = state.currentUser.name,
+                                text = displayUserName,
                                 style = MaterialTheme.typography.titleMedium,
                                 color = Color.White
                             )
@@ -145,11 +150,11 @@ fun SparcMainScaffold(repository: SparcRepository) {
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        SparcAvatarCircle(name = state.currentUser.name, size = 40.dp)
+                        SparcAvatarCircle(name = displayUserName, size = 40.dp)
                         Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = state.currentUser.name,
+                                text = displayUserName,
                                 style = MaterialTheme.typography.titleMedium,
                                 color = p.text
                             )
@@ -224,7 +229,7 @@ fun SparcMainScaffold(repository: SparcRepository) {
                             modifier = Modifier.weight(1f)
                         )
                         TextButton(onClick = { repository.dismissBanner() }) {
-                            Text("ঠিক আছে", color = p.primarySoftText, fontWeight = FontWeight.Bold)
+                            Text(tr("ঠিক আছে", "OK"), color = p.primarySoftText, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -286,6 +291,7 @@ fun SparcMainScaffold(repository: SparcRepository) {
                 MainTab.entries.forEach { tab ->
                     val selected = currentTab == tab
                     val labelSelectedColor = if (p.useHeroHeader) Color.White else p.primary
+                    val tabTitle = tab.label(state.appLanguage)
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
@@ -302,14 +308,14 @@ fun SparcMainScaffold(repository: SparcRepository) {
                         ) {
                             Icon(
                                 imageVector = tab.icon,
-                                contentDescription = tab.titleBn,
+                                contentDescription = tabTitle,
                                 tint = if (selected) Color.White else p.dockInactive,
                                 modifier = Modifier.size(19.dp)
                             )
                         }
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            text = tab.titleBn,
+                            text = tabTitle,
                             fontSize = 10.5.sp,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                             color = if (selected) labelSelectedColor else p.dockInactive

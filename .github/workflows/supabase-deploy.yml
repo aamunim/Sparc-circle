@@ -49,6 +49,16 @@ jobs:
             echo "project_ref=$REF" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Configure Supabase Auth (Enable Instant Signup / Prevent 429 Email Rate Limit)
+        if: steps.check_secrets.outputs.configured == 'true'
+        run: |
+          REF="${{ steps.check_secrets.outputs.project_ref }}"
+          HTTP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -X PATCH "https://api.supabase.com/v1/projects/$REF/config/auth" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"mailer_autoconfirm": true}' || echo "000")
+          echo "Auth config PATCH HTTP status: $HTTP_CODE"
+
       - name: Set up Supabase CLI (Pinned v3.4.0)
         if: steps.check_secrets.outputs.configured == 'true'
         uses: supabase/setup-cli@v1
@@ -75,11 +85,12 @@ jobs:
             supabase secrets set --remote="$REF" --yes BKASH_APP_KEY="$BKASH_APP_KEY"
           fi
 
-      - name: Deploy All 4 Supabase Edge Functions
+      - name: Deploy All 5 Supabase Edge Functions
         if: steps.check_secrets.outputs.configured == 'true'
         run: |
           REF="${{ steps.check_secrets.outputs.project_ref }}"
-          supabase functions deploy ai-writing-assistant --remote="$REF" --yes
+          supabase functions deploy auth-register --no-verify-jwt --remote="$REF" --yes
+          supabase functions deploy ai-writing-assistant --no-verify-jwt --remote="$REF" --yes
           supabase functions deploy wallet-payment --remote="$REF" --yes
           supabase functions deploy poke-dispatch --remote="$REF" --yes
           supabase functions deploy generate-certificate --remote="$REF" --yes

@@ -21,7 +21,10 @@ import org.sparc.studycircle.core.data.SparcAppState
 import org.sparc.studycircle.core.data.SparcRepository
 import org.sparc.studycircle.core.domain.SparcDomainEngine
 import org.sparc.studycircle.core.model.*
+import org.sparc.studycircle.core.theme.LocalAppLanguage
 import org.sparc.studycircle.core.theme.LocalSparcPalette
+import org.sparc.studycircle.core.theme.tr
+import org.sparc.studycircle.core.theme.trContent
 import org.sparc.studycircle.ui.components.*
 
 @Composable
@@ -32,6 +35,7 @@ fun StudyCircleScreen(
     onOpenLiveSession: () -> Unit = {}
 ) {
     val p = LocalSparcPalette.current
+    val lang = LocalAppLanguage.current
     var subTab by remember { mutableIntStateOf(0) }
     val circle = state.circles.first()
     val chapter = state.books.first().chapters.first()
@@ -49,7 +53,10 @@ fun StudyCircleScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
             SparcSegmentedPills(
-                options = listOf("হোম ও সার্কেল হাব", "ভোটিং, Poke ও ডিবেট"),
+                options = listOf(
+                    tr("হোম ও সার্কেল হাব", "Home & Circle Hub"),
+                    tr("ভোটিং, Poke ও ডিবেট", "Voting, Poke & Debate")
+                ),
                 selectedIndex = subTab,
                 onSelect = { subTab = it }
             )
@@ -84,13 +91,13 @@ fun StudyCircleScreen(
                                 }
                                 Spacer(Modifier.height(8.dp))
                                 Text(
-                                    text = circle.name,
+                                    text = trContent(circle.name),
                                     color = Color.White,
                                     fontSize = 18.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
                                 Text(
-                                    text = "সুপারভাইজার: ড. নুসরাত জাহান",
+                                    text = tr("সুপারভাইজার: ড. নুসরাত জাহান", "Supervisor: Dr. Nusrat Jahan"),
                                     color = Color.White.copy(alpha = 0.85f),
                                     fontSize = 12.sp
                                 )
@@ -118,7 +125,10 @@ fun StudyCircleScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "ধাপ ${myProgress.stage.step}/৬: ${myProgress.stage.labelBn}",
+                                text = tr(
+                                    "ধাপ ${myProgress.stage.step}/৬: ${myProgress.stage.labelBn}",
+                                    "Stage ${myProgress.stage.step}/6: ${myProgress.stage.labelEn}"
+                                ),
                                 color = Color.White,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
@@ -134,29 +144,33 @@ fun StudyCircleScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         SparcScholarlyCard(modifier = Modifier.weight(1f)) {
-                            Text("আজকের লক্ষ্যমাত্রা", fontSize = 11.sp, color = p.muted)
+                            Text(tr("আজকের লক্ষ্যমাত্রা", "Daily Target"), fontSize = 11.sp, color = p.muted)
                             Text(
-                                "${myProgress.dailyTargetPages} পৃষ্ঠা / দিন",
+                                tr("${myProgress.dailyTargetPages} পৃষ্ঠা / দিন", "${myProgress.dailyTargetPages} pages / day"),
                                 fontSize = 19.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = p.primary
                             )
-                            Text("১৮/${chapter.totalPages} পৃষ্ঠা সম্পন্ন", fontSize = 11.sp, color = p.muted)
+                            Text(
+                                tr("১৮/${chapter.totalPages} পৃষ্ঠা সম্পন্ন", "18/${chapter.totalPages} pages read"),
+                                fontSize = 11.sp,
+                                color = p.muted
+                            )
                             SparcPrimaryButton(
-                                text = "পড়া শুরু",
+                                text = tr("পড়া শুরু", "Start Reading"),
                                 onClick = onContinueReading
                             )
                         }
 
                         SparcScholarlyCard(modifier = Modifier.weight(1f)) {
-                            Text("পরবর্তী লাইভ সেশন", fontSize = 11.sp, color = p.muted)
+                            Text(tr("পরবর্তী লাইভ সেশন", "Next Live Session"), fontSize = 11.sp, color = p.muted)
                             Text(
-                                "শুক্রবার ৮:৩০",
+                                tr("শুক্রবার ৮:৩০", "Fri 8:30 PM"),
                                 fontSize = 17.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = p.text
                             )
-                            Text("Jitsi In-App • ৪০ মি.", fontSize = 11.sp, color = p.muted)
+                            Text(tr("Jitsi In-App • ৪০ মি.", "Jitsi In-App • 40m"), fontSize = 11.sp, color = p.muted)
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
                                 color = p.primarySoft,
@@ -165,7 +179,7 @@ fun StudyCircleScreen(
                                     .clickable { onOpenLiveSession() }
                             ) {
                                 Text(
-                                    text = "সেশন রুম ›",
+                                    text = tr("সেশন রুম ›", "Session Room ›"),
                                     color = p.primarySoftText,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 13.sp,
@@ -187,11 +201,15 @@ fun StudyCircleScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text("পিয়ার মোটিভেশন (Poke)", style = MaterialTheme.typography.titleMedium, color = p.text)
-                                Text("আজ বাকি ২/৩ • Quiet Hours ১০ PM–৭ AM", fontSize = 11.5.sp, color = p.muted)
+                                Text(tr("পিয়ার মোটিভেশন (Poke)", "Peer Motivation (Poke)"), style = MaterialTheme.typography.titleMedium, color = p.text)
+                                Text(
+                                    tr("আজ বাকি ২/৩ • Quiet Hours ১০ PM–৭ AM", "2/3 left today • Quiet Hours 10 PM–7 AM"),
+                                    fontSize = 11.5.sp,
+                                    color = p.muted
+                                )
                             }
                             Text(
-                                text = "সব দেখুন ›",
+                                text = tr("সব দেখুন ›", "View All ›"),
                                 color = p.primary,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
@@ -201,6 +219,7 @@ fun StudyCircleScreen(
 
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             items(circlePeers, key = { it.id }) { peer ->
+                                val peerDisplayName = trContent(peer.name)
                                 val stg = state.memberStageByUserId[peer.id] ?: ProgressStage.READING_STARTED
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -211,12 +230,12 @@ fun StudyCircleScreen(
                                     }
                                 ) {
                                     SparcAvatarCircle(
-                                        name = peer.name,
+                                        name = peerDisplayName,
                                         size = 46.dp,
                                         bgColor = if (stg.step < ProgressStage.EXERCISES_SUBMITTED.step) p.accent else p.primary
                                     )
                                     Spacer(Modifier.height(4.dp))
-                                    Text(peer.name.split(" ").first(), fontSize = 11.sp, color = p.text, fontWeight = FontWeight.SemiBold)
+                                    Text(peerDisplayName.split(" ").first(), fontSize = 11.sp, color = p.text, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -226,6 +245,7 @@ fun StudyCircleScreen(
         } else {
             // Sub-tab 1: Supervisor Voting, Poke Quiet Hours/Mute/1-Tap Reply & Poll/Debate
             val pokesSentToday = state.pokesToday.count { it.senderId == state.currentUser.id }
+            val remainingPokes = (3 - pokesSentToday).coerceAtLeast(0)
             var debateComment by remember { mutableStateOf("") }
             var selectedStance by remember { mutableStateOf("Support") }
 
@@ -242,12 +262,15 @@ fun StudyCircleScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text("সুপারভাইজার ইলেকশন", fontSize = 11.5.sp, color = p.muted)
-                                Text("ড. নুসরাত জাহান", style = MaterialTheme.typography.titleMedium, color = p.text)
+                                Text(tr("সুপারভাইজার ইলেকশন", "Supervisor Election"), fontSize = 11.5.sp, color = p.muted)
+                                Text(tr("ড. নুসরাত জাহান", "Dr. Nusrat Jahan"), style = MaterialTheme.typography.titleMedium, color = p.text)
                             }
                             Surface(shape = RoundedCornerShape(12.dp), color = p.primarySoft) {
                                 Text(
-                                    text = "${circle.supervisorVotes.size}/${circle.memberIds.size} ভোটে নির্বাচিত",
+                                    text = tr(
+                                        "${circle.supervisorVotes.size}/${circle.memberIds.size} ভোটে নির্বাচিত",
+                                        "Elected (${circle.supervisorVotes.size}/${circle.memberIds.size} votes)"
+                                    ),
                                     color = p.primarySoftText,
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
@@ -260,9 +283,12 @@ fun StudyCircleScreen(
 
                 item {
                     SparcScholarlyCard {
-                        Text("Poke কন্ট্রোল ও Quiet Hours", style = MaterialTheme.typography.titleMedium, color = p.text)
+                        Text(tr("Poke কন্ট্রোল ও Quiet Hours", "Poke Controls & Quiet Hours"), style = MaterialTheme.typography.titleMedium, color = p.text)
                         Text(
-                            "আজ বাকি: ${(3 - pokesSentToday).coerceAtLeast(0)}/৩ • রাত ১০টা–৭টা Quiet Hours",
+                            tr(
+                                "আজ বাকি: $remainingPokes/৩ • রাত ১০টা–৭টা Quiet Hours",
+                                "Remaining today: $remainingPokes/3 • Quiet Hours 10 PM–7 AM"
+                            ),
                             fontSize = 12.sp,
                             color = p.muted
                         )
@@ -277,7 +303,7 @@ fun StudyCircleScreen(
                                     }
                                 ) {
                                     Text(
-                                        text = "মিউট ${scope.labelBn}",
+                                        text = "${tr("মিউট", "Mute")} ${scope.label(lang)}",
                                         color = if (active) Color.White else p.text,
                                         fontSize = 11.5.sp,
                                         fontWeight = FontWeight.Bold,
@@ -297,7 +323,7 @@ fun StudyCircleScreen(
                                     modifier = Modifier.padding(12.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Text("${pk.senderName}: \"${pk.presetMessage}\"", fontWeight = FontWeight.Bold, color = p.text)
+                                    Text("${trContent(pk.senderName)}: \"${trContent(pk.presetMessage)}\"", fontWeight = FontWeight.Bold, color = p.text)
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         SparcDomainEngine.QUICK_POKE_REPLIES.forEach { rep ->
                                             val chosen = pk.quickReply == rep
@@ -308,7 +334,7 @@ fun StudyCircleScreen(
                                                 modifier = Modifier.clickable { repository.replyToPoke(pk.id, rep) }
                                             ) {
                                                 Text(
-                                                    text = rep,
+                                                    text = trContent(rep),
                                                     color = if (chosen) Color.White else p.text,
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.Bold,
@@ -327,8 +353,8 @@ fun StudyCircleScreen(
                     val poll = state.polls.first()
                     val totalVotes = poll.votesByUser.size.coerceAtLeast(1)
                     SparcScholarlyCard {
-                        Text("কুইক পোল ও ডিবেট কর্নার", style = MaterialTheme.typography.titleMedium, color = p.text)
-                        Text(poll.question, style = MaterialTheme.typography.bodyMedium, color = p.muted)
+                        Text(tr("কুইক পোল ও ডিবেট কর্নার", "Quick Poll & Debate Corner"), style = MaterialTheme.typography.titleMedium, color = p.text)
+                        Text(trContent(poll.question), style = MaterialTheme.typography.bodyMedium, color = p.muted)
 
                         poll.options.forEachIndexed { idx, opt ->
                             val count = poll.votesByUser.values.count { it == idx }
@@ -343,7 +369,7 @@ fun StudyCircleScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text(opt, fontSize = 12.5.sp, color = p.text, modifier = Modifier.weight(1f))
+                                    Text(trContent(opt), fontSize = 12.5.sp, color = p.text, modifier = Modifier.weight(1f))
                                     Text("$pct%", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = p.primary)
                                 }
                                 LinearProgressIndicator(
@@ -381,7 +407,7 @@ fun StudyCircleScreen(
                             OutlinedTextField(
                                 value = debateComment,
                                 onValueChange = { debateComment = it },
-                                placeholder = { Text("যুক্তি লিখুন...") },
+                                placeholder = { Text(tr("যুক্তি লিখুন...", "Share your argument...")) },
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f)
@@ -394,7 +420,7 @@ fun StudyCircleScreen(
                                 shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = p.primary)
                             ) {
-                                Text("পোস্ট")
+                                Text(tr("পোস্ট", "Post"))
                             }
                         }
                     }
@@ -409,7 +435,7 @@ fun StudyCircleScreen(
             containerColor = p.card,
             titleContentColor = p.text,
             textContentColor = p.text,
-            title = { Text("${receiver.name}-কে উৎসাহ পাঠান") },
+            title = { Text(tr("${receiver.name}-কে উৎসাহ পাঠান", "Send Encouragement to ${trContent(receiver.name)}")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SparcDomainEngine.PRESET_POKE_MESSAGES.forEach { msg ->
@@ -423,14 +449,14 @@ fun StudyCircleScreen(
                                     pokeTarget = null
                                 }
                         ) {
-                            Text(msg, color = p.text, modifier = Modifier.padding(12.dp), fontWeight = FontWeight.Medium)
+                            Text(trContent(msg), color = p.text, modifier = Modifier.padding(12.dp), fontWeight = FontWeight.Medium)
                         }
                     }
                 }
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { pokeTarget = null }) { Text("বন্ধ করুন", color = p.primary) }
+                TextButton(onClick = { pokeTarget = null }) { Text(tr("বন্ধ করুন", "Close"), color = p.primary) }
             }
         )
     }
