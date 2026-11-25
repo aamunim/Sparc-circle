@@ -32,24 +32,24 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew testDebugUnitTest assembleDebug --no-daemon
-          cp app/build/outputs/apk/debug/app-debug.apk ../SPARC-Study-Circle-v2.0.0-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../SPARC-Study-Circle-v3.0.${{ github.run_number }}-multi-theme.apk
 
       - name: Upload APK Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SPARC-Study-Circle-v2.0.0-debug-apk
-          path: SPARC-Study-Circle-v2.0.0-debug.apk
+          name: SPARC-Study-Circle-v3.0.${{ github.run_number }}-apk
+          path: SPARC-Study-Circle-v3.0.${{ github.run_number }}-multi-theme.apk
 
-      - name: Publish Preview GitHub Release with APK
+      - name: Publish Fresh Latest GitHub Release with APK
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view v2.0.0-preview >/dev/null 2>&1; then
-            gh release upload v2.0.0-preview SPARC-Study-Circle-v2.0.0-debug.apk --clobber
-          else
-            gh release create v2.0.0-preview SPARC-Study-Circle-v2.0.0-debug.apk \
-              --prerelease \
-              --title "SPARC Study Circle v2.0.0 (Debug APK Preview)" \
-              --notes "অ্যান্ড্রয়েড ফোনে সরাসরি ডাউনলোড ও ইনস্টল করে টেস্ট করার জন্য SPARC Study Circle v2.0 ডিবাগ APK। কোনো Supabase বা Firebase কী ছাড়াই ইন্টারঅ্যাক্টিভ স্যান্ডবক্স মোডে সব ফিচার কাজ করবে।"
-          fi
+          TAG="v3.0.${{ github.run_number }}"
+          APK_FILE="SPARC-Study-Circle-v3.0.${{ github.run_number }}-multi-theme.apk"
+          gh release create "$TAG" "$APK_FILE" \
+            --latest \
+            --title "SPARC Study Circle $TAG — 3-Theme Modern UI (Cobalt, Midnight & Ocean)" \
+            --notes "নতুন ৩-থিম মডার্ন UI আপডেট ($TAG):
+          - ⚙️ অ্যাপের উপরের Settings গিয়ার আইকন থেকে **Cobalt SaaS (Light)**, **Midnight Glass (Dark)** এবং **Ocean Hero (Layered)** — ৩টি থিমেই তাৎক্ষণিক পরিবর্তন ও অটো-সেভ সুবিধা।
+          - ফ্লোটিং ক্যাপসুল বটম নেভিগেশন ডক ও ১২টি পূর্ণাঙ্গ মডার্ন স্ক্রিন।"
