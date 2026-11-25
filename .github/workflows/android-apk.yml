@@ -27,11 +27,16 @@ jobs:
           java-version: "21"
           cache: gradle
 
-      - name: Run Domain Unit Tests & Build Debug APK
+      - name: Run Domain Unit Tests & Build Debug APK (with Supabase GitHub Secrets)
         working-directory: android-app
+        env:
+          SUPABASE_URL_SECRET: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_SECRET: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           chmod +x gradlew
-          ./gradlew testDebugUnitTest assembleDebug --no-daemon
+          ./gradlew testDebugUnitTest assembleDebug --no-daemon \
+            -PSUPABASE_URL="$SUPABASE_URL_SECRET" \
+            -PSUPABASE_ANON_KEY="$SUPABASE_ANON_SECRET"
           cp app/build/outputs/apk/debug/app-debug.apk ../SPARC-Study-Circle-v3.1.${{ github.run_number }}.apk
 
       - name: Upload APK Build Artifact
@@ -50,9 +55,9 @@ jobs:
           gh release create "$TAG" "$APK_FILE" \
             --latest \
             --title "SPARC Study Circle $TAG — Auth, Native PDF Reader, ExoPlayer Audio & Custom Icon" \
-            --notes "নতুন কোর প্রোডাকশন আপগ্রেড ($TAG):
+            --notes "নতুন প্রোডাকশন আপগ্রেড ($TAG):
           - 🆕 **কাস্টম SPARC অ্যাপ আইকন ও অ্যানিমেটেড স্প্ল্যাশ স্ক্রিন**
-          - 🔐 **Login / Sign-up স্ক্রিন** (নিজের নাম/বিভাগ/রেফারেল কোড দিয়ে রেজিস্ট্রেশন + ১-ট্যাপ ডেমো লগইন + সেটিংসে Logout)
-          - 📄 **নেটিভ Android PDF বুক রিডার (PdfRenderer)** — জুম, পেজ নেভিগেশন এবং ফোন থেকে যেকোনো আসল `.pdf` বই খোলার সুবিধা
+          - 🔐 **Live Supabase Auth & Sync প্রস্তুত** (`SUPABASE_URL` ও `SUPABASE_ANON_KEY` GitHub Secrets থেকে স্বয়ংক্রিয়ভাবে ইনজেক্ট হয়)
+          - 📄 **নেটিভ Android PDF বুক রিডার (PdfRenderer)** — জুম, পেজ নেভিগেশন ও ফোন থেকে যেকোনো `.pdf` খোলার সুবিধা
           - 🎧 **Media3 ExoPlayer অডিও সামারি প্লেয়ার** — লাইভ সিকবার, `-10s/+10s` স্কিপ ও `1x/1.25x/1.5x/2x` স্পিড কন্ট্রোল
           - 🎨 সেটিংসে ৩টি মডার্ন UI থিম ও বাংলা/ইংরেজি ভাষা সুইচার।"

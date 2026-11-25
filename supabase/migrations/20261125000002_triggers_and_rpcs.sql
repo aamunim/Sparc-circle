@@ -630,3 +630,42 @@ AS $$
     ORDER BY match_score DESC, p.gamification_points DESC
     LIMIT GREATEST(p_team_size, 3);
 $$;
+
+
+-- ----------------------------------------------------------------------------
+-- 9. Auto-Provision Researcher Profile on Supabase Auth Signup
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_name TEXT;
+    v_dept TEXT;
+    v_ref_code TEXT;
+BEGIN
+    v_name := COALESCE(
+        NULLIF(TRIM(NEW.raw_user_meta_data->>'name'), ''),
+        SPLIT_PART(COALESCE(NEW.email, 'Researcher'), '@', 1)
+    );
+    v_dept := COALESCE(
+        NULLIF(TRIM(NEW.raw_user_meta_data->>'department'), ''),
+        'General Research'
+    );
+    v_ref_code := 'SPARC-' || UPPER(SUBSTRING(REPLACE(NEW.id::TEXT, '-', '') FROM 1 FOR 6));
+
+    INSERT INTO public.profiles (id, name, email, department, referral_code)
+    VALUES (NEW.id, v_name, NEW.email, v_dept, v_ref_code)
+    ON CONFLICT (id) DO NOTHING;
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+AFTER INSERT ON auth.users
+FOR EACH ROW
+EXECUTE FUNCTION public.handle_new_auth_user();

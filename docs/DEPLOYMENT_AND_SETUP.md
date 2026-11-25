@@ -1,32 +1,22 @@
-# SPARC Study Circle (v2.0) — কনফিগারেশন ও ডিপ্লয়মেন্ট গাইড
+# SPARC Study Circle — GitHub Secrets ও প্রোডাকশন ডিপ্লয়মেন্ট গাইড
 
-## ১. Supabase Environment Variables
+## ১. GitHub Repository Secrets তালিকা (`Settings → Secrets and variables → Actions`)
 
-### `admin-web/.env.local`
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-```
+চ্যাটে কোনো গোপন কী শেয়ার না করে সরাসরি আপনার GitHub রিপোজিটরির **Repository secrets**-এ নিচের নামগুলো হুবহু বসিয়ে দিন:
 
-### `android-app/gradle.properties` (অথবা CI Secrets)
-```properties
-SUPABASE_URL=https://your-project-ref.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
-```
-
-### Supabase Edge Function Secrets
-```bash
-supabase secrets set GEMINI_API_KEY="your-google-gemini-api-key"
-supabase secrets set SSLCOMMERZ_STORE_ID="your-store-id"
-supabase secrets set SSLCOMMERZ_STORE_PASS="your-store-password"
-supabase secrets set BKASH_APP_KEY="your-bkash-app-key"
-```
+| Secret Name | উদাহরণ / কোথায় পাবেন | কাজ |
+| :--- | :--- | :--- |
+| `SUPABASE_URL` | `https://abcdefghijklm.supabase.co` *(Project Settings → API)* | Android APK ও ওয়েব পোর্টালে সংযোগ এবং প্রজেক্ট রেফারেন্স শনাক্তকরণ |
+| `SUPABASE_ANON_KEY` | `eyJ...` বা `sb_publishable_...` *(Project Settings → API Keys)* | Android APK-এর ভেতরে পাবলিক ক্লায়েন্ট কী হিসেবে যুক্ত হবে |
+| `SUPABASE_ACCESS_TOKEN` | `sbp_...` *(https://supabase.com/dashboard/account/tokens থেকে Generate new token)* | GitHub Actions থেকে স্বয়ংক্রিয়ভাবে `supabase db push` ও Edge Function ডিপ্লয় করবে |
+| `SUPABASE_DB_PASSWORD` | প্রজেক্ট খোলার সময় দেওয়া Database Password | রিমোট PostgreSQL মাইগ্রেশন ও RLS পলিসি পুশ করতে ব্যবহৃত হবে |
+| `GEMINI_API_KEY` *(ঐচ্ছিক)* | Google AI Studio API Key | রাইটিং টাস্কের লাইভ AI ফিডব্যাক চালু করতে Edge Function-এ সেট হবে |
 
 ---
 
-## ২. নিরাপত্তা ও প্রাইভেসি আর্কিটেকচার (RLS সারাংশ)
+## ২. স্বয়ংক্রিয় GitHub Actions Workflows
 
-1. **Locked Answer Key (`chapter_answer_keys`):** ইউজার যতক্ষণ না `Exercises Submitted` ধাপে পৌঁছাচ্ছেন, ততক্ষণ PostgreSQL RLS কোনোভাবেই সঠিক উত্তর বা মডেল পয়েন্ট রিটার্ন করবে না।
-2. **Poke Privacy (`pokes` বনাম `supervisor_poke_summary`):** সুপারভাইজার শুধুমাত্র কোন সদস্য কতটি Poke পেয়েছেন বা রিপ্লাই দিয়েছেন তার সংখ্যা দেখতে পান; ব্যক্তিগত বার্তা কেবল প্রেরক ও প্রাপকের মধ্যেই সীমাবদ্ধ।
-3. **Physical Book Orders (`physical_book_orders`):** শুধুমাত্র `admin`, `supervisor` (শিক্ষক), `sparc_rep` এবং অর্ডারকারী নিজে অর্ডারের তথ্য দেখতে পারেন।
-4. **Private Marks & Writing (`chapter_progress` ও `writing_submissions`):** গ্রুপ ড্যাশবোর্ডে `group_chapter_progress_public` ভিউয়ের মাধ্যমে কেবল ৬-ধাপের স্ট্যাটাস দেখানো হয়; ব্যক্তিগত নম্বর ও রাইটিং অন্য সদস্যদের কাছ থেকে গোপন থাকে।
+1. **`.github/workflows/supabase-deploy.yml`:**
+   - স্বয়ংক্রিয়ভাবে সবগুলো SQL মাইগ্রেশন (`001`–`004`: টেবিল, ট্রিগার, RLS পলিসি ও সিড বই) আপনার লাইভ Supabase ডাটাবেসে পুশ করে এবং ৪টি Edge Function (`ai-writing-assistant`, `wallet-payment`, `poke-dispatch`, `generate-certificate`) ডিপ্লয় করে।
+2. **`.github/workflows/android-apk.yml`:**
+   - `SUPABASE_URL` ও `SUPABASE_ANON_KEY` সরাসরি অ্যাপে ইনজেক্ট করে নতুন `Latest` APK রিলিজ পাবলিশ করে।

@@ -83,21 +83,33 @@ class SparcRepository(
         if (email.isBlank() || password.length < 4) {
             return Result.failure(IllegalArgumentException("সঠিক ইমেইল ও কমপক্ষে ৪ অক্ষরের পাসওয়ার্ড দিন।"))
         }
+        var remoteUserId: String? = null
         if (supabaseClient.isConfigured) {
             val remote = supabaseClient.signInWithEmailPassword(email, password)
             if (remote.isFailure) return Result.failure(remote.exceptionOrNull()!!)
+            remoteUserId = remote.getOrNull()?.userId
         }
         val derivedName = email.substringBefore('@')
             .replace('.', ' ')
             .replaceFirstChar { it.uppercase() }
             .ifBlank { _state.value.currentUser.name }
 
+        val liveProfiles = if (supabaseClient.isConfigured) {
+            supabaseClient.fetchDirectoryProfiles().getOrNull()
+        } else null
+
         _state.update { s ->
-            val user = s.currentUser.copy(name = derivedName)
+            val matchedMe = liveProfiles?.find { it.id == remoteUserId }
+            val user = matchedMe ?: s.currentUser.copy(
+                id = remoteUserId ?: s.currentUser.id,
+                name = derivedName
+            )
+            val peers = liveProfiles?.filter { it.id != user.id }?.ifEmpty { s.directoryMembers } ?: s.directoryMembers
             onPersistAuth(true, user.name, user.department)
             s.copy(
                 isAuthenticated = true,
                 currentUser = user,
+                directoryMembers = peers,
                 statusBannerMessage = "স্বাগতম, ${user.name}!"
             )
         }
@@ -115,27 +127,44 @@ class SparcRepository(
         if (name.isBlank() || email.isBlank() || password.length < 4) {
             return Result.failure(IllegalArgumentException("নাম, ইমেইল ও পাসওয়ার্ড পূরণ করুন।"))
         }
-        if (supabaseClient.isConfigured) {
-            val remote = supabaseClient.signUpWithEmailPassword(email, password, name, department)
-            if (remote.isFailure) return Result.failure(remote.exceptionOrNull()!!)
-        }
         val cleanName = name.trim()
         val cleanDept = department.ifBlank { "Sociology" }
+        var remoteUserId: String? = null
+
+        if (supabaseClient.isConfigured) {
+            val remote = supabaseClient.signUpWithEmailPassword(
+                email = email,
+                password = password,
+                fullName = cleanName,
+                department = cleanDept,
+                skills = skills,
+                referralCode = referralCode
+            )
+            if (remote.isFailure) return Result.failure(remote.exceptionOrNull()!!)
+            remoteUserId = remote.getOrNull()?.userId
+        }
+
         val refBonus = if (referralCode.trim().isNotEmpty()) 50.0 else 0.0
         val newCode = "SPARC-" + cleanName.filter { it.isLetterOrDigit() }.take(6).uppercase().ifBlank { "USER" } + "26"
+        val liveProfiles = if (supabaseClient.isConfigured) {
+            supabaseClient.fetchDirectoryProfiles().getOrNull()
+        } else null
 
         _state.update { s ->
             val newUser = s.currentUser.copy(
+                id = remoteUserId ?: s.currentUser.id,
                 name = cleanName,
                 department = cleanDept,
                 skills = skills.ifEmpty { s.currentUser.skills },
                 referralCode = newCode,
                 walletBalanceBdt = s.currentUser.walletBalanceBdt + refBonus
             )
+            val peers = liveProfiles?.filter { it.id != newUser.id }?.ifEmpty { s.directoryMembers } ?: s.directoryMembers
             onPersistAuth(true, newUser.name, newUser.department)
             s.copy(
                 isAuthenticated = true,
                 currentUser = newUser,
+                directoryMembers = peers,
                 statusBannerMessage = if (refBonus > 0) {
                     "অ্যাকাউন্ট তৈরি হয়েছে এবং +৳৫০ রেফারেল বোনাস যোগ হয়েছে!"
                 } else {
@@ -158,6 +187,7 @@ class SparcRepository(
     }
 
     fun logout() {
+        supabaseClient.clearSession()
         onPersistAuth(false, "", "")
         _state.update { it.copy(isAuthenticated = false, statusBannerMessage = null) }
     }
