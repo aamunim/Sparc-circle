@@ -110,8 +110,16 @@ export default function SparcAdminPortal() {
             </p>
           </div>
 
-          {/* Role Switcher */}
-          <div className="flex items-center gap-2 bg-emerald-950/60 p-1.5 rounded-lg">
+          {/* Download APK & Role Switcher */}
+          <div className="flex flex-wrap items-center gap-3">
+            <a
+              href="/downloads/SPARC-Study-Circle-v2.0.0-debug.apk"
+              download
+              className="px-3.5 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold shadow transition"
+            >
+              📱 Android APK ডাউনলোড (v2.0)
+            </a>
+            <div className="flex items-center gap-2 bg-emerald-950/60 p-1.5 rounded-lg">
             {(
               [
                 ["admin", "Admin প্যানেল"],
@@ -131,6 +139,7 @@ export default function SparcAdminPortal() {
                 {label}
               </button>
             ))}
+            </div>
           </div>
         </div>
 
