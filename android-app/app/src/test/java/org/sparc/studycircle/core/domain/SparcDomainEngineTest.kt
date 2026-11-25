@@ -228,6 +228,7 @@ class SparcDomainEngineTest {
     fun `repository supports switching and persisting all 3 modern visual UI themes`() {
         var persisted: SparcVisualTheme? = null
         val repo = org.sparc.studycircle.core.data.SparcRepository(
+            supabaseClient = org.sparc.studycircle.core.data.SupabaseRestClient("", ""),
             initialTheme = SparcVisualTheme.COBALT_SAAS,
             onPersistTheme = { persisted = it }
         )
@@ -246,6 +247,7 @@ class SparcDomainEngineTest {
     fun `repository supports researcher registration with referral bonus, language toggle, and logout`() = kotlinx.coroutines.test.runTest {
         var authFlag = false
         val repo = org.sparc.studycircle.core.data.SparcRepository(
+            supabaseClient = org.sparc.studycircle.core.data.SupabaseRestClient("", ""),
             onPersistAuth = { authed, _, _ -> authFlag = authed }
         )
         assertFalse(repo.state.value.isAuthenticated)
@@ -276,6 +278,7 @@ class SparcDomainEngineTest {
     fun `api key vault supports adding, persisting, and removing dynamic api keys`() {
         var savedVault = ApiKeyVaultConfig()
         val repo = org.sparc.studycircle.core.data.SparcRepository(
+            supabaseClient = org.sparc.studycircle.core.data.SupabaseRestClient("", ""),
             onPersistApiVault = { savedVault = it }
         )
         assertEquals("", repo.state.value.apiVault.geminiApiKey)
