@@ -13,8 +13,8 @@ android {
         applicationId = "org.sparc.studycircle"
         minSdk = 26
         targetSdk = 35
-        versionCode = 300
-        versionName = "3.0.0"
+        versionCode = 310
+        versionName = "3.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -78,6 +78,9 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+
+    // Media3 ExoPlayer for Chapter Audio Summaries
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
 
     // Networking & JSON Serialization for Supabase REST, Auth, Realtime & Edge Functions
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

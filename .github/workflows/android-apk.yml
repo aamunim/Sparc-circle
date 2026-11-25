@@ -32,24 +32,27 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew testDebugUnitTest assembleDebug --no-daemon
-          cp app/build/outputs/apk/debug/app-debug.apk ../SPARC-Study-Circle-v3.0.${{ github.run_number }}-multi-theme.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../SPARC-Study-Circle-v3.1.${{ github.run_number }}.apk
 
       - name: Upload APK Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SPARC-Study-Circle-v3.0.${{ github.run_number }}-apk
-          path: SPARC-Study-Circle-v3.0.${{ github.run_number }}-multi-theme.apk
+          name: SPARC-Study-Circle-v3.1.${{ github.run_number }}-apk
+          path: SPARC-Study-Circle-v3.1.${{ github.run_number }}.apk
 
       - name: Publish Fresh Latest GitHub Release with APK
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v3.0.${{ github.run_number }}"
-          APK_FILE="SPARC-Study-Circle-v3.0.${{ github.run_number }}-multi-theme.apk"
+          TAG="v3.1.${{ github.run_number }}"
+          APK_FILE="SPARC-Study-Circle-v3.1.${{ github.run_number }}.apk"
           gh release create "$TAG" "$APK_FILE" \
             --latest \
-            --title "SPARC Study Circle $TAG — 3-Theme Modern UI (Cobalt, Midnight & Ocean)" \
-            --notes "নতুন ৩-থিম মডার্ন UI আপডেট ($TAG):
-          - ⚙️ অ্যাপের উপরের Settings গিয়ার আইকন থেকে **Cobalt SaaS (Light)**, **Midnight Glass (Dark)** এবং **Ocean Hero (Layered)** — ৩টি থিমেই তাৎক্ষণিক পরিবর্তন ও অটো-সেভ সুবিধা।
-          - ফ্লোটিং ক্যাপসুল বটম নেভিগেশন ডক ও ১২টি পূর্ণাঙ্গ মডার্ন স্ক্রিন।"
+            --title "SPARC Study Circle $TAG — Auth, Native PDF Reader, ExoPlayer Audio & Custom Icon" \
+            --notes "নতুন কোর প্রোডাকশন আপগ্রেড ($TAG):
+          - 🆕 **কাস্টম SPARC অ্যাপ আইকন ও অ্যানিমেটেড স্প্ল্যাশ স্ক্রিন**
+          - 🔐 **Login / Sign-up স্ক্রিন** (নিজের নাম/বিভাগ/রেফারেল কোড দিয়ে রেজিস্ট্রেশন + ১-ট্যাপ ডেমো লগইন + সেটিংসে Logout)
+          - 📄 **নেটিভ Android PDF বুক রিডার (PdfRenderer)** — জুম, পেজ নেভিগেশন এবং ফোন থেকে যেকোনো আসল `.pdf` বই খোলার সুবিধা
+          - 🎧 **Media3 ExoPlayer অডিও সামারি প্লেয়ার** — লাইভ সিকবার, `-10s/+10s` স্কিপ ও `1x/1.25x/1.5x/2x` স্পিড কন্ট্রোল
+          - 🎨 সেটিংসে ৩টি মডার্ন UI থিম ও বাংলা/ইংরেজি ভাষা সুইচার।"

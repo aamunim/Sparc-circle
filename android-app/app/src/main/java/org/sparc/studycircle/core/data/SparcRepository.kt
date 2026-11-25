@@ -9,6 +9,8 @@ import org.sparc.studycircle.core.model.*
 import java.util.UUID
 
 data class SparcAppState(
+    val isAuthenticated: Boolean = false,
+    val appLanguage: String = "bn", // "bn" or "en"
     val visualTheme: SparcVisualTheme = SparcVisualTheme.COBALT_SAAS,
     val currentUser: UserProfile,
     val directoryMembers: List<UserProfile>,
@@ -33,9 +35,28 @@ data class SparcAppState(
 class SparcRepository(
     private val supabaseClient: SupabaseRestClient = SupabaseRestClient(),
     initialTheme: SparcVisualTheme = SparcVisualTheme.COBALT_SAAS,
-    private val onPersistTheme: (SparcVisualTheme) -> Unit = {}
+    initialAuthenticated: Boolean = false,
+    initialUserName: String? = null,
+    initialUserDept: String? = null,
+    initialLanguage: String = "bn",
+    private val onPersistTheme: (SparcVisualTheme) -> Unit = {},
+    private val onPersistAuth: (Boolean, String, String) -> Unit = { _, _, _ -> },
+    private val onPersistLanguage: (String) -> Unit = {}
 ) {
-    private val _state = MutableStateFlow(createInitialSeededState().copy(visualTheme = initialTheme))
+    private val _state = MutableStateFlow(
+        createInitialSeededState().let { seeded ->
+            val updatedUser = seeded.currentUser.copy(
+                name = initialUserName?.takeIf { it.isNotBlank() } ?: seeded.currentUser.name,
+                department = initialUserDept?.takeIf { it.isNotBlank() } ?: seeded.currentUser.department
+            )
+            seeded.copy(
+                isAuthenticated = initialAuthenticated,
+                appLanguage = initialLanguage,
+                visualTheme = initialTheme,
+                currentUser = updatedUser
+            )
+        }
+    )
     val state: StateFlow<SparcAppState> = _state.asStateFlow()
 
     fun setVisualTheme(theme: SparcVisualTheme) {
@@ -46,6 +67,99 @@ class SparcRepository(
                 statusBannerMessage = "থিম পরিবর্তন করা হয়েছে: ${theme.titleBn}"
             )
         }
+    }
+
+    fun setAppLanguage(lang: String) {
+        onPersistLanguage(lang)
+        _state.update {
+            it.copy(
+                appLanguage = lang,
+                statusBannerMessage = if (lang == "en") "Language switched to English" else "ভাষা বাংলা করা হয়েছে"
+            )
+        }
+    }
+
+    suspend fun signInWithEmail(email: String, password: String): Result<Unit> {
+        if (email.isBlank() || password.length < 4) {
+            return Result.failure(IllegalArgumentException("সঠিক ইমেইল ও কমপক্ষে ৪ অক্ষরের পাসওয়ার্ড দিন।"))
+        }
+        if (supabaseClient.isConfigured) {
+            val remote = supabaseClient.signInWithEmailPassword(email, password)
+            if (remote.isFailure) return Result.failure(remote.exceptionOrNull()!!)
+        }
+        val derivedName = email.substringBefore('@')
+            .replace('.', ' ')
+            .replaceFirstChar { it.uppercase() }
+            .ifBlank { _state.value.currentUser.name }
+
+        _state.update { s ->
+            val user = s.currentUser.copy(name = derivedName)
+            onPersistAuth(true, user.name, user.department)
+            s.copy(
+                isAuthenticated = true,
+                currentUser = user,
+                statusBannerMessage = "স্বাগতম, ${user.name}!"
+            )
+        }
+        return Result.success(Unit)
+    }
+
+    suspend fun registerResearcher(
+        name: String,
+        email: String,
+        password: String,
+        department: String,
+        skills: List<String>,
+        referralCode: String
+    ): Result<Unit> {
+        if (name.isBlank() || email.isBlank() || password.length < 4) {
+            return Result.failure(IllegalArgumentException("নাম, ইমেইল ও পাসওয়ার্ড পূরণ করুন।"))
+        }
+        if (supabaseClient.isConfigured) {
+            val remote = supabaseClient.signUpWithEmailPassword(email, password, name, department)
+            if (remote.isFailure) return Result.failure(remote.exceptionOrNull()!!)
+        }
+        val cleanName = name.trim()
+        val cleanDept = department.ifBlank { "Sociology" }
+        val refBonus = if (referralCode.trim().isNotEmpty()) 50.0 else 0.0
+        val newCode = "SPARC-" + cleanName.filter { it.isLetterOrDigit() }.take(6).uppercase().ifBlank { "USER" } + "26"
+
+        _state.update { s ->
+            val newUser = s.currentUser.copy(
+                name = cleanName,
+                department = cleanDept,
+                skills = skills.ifEmpty { s.currentUser.skills },
+                referralCode = newCode,
+                walletBalanceBdt = s.currentUser.walletBalanceBdt + refBonus
+            )
+            onPersistAuth(true, newUser.name, newUser.department)
+            s.copy(
+                isAuthenticated = true,
+                currentUser = newUser,
+                statusBannerMessage = if (refBonus > 0) {
+                    "অ্যাকাউন্ট তৈরি হয়েছে এবং +৳৫০ রেফারেল বোনাস যোগ হয়েছে!"
+                } else {
+                    "স্বাগতম $cleanName! আপনার গবেষক প্রোফাইল প্রস্তুত।"
+                }
+            )
+        }
+        return Result.success(Unit)
+    }
+
+    fun loginInstantDemo() {
+        val u = _state.value.currentUser
+        onPersistAuth(true, u.name, u.department)
+        _state.update {
+            it.copy(
+                isAuthenticated = true,
+                statusBannerMessage = "ডেমো গবেষক মোডে প্রবেশ করেছেন।"
+            )
+        }
+    }
+
+    fun logout() {
+        onPersistAuth(false, "", "")
+        _state.update { it.copy(isAuthenticated = false, statusBannerMessage = null) }
     }
 
     fun dismissBanner() {

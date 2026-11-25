@@ -18,11 +18,12 @@ import org.sparc.studycircle.BuildConfig
 import org.sparc.studycircle.core.model.AiWritingFeedback
 import java.util.concurrent.TimeUnit
 
-/**
- * Lightweight Supabase REST, RPC & Edge Function client.
- * Uses BuildConfig.SUPABASE_URL and BuildConfig.SUPABASE_ANON_KEY when configured,
- * falling back gracefully to local domain execution during offline/sandbox development.
- */
+data class SupabaseAuthSession(
+    val userId: String,
+    val email: String,
+    val accessToken: String
+)
+
 class SupabaseRestClient(
     private val baseUrl: String = BuildConfig.SUPABASE_URL,
     private val anonKey: String = BuildConfig.SUPABASE_ANON_KEY
@@ -35,6 +36,72 @@ class SupabaseRestClient(
 
     val isConfigured: Boolean
         get() = baseUrl.isNotBlank() && anonKey.isNotBlank()
+
+    suspend fun signInWithEmailPassword(
+        email: String,
+        password: String
+    ): Result<SupabaseAuthSession> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(isConfigured) { "Supabase URL not configured" }
+            val body = buildJsonObject {
+                put("email", email.trim())
+                put("password", password)
+            }.toString()
+
+            val req = Request.Builder()
+                .url("${baseUrl.trimEnd('/')}/auth/v1/token?grant_type=password")
+                .addHeader("apikey", anonKey)
+                .post(body.toRequestBody("application/json".toMediaType()))
+                .build()
+
+            http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) error("Invalid email or password (${resp.code})")
+                val obj = json.parseToJsonElement(resp.body?.string() ?: "{}").jsonObject
+                val userObj = obj["user"]?.jsonObject
+                SupabaseAuthSession(
+                    userId = userObj?.get("id")?.jsonPrimitive?.content ?: "",
+                    email = email.trim(),
+                    accessToken = obj["access_token"]?.jsonPrimitive?.content ?: ""
+                )
+            }
+        }
+    }
+
+    suspend fun signUpWithEmailPassword(
+        email: String,
+        password: String,
+        fullName: String,
+        department: String
+    ): Result<SupabaseAuthSession> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(isConfigured) { "Supabase URL not configured" }
+            val body = buildJsonObject {
+                put("email", email.trim())
+                put("password", password)
+                put("data", buildJsonObject {
+                    put("name", fullName)
+                    put("department", department)
+                })
+            }.toString()
+
+            val req = Request.Builder()
+                .url("${baseUrl.trimEnd('/')}/auth/v1/signup")
+                .addHeader("apikey", anonKey)
+                .post(body.toRequestBody("application/json".toMediaType()))
+                .build()
+
+            http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) error("Sign-up failed (${resp.code})")
+                val obj = json.parseToJsonElement(resp.body?.string() ?: "{}").jsonObject
+                val userObj = obj["user"]?.jsonObject
+                SupabaseAuthSession(
+                    userId = userObj?.get("id")?.jsonPrimitive?.content ?: "",
+                    email = email.trim(),
+                    accessToken = obj["access_token"]?.jsonPrimitive?.content ?: ""
+                )
+            }
+        }
+    }
 
     suspend fun requestAiWritingFeedback(
         chapterNo: Int,

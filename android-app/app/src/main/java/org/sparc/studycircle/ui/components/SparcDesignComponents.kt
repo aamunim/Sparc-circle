@@ -297,14 +297,25 @@ fun SparcPrimaryButton(
 @Composable
 fun SparcAudioWaveformBar(
     title: String,
-    timeLabel: String,
+    currentMs: Long,
+    durationMs: Long,
     speedLabel: String,
     isPlaying: Boolean,
     onTogglePlay: () -> Unit,
+    onSeekTo: (Long) -> Unit,
+    onSkipSeconds: (Int) -> Unit,
     onCycleSpeed: () -> Unit
 ) {
     val p = LocalSparcPalette.current
-    val barHeights = listOf(8, 18, 12, 22, 16, 10, 24, 15, 20, 12, 18, 9, 15, 21, 13, 10)
+    val safeDuration = durationMs.coerceAtLeast(1000L)
+    val progressFraction = (currentMs.toFloat() / safeDuration.toFloat()).coerceIn(0f, 1f)
+
+    fun formatMs(ms: Long): String {
+        val totalSec = (ms / 1000L).coerceAtLeast(0L)
+        val m = totalSec / 60L
+        val s = totalSec % 60L
+        return "%02d:%02d".format(m, s)
+    }
 
     Box(
         modifier = Modifier
@@ -313,52 +324,82 @@ fun SparcAudioWaveformBar(
             .background(p.primaryGradient)
             .padding(horizontal = 16.dp, vertical = 14.dp)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("🎧 $title", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color.White.copy(alpha = 0.20f),
+                    modifier = Modifier.clickable { onCycleSpeed() }
                 ) {
-                    Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     Text(
-                        text = "$timeLabel • $speedLabel",
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 11.sp,
-                        modifier = Modifier.clickable { onCycleSpeed() }
+                        text = speedLabel,
+                        color = Color.White,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                     )
                 }
+            }
+
+            Slider(
+                value = progressFraction,
+                onValueChange = { frac -> onSeekTo((frac * safeDuration).toLong()) },
+                colors = SliderDefaults.colors(
+                    thumbColor = Color.White,
+                    activeTrackColor = Color.White,
+                    inactiveTrackColor = Color.White.copy(alpha = 0.30f)
+                )
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${formatMs(currentMs)} / ${formatMs(safeDuration)}",
+                    color = Color.White.copy(alpha = 0.9f),
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
                 Row(
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    barHeights.forEachIndexed { idx, h ->
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(h.dp)
-                                .clip(RoundedCornerShape(50))
-                                .background(
-                                    if (idx < 9) Color.White else Color.White.copy(alpha = 0.32f)
-                                )
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color.White.copy(alpha = 0.18f),
+                        modifier = Modifier.clickable { onSkipSeconds(-10) }
+                    ) {
+                        Text("-10s", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                    }
+                    IconButton(
+                        onClick = onTogglePlay,
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(Color.White)
+                    ) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = "Play/Pause Audio Summary",
+                            tint = Color(0xFF0F172A)
                         )
                     }
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color.White.copy(alpha = 0.18f),
+                        modifier = Modifier.clickable { onSkipSeconds(10) }
+                    ) {
+                        Text("+10s", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                    }
                 }
-            }
-            IconButton(
-                onClick = onTogglePlay,
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(Color.White)
-            ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = "Play/Pause Audio Summary",
-                    tint = Color(0xFF0F172A)
-                )
             }
         }
     }
@@ -368,7 +409,10 @@ fun SparcAudioWaveformBar(
 @Composable
 fun SparcSettingsBottomSheet(
     currentTheme: SparcVisualTheme,
+    currentLanguage: String = "bn",
     onSelectTheme: (SparcVisualTheme) -> Unit,
+    onChangeLanguage: (String) -> Unit = {},
+    onLogout: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val p = LocalSparcPalette.current
@@ -392,10 +436,12 @@ fun SparcSettingsBottomSheet(
                 style = MaterialTheme.typography.titleLarge,
                 color = p.text
             )
-            Text(
-                text = "আপনার পছন্দমতো যেকোনো একটি মডার্ন UI থিম বেছে নিন (অটো-সেভ হবে):",
-                style = MaterialTheme.typography.labelMedium,
-                color = p.muted
+
+            // Language Switcher (বাংলা ⇄ English)
+            SparcSegmentedPills(
+                options = listOf("বাংলা (Bengali)", "English"),
+                selectedIndex = if (currentLanguage == "en") 1 else 0,
+                onSelect = { idx -> onChangeLanguage(if (idx == 1) "en" else "bn") }
             )
 
             // 3 Visual Theme Cards
@@ -429,13 +475,13 @@ fun SparcSettingsBottomSheet(
                         .clickable { onSelectTheme(themeItem) }
                 ) {
                     Row(
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(44.dp)
+                                .size(40.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(Brush.linearGradient(gradColors)),
                             contentAlignment = Alignment.Center
@@ -444,19 +490,19 @@ fun SparcSettingsBottomSheet(
                                 text = badge,
                                 color = Color.White,
                                 fontWeight = FontWeight.ExtraBold,
-                                fontSize = 15.sp
+                                fontSize = 14.sp
                             )
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = themeItem.titleBn,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
+                                fontSize = 13.5.sp,
                                 color = if (active) p.primarySoftText else p.text
                             )
                             Text(
                                 text = themeItem.subtitleBn,
-                                fontSize = 11.5.sp,
+                                fontSize = 11.sp,
                                 color = p.muted
                             )
                         }
@@ -479,31 +525,31 @@ fun SparcSettingsBottomSheet(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("রিডিং স্ট্রিক রিমাইন্ডার", fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp)
-                    Text("স্ট্রিক ভাঙার আগে পুশ নোটিফিকেশন", fontSize = 11.5.sp, color = p.muted)
+                    Text("রিডিং স্ট্রিক ও Quiet Hours (১০ PM–৭ AM)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text("অটোমেটিক স্ট্রিক রিমাইন্ডার ও নাইট কিউ", fontSize = 11.sp, color = p.muted)
                 }
                 Switch(
-                    checked = streakNotifications,
-                    onCheckedChange = { streakNotifications = it }
+                    checked = streakNotifications && quietHoursAuto,
+                    onCheckedChange = {
+                        streakNotifications = it
+                        quietHoursAuto = it
+                    }
                 )
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+            OutlinedButton(
+                onClick = {
+                    onDismiss()
+                    onLogout()
+                },
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.2.dp, SparcCrimson),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Quiet Hours (রাত ১০টা – সকাল ৭টা)", fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp)
-                    Text("রাতে আসা Poke সকাল ৭টায় ডেলিভার হবে", fontSize = 11.5.sp, color = p.muted)
-                }
-                Switch(
-                    checked = quietHoursAuto,
-                    onCheckedChange = { quietHoursAuto = it }
-                )
+                Text("লগআউট করুন (Sign Out)", color = SparcCrimson, fontWeight = FontWeight.Bold)
             }
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(12.dp))
         }
     }
 }

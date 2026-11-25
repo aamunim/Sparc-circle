@@ -173,9 +173,7 @@ private fun SmartPaperReaderView(
     val dailyPages = SparcDomainEngine.calculateDailyPageTarget(chapter.totalPages, targetDays)
 
     var selectedPrivacy by remember { mutableStateOf(HighlightVisibility.GROUP) }
-    var isAudioPlaying by remember { mutableStateOf(true) }
-    var speedIdx by remember { mutableIntStateOf(1) }
-    val speeds = listOf("1.0x", "1.25x", "1.5x")
+    val audioController = org.sparc.studycircle.core.media.rememberSparcAudioController()
     val activeQuote = "Sayings, doings and relatings hang together in the project of a practice."
 
     LazyColumn(
@@ -183,6 +181,40 @@ private fun SmartPaperReaderView(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // 1. Real Native Android PdfRenderer Viewer + Open Any Device PDF!
+        item {
+            NativePdfBookViewerCard(
+                bookTitle = book.title,
+                onQuickHighlightPage = { pageNo ->
+                    repository.addHighlightAndLogReading(
+                        bookId = book.id,
+                        chapterNo = chapter.chapterNo,
+                        pageNo = pageNo,
+                        selectedText = "PDF পৃষ্ঠা $pageNo হাইলাইট — $activeQuote",
+                        note = "PDF রিডার থেকে সংরক্ষিত",
+                        isUnderline = false,
+                        visibility = selectedPrivacy
+                    )
+                }
+            )
+        }
+
+        // 2. Real Media3 ExoPlayer Audio Summary Player
+        item {
+            SparcAudioWaveformBar(
+                title = "বাংলা অডিও সামারি (ExoPlayer)",
+                currentMs = audioController.currentPositionMs,
+                durationMs = audioController.durationMs,
+                speedLabel = "${audioController.speed}x",
+                isPlaying = audioController.isPlaying,
+                onTogglePlay = { audioController.togglePlayPause() },
+                onSeekTo = { ms -> audioController.seekTo(ms) },
+                onSkipSeconds = { sec -> audioController.skipSeconds(sec) },
+                onCycleSpeed = { audioController.cyclePlaybackSpeed() }
+            )
+        }
+
+        // 3. Smart Daily Page Estimator
         item {
             SparcScholarlyCard {
                 Row(
@@ -210,17 +242,11 @@ private fun SmartPaperReaderView(
             }
         }
 
+        // 4. Highlight Privacy Selector & Bite-Sized Flash Notes
         item {
             SparcScholarlyCard(containerColor = p.readerPaper) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(chapter.title, style = MaterialTheme.typography.titleMedium, color = p.text, modifier = Modifier.weight(1f))
-                    Text("১৮ / ${chapter.totalPages}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = p.primary)
-                }
+                Text("হাইলাইট প্রাইভেসি কন্ট্রোল ও ফ্ল্যাশ-নোটস", style = MaterialTheme.typography.titleMedium, color = p.text)
 
-                // Segmented Privacy Selector
                 Surface(shape = RoundedCornerShape(12.dp), color = p.cardAlt) {
                     Row(modifier = Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         listOf(
@@ -239,7 +265,7 @@ private fun SmartPaperReaderView(
                                         repository.addHighlightAndLogReading(
                                             bookId = book.id,
                                             chapterNo = chapter.chapterNo,
-                                            pageNo = 18,
+                                            pageNo = 4,
                                             selectedText = activeQuote,
                                             note = "প্রপোজালে উদ্ধৃত করব",
                                             isUnderline = false,
@@ -260,37 +286,10 @@ private fun SmartPaperReaderView(
                     }
                 }
 
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = p.accentSoft,
-                    border = BorderStroke(1.dp, p.accent.copy(alpha = 0.4f))
-                ) {
-                    Text(
-                        text = "“$activeQuote”",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = p.text,
-                        modifier = Modifier.padding(12.dp)
-                    )
-                }
-
-                chapter.sections.forEach { sec ->
-                    Text(sec.title, style = MaterialTheme.typography.titleMedium, color = p.text)
-                    sec.paragraphPreview.forEach { para ->
-                        Text(para, style = MaterialTheme.typography.bodyMedium, color = p.muted)
-                    }
+                chapter.flashNotes.forEach { fn ->
+                    Text("• $fn", style = MaterialTheme.typography.bodyMedium, color = p.muted)
                 }
             }
-        }
-
-        item {
-            SparcAudioWaveformBar(
-                title = "বাংলা অডিও সামারি",
-                timeLabel = "০২:৪৫ / ০৬:৩০",
-                speedLabel = speeds[speedIdx],
-                isPlaying = isAudioPlaying,
-                onTogglePlay = { isAudioPlaying = !isAudioPlaying },
-                onCycleSpeed = { speedIdx = (speedIdx + 1) % speeds.size }
-            )
         }
     }
 }

@@ -323,7 +323,10 @@ fun SparcMainScaffold(repository: SparcRepository) {
     if (showSettingsSheet) {
         SparcSettingsBottomSheet(
             currentTheme = state.visualTheme,
+            currentLanguage = state.appLanguage,
             onSelectTheme = { chosen -> repository.setVisualTheme(chosen) },
+            onChangeLanguage = { lang -> repository.setAppLanguage(lang) },
+            onLogout = { repository.logout() },
             onDismiss = { showSettingsSheet = false }
         )
     }

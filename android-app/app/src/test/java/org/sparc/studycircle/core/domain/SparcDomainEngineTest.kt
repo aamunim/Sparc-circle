@@ -241,4 +241,34 @@ class SparcDomainEngineTest {
         assertEquals(SparcVisualTheme.OCEAN_HERO, repo.state.value.visualTheme)
         assertEquals(SparcVisualTheme.OCEAN_HERO, persisted)
     }
+
+    @Test
+    fun `repository supports researcher registration with referral bonus, language toggle, and logout`() = kotlinx.coroutines.test.runTest {
+        var authFlag = false
+        val repo = org.sparc.studycircle.core.data.SparcRepository(
+            onPersistAuth = { authed, _, _ -> authFlag = authed }
+        )
+        assertFalse(repo.state.value.isAuthenticated)
+
+        val baseWallet = repo.state.value.currentUser.walletBalanceBdt
+        val result = repo.registerResearcher(
+            name = "আরিফুল ইসলাম",
+            email = "ariful@du.ac.bd",
+            password = "secret123",
+            department = "Sociology",
+            skills = listOf("Data Analysis"),
+            referralCode = "SPARC-FARHAN09"
+        )
+        assertTrue(result.isSuccess)
+        assertTrue(repo.state.value.isAuthenticated)
+        assertTrue(authFlag)
+        assertEquals(baseWallet + 50.0, repo.state.value.currentUser.walletBalanceBdt, 0.01)
+
+        repo.setAppLanguage("en")
+        assertEquals("en", repo.state.value.appLanguage)
+
+        repo.logout()
+        assertFalse(repo.state.value.isAuthenticated)
+        assertFalse(authFlag)
+    }
 }
