@@ -37,8 +37,8 @@ fun StudyCircleScreen(
     val p = LocalSparcPalette.current
     val lang = LocalAppLanguage.current
     var subTab by remember { mutableIntStateOf(0) }
-    val circle = state.circles.first()
-    val chapter = state.books.first().chapters.first()
+    val circle = state.circles.find { it.id == state.activeCircleId } ?: state.circles.first()
+    val chapter = (state.books.find { it.id == circle.bookId } ?: state.books.first()).chapters.first()
     val myProgress = state.myChapterProgress[chapter.chapterNo]
         ?: ChapterProgressState("p-init", circle.id, state.currentUser.id, chapter.chapterNo)
 
@@ -47,8 +47,14 @@ fun StudyCircleScreen(
     }
     val circlePeers = circle.memberIds.mapNotNull { allUsersById[it] }
         .filter { it.id != state.currentUser.id }
+        .ifEmpty { state.directoryMembers.take(5) }
+
+    val electedSupervisorName = circle.supervisorId?.let { allUsersById[it]?.name }
+        ?.let { trContent(it) }
+        ?: tr("ড. নুসরাত জাহান", "Dr. Nusrat Jahan")
 
     var pokeTarget by remember { mutableStateOf<UserProfile?>(null) }
+    var showCreateCircleDialog by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
@@ -68,6 +74,55 @@ fun StudyCircleScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                // Live Circle Switcher + Create / Join Any Circle Row
+                item {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(state.circles, key = { it.id }) { c ->
+                            val isSelected = c.id == circle.id
+                            val isJoined = state.currentUser.id in c.memberIds
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) p.primary else p.card,
+                                border = BorderStroke(1.dp, if (isSelected) p.primary else p.border),
+                                modifier = Modifier.clickable {
+                                    if (isJoined) {
+                                        repository.selectActiveCircle(c.id)
+                                    } else {
+                                        repository.joinStudyCircle(c.id)
+                                    }
+                                }
+                            ) {
+                                Text(
+                                    text = if (isJoined) {
+                                        "${trContent(c.name).take(22)} (${c.memberIds.size})"
+                                    } else {
+                                        "${tr("জয়েন +", "Join +")} ${trContent(c.name).take(18)}"
+                                    },
+                                    color = if (isSelected) Color.White else p.text,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                                )
+                            }
+                        }
+                        item {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = p.primarySoft,
+                                modifier = Modifier.clickable { showCreateCircleDialog = true }
+                            ) {
+                                Text(
+                                    text = tr("+ নতুন সার্কেল", "+ New Circle"),
+                                    color = p.primarySoftText,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Sleek v3.0 Gradient Hero Cohort Card with 6-Segment Capsule Track
                 item {
                     SparcGradientHeroCard {
@@ -82,7 +137,7 @@ fun StudyCircleScreen(
                                     color = Color.White.copy(alpha = 0.20f)
                                 ) {
                                     Text(
-                                        text = "ACTIVE COHORT • ${circle.memberIds.size}/${circle.minMembersRequired}",
+                                        text = "${circle.status.label(lang).uppercase()} • ${circle.memberIds.size}/${circle.minMembersRequired}",
                                         color = Color.White,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.ExtraBold,
@@ -97,7 +152,7 @@ fun StudyCircleScreen(
                                     fontWeight = FontWeight.ExtraBold
                                 )
                                 Text(
-                                    text = tr("সুপারভাইজার: ড. নুসরাত জাহান", "Supervisor: Dr. Nusrat Jahan"),
+                                    text = "${tr("সুপারভাইজার", "Supervisor")}: $electedSupervisorName",
                                     color = Color.White.copy(alpha = 0.85f),
                                     fontSize = 12.sp
                                 )
@@ -111,8 +166,8 @@ fun StudyCircleScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("83%", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
-                                    Text("Ready", color = Color.White.copy(alpha = 0.85f), fontSize = 9.sp)
+                                    Text("${((myProgress.stage.step * 100) / 6)}%", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                                    Text("Stage", color = Color.White.copy(alpha = 0.85f), fontSize = 9.sp)
                                 }
                             }
                         }
@@ -152,7 +207,7 @@ fun StudyCircleScreen(
                                 color = p.primary
                             )
                             Text(
-                                tr("১৮/${chapter.totalPages} পৃষ্ঠা সম্পন্ন", "18/${chapter.totalPages} pages read"),
+                                tr("অধ্যায় ১ • ${chapter.totalPages} পৃষ্ঠা", "Ch 1 • ${chapter.totalPages} pages"),
                                 fontSize = 11.sp,
                                 color = p.muted
                             )
@@ -194,6 +249,8 @@ fun StudyCircleScreen(
 
                 // Peer Motivation (Poke) Card
                 item {
+                    val sentToday = state.pokesToday.count { it.senderId == state.currentUser.id }
+                    val leftToday = (3 - sentToday).coerceAtLeast(0)
                     SparcScholarlyCard {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -203,7 +260,7 @@ fun StudyCircleScreen(
                             Column {
                                 Text(tr("পিয়ার মোটিভেশন (Poke)", "Peer Motivation (Poke)"), style = MaterialTheme.typography.titleMedium, color = p.text)
                                 Text(
-                                    tr("আজ বাকি ২/৩ • Quiet Hours ১০ PM–৭ AM", "2/3 left today • Quiet Hours 10 PM–7 AM"),
+                                    tr("আজ বাকি $leftToday/৩ • Quiet Hours ১০ PM–৭ AM", "$leftToday/3 left today • Quiet Hours 10 PM–7 AM"),
                                     fontSize = 11.5.sp,
                                     color = p.muted
                                 )
@@ -263,19 +320,39 @@ fun StudyCircleScreen(
                         ) {
                             Column {
                                 Text(tr("সুপারভাইজার ইলেকশন", "Supervisor Election"), fontSize = 11.5.sp, color = p.muted)
-                                Text(tr("ড. নুসরাত জাহান", "Dr. Nusrat Jahan"), style = MaterialTheme.typography.titleMedium, color = p.text)
+                                Text(electedSupervisorName, style = MaterialTheme.typography.titleMedium, color = p.text)
                             }
                             Surface(shape = RoundedCornerShape(12.dp), color = p.primarySoft) {
                                 Text(
                                     text = tr(
-                                        "${circle.supervisorVotes.size}/${circle.memberIds.size} ভোটে নির্বাচিত",
-                                        "Elected (${circle.supervisorVotes.size}/${circle.memberIds.size} votes)"
+                                        "${circle.supervisorVotes.size}/${circle.memberIds.size.coerceAtLeast(1)} ভোট",
+                                        "${circle.supervisorVotes.size}/${circle.memberIds.size.coerceAtLeast(1)} votes"
                                     ),
                                     color = p.primarySoftText,
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                                 )
+                            }
+                        }
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(circlePeers.take(5), key = { it.id }) { cand ->
+                                val myVote = circle.supervisorVotes[state.currentUser.id] == cand.id
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (myVote) p.primary else p.cardAlt,
+                                    modifier = Modifier.clickable {
+                                        repository.voteForSupervisor(circle.id, cand.id)
+                                    }
+                                ) {
+                                    Text(
+                                        text = if (myVote) "✓ ${trContent(cand.name).split(" ").first()}" else "${tr("ভোট:", "Vote:")} ${trContent(cand.name).split(" ").first()}",
+                                        color = if (myVote) Color.White else p.text,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -423,10 +500,76 @@ fun StudyCircleScreen(
                                 Text(tr("পোস্ট", "Post"))
                             }
                         }
+
+                        state.debateComments.take(6).forEach { dc ->
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = p.cardAlt,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        "${trContent(dc.authorName)} • ${dc.stance}",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.5.sp,
+                                        color = p.primary
+                                    )
+                                    Text(dc.body, fontSize = 12.5.sp, color = p.text)
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+
+    if (showCreateCircleDialog) {
+        var newCircleName by remember { mutableStateOf("") }
+        var selectedBookIdx by remember { mutableIntStateOf(0) }
+        AlertDialog(
+            onDismissRequest = { showCreateCircleDialog = false },
+            containerColor = p.card,
+            titleContentColor = p.text,
+            textContentColor = p.text,
+            title = { Text(tr("নতুন স্টাডি সার্কেল তৈরি করুন", "Create New Study Circle")) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = newCircleName,
+                        onValueChange = { newCircleName = it },
+                        label = { Text(tr("সার্কেলের নাম", "Circle Name")) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    state.books.forEachIndexed { idx, bk ->
+                        FilterChip(
+                            selected = selectedBookIdx == idx,
+                            onClick = { selectedBookIdx = idx },
+                            label = { Text(bk.title.take(32)) }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newCircleName.isNotBlank()) {
+                            repository.createNewStudyCircle(newCircleName, state.books[selectedBookIdx], 5)
+                            showCreateCircleDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = p.primary)
+                ) {
+                    Text(tr("তৈরি করুন", "Create"))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateCircleDialog = false }) {
+                    Text(tr("বাতিল", "Cancel"), color = p.muted)
+                }
+            }
+        )
     }
 
     pokeTarget?.let { receiver ->

@@ -122,6 +122,27 @@ fun OnboardingAndDirectoryScreen(
                     }
                 }
 
+                val inbox = state.messages.filter { it.receiverId == state.currentUser.id }.take(3)
+                if (inbox.isNotEmpty()) {
+                    item {
+                        SparcScholarlyCard(containerColor = p.primarySoft) {
+                            Text(
+                                tr("📩 প্রাপ্ত গবেষক আমন্ত্রণ (${inbox.size})", "📩 Received Invitations (${inbox.size})"),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = p.primarySoftText
+                            )
+                            inbox.forEach { msg ->
+                                Text(
+                                    "• ${trContent(msg.senderName)}: ${trContent(msg.body)}",
+                                    fontSize = 12.sp,
+                                    color = p.primarySoftText
+                                )
+                            }
+                        }
+                    }
+                }
+
                 items(filteredMembers, key = { it.id }) { member ->
                     val memberName = trContent(member.name)
                     SparcScholarlyCard {

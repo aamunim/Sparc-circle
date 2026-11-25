@@ -5,6 +5,7 @@ import android.content.Context
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.sparc.studycircle.core.data.SparcRepository
+import org.sparc.studycircle.core.data.SupabaseAuthSession
 import org.sparc.studycircle.core.model.ApiKeyVaultConfig
 import org.sparc.studycircle.core.model.SparcVisualTheme
 
@@ -30,6 +31,11 @@ class SparcApp : Application() {
             runCatching { json.decodeFromString<ApiKeyVaultConfig>(it) }.getOrNull()
         } ?: ApiKeyVaultConfig()
 
+        val savedSessionJson = prefs.getString("supabase_auth_session", null)
+        val initialSession = savedSessionJson?.let {
+            runCatching { json.decodeFromString<SupabaseAuthSession>(it) }.getOrNull()
+        }
+
         repository = SparcRepository(
             initialTheme = initialTheme,
             initialAuthenticated = isAuthenticated,
@@ -37,6 +43,7 @@ class SparcApp : Application() {
             initialUserDept = savedDept,
             initialLanguage = savedLang,
             initialApiVault = initialVault,
+            initialSession = initialSession,
             onPersistTheme = { chosen ->
                 prefs.edit().putString("visual_theme", chosen.name).apply()
             },
@@ -52,6 +59,15 @@ class SparcApp : Application() {
             },
             onPersistApiVault = { vault ->
                 prefs.edit().putString("api_key_vault", json.encodeToString(vault)).apply()
+            },
+            onPersistSession = { sess ->
+                val ed = prefs.edit()
+                if (sess == null) {
+                    ed.remove("supabase_auth_session")
+                } else {
+                    ed.putString("supabase_auth_session", json.encodeToString(sess))
+                }
+                ed.apply()
             }
         )
     }

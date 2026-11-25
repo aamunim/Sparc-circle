@@ -308,4 +308,21 @@ class SparcDomainEngineTest {
         assertEquals("", repo.state.value.apiVault.geminiApiKey)
         assertEquals("bkash_test_99", savedVault.bkashMerchantKey)
     }
+
+    @Test
+    fun `repository supports creating and switching live study circles and book orders`() {
+        val repo = org.sparc.studycircle.core.data.SparcRepository(
+            supabaseClient = org.sparc.studycircle.core.data.SupabaseRestClient("", "")
+        )
+        val initialCount = repo.state.value.circles.size
+        val book = repo.state.value.books.first()
+
+        repo.createNewStudyCircle("IER Cohort-02", book, minMembers = 5)
+        assertEquals(initialCount + 1, repo.state.value.circles.size)
+        val created = repo.state.value.circles.last()
+        assertEquals(created.id, repo.state.value.activeCircleId)
+
+        repo.placePhysicalBookOrder(book, "Purchase", "Nilkhet, Dhaka", "01711000000")
+        assertEquals(1, repo.state.value.bookOrders.size)
+    }
 }

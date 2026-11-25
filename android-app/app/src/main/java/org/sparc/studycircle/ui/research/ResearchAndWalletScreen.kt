@@ -361,6 +361,60 @@ private fun CreditWalletAndSupervisionView(
                 )
             }
         }
+
+        if (state.bookOrders.isNotEmpty()) {
+            item {
+                SparcScholarlyCard {
+                    Text(tr("📚 হার্ডকপি বুক অর্ডার স্ট্যাটাস", "📚 Hardcopy Book Orders"), style = MaterialTheme.typography.titleMedium, color = p.text)
+                    state.bookOrders.take(5).forEach { ord ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(ord.bookTitle.take(32), fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = p.text)
+                                Text("${ord.orderMode} • ${ord.phone}", fontSize = 11.sp, color = p.muted)
+                            }
+                            Surface(shape = RoundedCornerShape(8.dp), color = p.accentSoft) {
+                                Text(
+                                    ord.status,
+                                    color = p.accentText,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            SparcScholarlyCard {
+                Text(tr("💳 লাইভ ওয়ালেট ট্রানজেকশন লেজার", "💳 Live Wallet Ledger"), style = MaterialTheme.typography.titleMedium, color = p.text)
+                state.walletHistory.take(6).forEach { tx ->
+                    val isCredit = tx.amountBdt >= 0
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(tx.reference, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = p.text)
+                            Text("${tx.status} • ${tx.description}", fontSize = 11.sp, color = p.muted)
+                        }
+                        Text(
+                            text = if (isCredit) "+৳${tx.amountBdt.toInt()}" else "-৳${(-tx.amountBdt).toInt()}",
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.sp,
+                            color = if (isCredit) p.primary else p.accentText
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

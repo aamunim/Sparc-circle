@@ -83,6 +83,7 @@ serve(async (req: Request) => {
       JSON.stringify({
         user: signInData.user,
         access_token: signInData.session?.access_token ?? "",
+        refresh_token: signInData.session?.refresh_token ?? "",
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

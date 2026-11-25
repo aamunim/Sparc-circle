@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +24,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.sparc.studycircle.core.data.SparcRepository
 import org.sparc.studycircle.core.theme.LocalSparcPalette
 import org.sparc.studycircle.core.theme.tr
@@ -49,12 +52,23 @@ enum class MainTab(val titleBn: String, val titleEn: String, val icon: ImageVect
 fun SparcMainScaffold(repository: SparcRepository) {
     val state by repository.state.collectAsState()
     val p = LocalSparcPalette.current
+    val scope = rememberCoroutineScope()
     val displayUserName = trContent(state.currentUser.name)
 
     var currentTab by remember { mutableStateOf(MainTab.CIRCLE) }
     var researchInitialSubTab by remember { mutableIntStateOf(0) }
     var libraryInitialSubTab by remember { mutableIntStateOf(0) }
     var showSettingsSheet by remember { mutableStateOf(false) }
+
+    // Continuous Live Multi-User Supabase Sync (every 12s while authenticated)
+    LaunchedEffect(state.isAuthenticated, state.isSupabaseConnected) {
+        if (state.isAuthenticated && state.isSupabaseConnected) {
+            while (true) {
+                repository.syncFromSupabaseNow(silent = true)
+                delay(12_000L)
+            }
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -128,7 +142,13 @@ fun SparcMainScaffold(repository: SparcRepository) {
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                             )
                         }
-                        Spacer(Modifier.width(4.dp))
+                        IconButton(onClick = { scope.launch { repository.syncFromSupabaseNow(silent = false) } }) {
+                            Icon(
+                                Icons.Default.Sync,
+                                contentDescription = "Live Sync",
+                                tint = Color.White
+                            )
+                        }
                         IconButton(onClick = { showSettingsSheet = true }) {
                             Icon(
                                 Icons.Default.Settings,
@@ -198,7 +218,13 @@ fun SparcMainScaffold(repository: SparcRepository) {
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                             )
                         }
-                        Spacer(Modifier.width(2.dp))
+                        IconButton(onClick = { scope.launch { repository.syncFromSupabaseNow(silent = false) } }) {
+                            Icon(
+                                Icons.Default.Sync,
+                                contentDescription = "Live Sync",
+                                tint = p.primary
+                            )
+                        }
                         IconButton(onClick = { showSettingsSheet = true }) {
                             Icon(
                                 Icons.Default.Settings,

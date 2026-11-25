@@ -101,10 +101,13 @@ private fun QuizAndCalibrationView(
 ) {
     val p = LocalSparcPalette.current
     val isLocked = progress.stage.step >= ProgressStage.EXERCISES_SUBMITTED.step
-    var draftAnswers by remember(progress.submittedAnswers) {
+    var draftAnswers by remember(progress.submittedAnswers, chapter.questions) {
         mutableStateOf(
             progress.submittedAnswers.ifEmpty {
-                mapOf("q1" to "Sayings, Doings, and Relatings", "q2" to "মিথ্যা (False)")
+                buildMap {
+                    chapter.questions.getOrNull(0)?.let { put(it.id, "Sayings, Doings, and Relatings") }
+                    chapter.questions.getOrNull(1)?.let { put(it.id, "মিথ্যা (False)") }
+                }
             }
         )
     }

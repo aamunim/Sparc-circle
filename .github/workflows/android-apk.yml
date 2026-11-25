@@ -37,25 +37,25 @@ jobs:
           ./gradlew testDebugUnitTest assembleDebug --no-daemon \
             -PSUPABASE_URL="$SUPABASE_URL_SECRET" \
             -PSUPABASE_ANON_KEY="$SUPABASE_ANON_SECRET"
-          cp app/build/outputs/apk/debug/app-debug.apk ../SPARC-Study-Circle-v3.3.${{ github.run_number }}.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../SPARC-Study-Circle-v3.4.${{ github.run_number }}.apk
 
       - name: Upload APK Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SPARC-Study-Circle-v3.3.${{ github.run_number }}-apk
-          path: SPARC-Study-Circle-v3.3.${{ github.run_number }}.apk
+          name: SPARC-Study-Circle-v3.4.${{ github.run_number }}-apk
+          path: SPARC-Study-Circle-v3.4.${{ github.run_number }}.apk
 
       - name: Publish Fresh Latest GitHub Release with APK
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v3.3.${{ github.run_number }}"
-          APK_FILE="SPARC-Study-Circle-v3.3.${{ github.run_number }}.apk"
+          TAG="v3.4.${{ github.run_number }}"
+          APK_FILE="SPARC-Study-Circle-v3.4.${{ github.run_number }}.apk"
           gh release create "$TAG" "$APK_FILE" \
             --latest \
-            --title "SPARC Study Circle $TAG — Instant Sign-Up (429 Fix) + 100% English/Bangla Localization" \
-            --notes "নতুন আপডেটেড রিলিজ ($TAG):
-          - ✅ **Sign-Up HTTP 429 Error সমাধান:** নতুন `auth-register` Edge Function ও Supabase Auto-Confirm যুক্ত হওয়ায় ইমেইল রেট-লিমিট (`HTTP 429`) ছাড়াই তাৎক্ষণিক অ্যাকাউন্ট তৈরি ও লগইন হবে।
-          - 🌐 **১০০% পূর্ণাঙ্গ English ⇄ বাংলা ভাষা সুইচ:** লগইন স্ক্রিনের উপরের **EN / বাংলা** বাটন কিংবা `⚙️ Settings` থেকে ভাষা পরিবর্তন করলে পুরো অ্যাপের সব ট্যাব, কার্ড, বাটন, কুইজ ও কনটেন্ট সাথে সাথে ইংরেজি/বাংলায় রূপান্তরিত হবে।
-          - 🔑 **In-App API Keys ম্যানেজার (`⚙️ Settings → API Keys`):** অ্যাপের ভেতর থেকেই Gemini API Key, bKash/SSLCommerz Key ও Custom Jitsi/Supabase URL যেকোনো সময় Add / Remove করা যাবে।"
+            --title "SPARC Study Circle $TAG — 100% Live Multi-User Two-Way Supabase Sync" \
+            --notes "নতুন মাল্টি-ইউজার লাইভ সিঙ্ক রিলিজ ($TAG):
+          - 🔄 **১০০% Live Two-Way Supabase Sync (Multi-User):** সার্কেল তৈরি/জয়েন, সুপারভাইজার ভোট, পিয়ার Poke ও ১-ট্যাপ রিপ্লাই, কুইক পোল ও ডিবেট কমেন্ট, ডিরেক্টরি ইনভাইট, কুইজ সাবমিশন (RLS-লকড Answer Key আনলক), রাইটিং টাস্ক, ওয়ালেট TrxID টপ-আপ এবং হার্ডকপি বুক অর্ডার—সবকিছু এখন লাইভ Supabase PostgreSQL ডাটাবেসের সাথে রিয়েল-টাইমে টু-ওয়ে সিঙ্ক হয়!
+          - 🔐 **স্থায়ী JWT সেশন ও Auto-Refresh:** অ্যাপ বন্ধ করে পুনরায় চালু করলেও লগইন সেশন অক্ষুণ্ণ থাকে এবং প্রতি ১২ সেকেন্ডে অটো-সিঙ্ক + উপরের `↻` বাটনে ১-ট্যাপ লাইভ রিফ্রেশ সুবিধা যুক্ত।
+          - 🌐 **১০০% পূর্ণাঙ্গ English ⇄ বাংলা ভাষা সুইচ** এবং **Instant Sign-Up (`HTTP 429` ফিক্সড)**।"

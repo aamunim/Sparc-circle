@@ -1,9 +1,13 @@
 package org.sparc.studycircle.core.data
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import org.sparc.studycircle.core.domain.SparcDomainEngine
 import org.sparc.studycircle.core.model.*
 import java.util.UUID
@@ -14,6 +18,9 @@ data class SparcAppState(
     val visualTheme: SparcVisualTheme = SparcVisualTheme.COBALT_SAAS,
     val apiVault: ApiKeyVaultConfig = ApiKeyVaultConfig(),
     val isSupabaseConnected: Boolean = false,
+    val isSyncingLive: Boolean = false,
+    val activeCircleId: String? = null,
+    val activeDebateThreadId: String? = null,
     val currentUser: UserProfile,
     val directoryMembers: List<UserProfile>,
     val messages: List<MemberMessage>,
@@ -42,18 +49,27 @@ class SparcRepository(
     initialUserDept: String? = null,
     initialLanguage: String = "bn",
     initialApiVault: ApiKeyVaultConfig = ApiKeyVaultConfig(),
+    initialSession: SupabaseAuthSession? = null,
     private val onPersistTheme: (SparcVisualTheme) -> Unit = {},
     private val onPersistAuth: (Boolean, String, String) -> Unit = { _, _, _ -> },
     private val onPersistLanguage: (String) -> Unit = {},
-    private val onPersistApiVault: (ApiKeyVaultConfig) -> Unit = {}
+    private val onPersistApiVault: (ApiKeyVaultConfig) -> Unit = {},
+    private val onPersistSession: (SupabaseAuthSession?) -> Unit = {}
 ) {
+    private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     init {
         supabaseClient.vaultConfig = initialApiVault
+        supabaseClient.onSessionUpdated = { sess -> onPersistSession(sess) }
+        if (initialSession != null) {
+            supabaseClient.restoreSession(initialSession)
+        }
     }
 
     private val _state = MutableStateFlow(
         createInitialSeededState().let { seeded ->
             val updatedUser = seeded.currentUser.copy(
+                id = initialSession?.userId?.takeIf { it.isNotBlank() } ?: seeded.currentUser.id,
                 name = initialUserName?.takeIf { it.isNotBlank() } ?: seeded.currentUser.name,
                 department = initialUserDept?.takeIf { it.isNotBlank() } ?: seeded.currentUser.department
             )
@@ -63,6 +79,7 @@ class SparcRepository(
                 visualTheme = initialTheme,
                 apiVault = initialApiVault,
                 isSupabaseConnected = supabaseClient.isConfigured,
+                activeCircleId = seeded.circles.firstOrNull()?.id,
                 currentUser = updatedUser
             )
         }
@@ -71,6 +88,74 @@ class SparcRepository(
 
     private fun msg(bn: String, en: String): String =
         if (_state.value.appLanguage == "en") en else bn
+
+    private fun launchRemoteSync(block: suspend () -> Unit) {
+        if (!supabaseClient.hasAuthenticatedUser) return
+        repoScope.launch {
+            runCatching { block() }.onFailure { err ->
+                val detail = err.message?.takeIf { it.isNotBlank() }
+                if (detail != null) {
+                    _state.update { it.copy(statusBannerMessage = detail) }
+                }
+            }
+        }
+    }
+
+    suspend fun syncFromSupabaseNow(silent: Boolean = true) {
+        if (!supabaseClient.hasAuthenticatedUser) return
+        if (!silent) {
+            _state.update { it.copy(isSyncingLive = true) }
+        }
+        val fallbackBooks = _state.value.books
+        val snapRes = supabaseClient.fetchLiveWorkspaceSnapshot(fallbackBooks)
+        snapRes.onSuccess { snap ->
+            _state.update { s ->
+                val liveMe = snap.me ?: s.currentUser
+                onPersistAuth(s.isAuthenticated, liveMe.name, liveMe.department)
+                val mergedPeers = if (snap.peers.isNotEmpty()) {
+                    snap.peers
+                } else {
+                    s.directoryMembers
+                }
+                val chosenCircleId = s.activeCircleId?.takeIf { id -> snap.circles.any { it.id == id } }
+                    ?: snap.activeCircleId
+                    ?: s.circles.firstOrNull()?.id
+
+                s.copy(
+                    isSyncingLive = false,
+                    isSupabaseConnected = supabaseClient.isConfigured,
+                    currentUser = liveMe,
+                    directoryMembers = mergedPeers,
+                    books = snap.books.ifEmpty { s.books },
+                    circles = snap.circles.ifEmpty { s.circles },
+                    activeCircleId = chosenCircleId,
+                    memberStageByUserId = snap.memberStageByUserId.ifEmpty { s.memberStageByUserId },
+                    myChapterProgress = if (snap.myChapterProgress.isNotEmpty()) snap.myChapterProgress else s.myChapterProgress,
+                    pokesToday = if (snap.pokesToday.isNotEmpty() || snap.peers.isNotEmpty()) snap.pokesToday else s.pokesToday,
+                    activeMuteScope = snap.activeMuteScope,
+                    polls = snap.polls.ifEmpty { s.polls },
+                    activeDebateThreadId = snap.activeDebateThreadId ?: s.activeDebateThreadId,
+                    debateComments = snap.debateComments.ifEmpty { s.debateComments },
+                    messages = snap.messages.ifEmpty { s.messages },
+                    highlights = snap.highlights.ifEmpty { s.highlights },
+                    bookOrders = snap.bookOrders,
+                    walletHistory = snap.walletHistory.ifEmpty { s.walletHistory },
+                    sessions = snap.sessions.ifEmpty { s.sessions },
+                    supervisionDeals = snap.supervisionDeals.ifEmpty { s.supervisionDeals },
+                    statusBannerMessage = if (!silent) {
+                        if (s.appLanguage == "en") "✓ Synced live with Supabase" else "✓ লাইভ Supabase ডাটা সিঙ্ক হয়েছে"
+                    } else s.statusBannerMessage
+                )
+            }
+        }.onFailure {
+            _state.update { it.copy(isSyncingLive = false) }
+        }
+    }
+
+    fun selectActiveCircle(circleId: String) {
+        _state.update { it.copy(activeCircleId = circleId) }
+        launchRemoteSync { syncFromSupabaseNow(silent = true) }
+    }
 
     fun updateApiVault(newVault: ApiKeyVaultConfig, bannerMsg: String = msg("API Key সংরক্ষিত হয়েছে!", "API Key saved!")) {
         supabaseClient.vaultConfig = newVault
@@ -82,6 +167,7 @@ class SparcRepository(
                 statusBannerMessage = bannerMsg
             )
         }
+        launchRemoteSync { syncFromSupabaseNow(silent = true) }
     }
 
     fun setVisualTheme(theme: SparcVisualTheme) {
@@ -130,24 +216,20 @@ class SparcRepository(
             .replaceFirstChar { it.uppercase() }
             .ifBlank { _state.value.currentUser.name }
 
-        val liveProfiles = if (supabaseClient.isConfigured) {
-            supabaseClient.fetchDirectoryProfiles().getOrNull()
-        } else null
-
         _state.update { s ->
-            val matchedMe = liveProfiles?.find { it.id == remoteUserId }
-            val user = matchedMe ?: s.currentUser.copy(
+            val user = s.currentUser.copy(
                 id = remoteUserId ?: s.currentUser.id,
                 name = derivedName
             )
-            val peers = liveProfiles?.filter { it.id != user.id }?.ifEmpty { s.directoryMembers } ?: s.directoryMembers
             onPersistAuth(true, user.name, user.department)
             s.copy(
                 isAuthenticated = true,
                 currentUser = user,
-                directoryMembers = peers,
                 statusBannerMessage = if (s.appLanguage == "en") "Welcome back, ${user.name}!" else "স্বাগতম, ${user.name}!"
             )
+        }
+        if (supabaseClient.hasAuthenticatedUser) {
+            syncFromSupabaseNow(silent = true)
         }
         return Result.success(Unit)
     }
@@ -189,9 +271,6 @@ class SparcRepository(
 
         val refBonus = if (referralCode.trim().isNotEmpty()) 50.0 else 0.0
         val newCode = "SPARC-" + cleanName.filter { it.isLetterOrDigit() }.take(6).uppercase().ifBlank { "USER" } + "26"
-        val liveProfiles = if (supabaseClient.isConfigured) {
-            supabaseClient.fetchDirectoryProfiles().getOrNull()
-        } else null
 
         _state.update { s ->
             val newUser = s.currentUser.copy(
@@ -200,14 +279,12 @@ class SparcRepository(
                 department = cleanDept,
                 skills = skills.ifEmpty { s.currentUser.skills },
                 referralCode = newCode,
-                walletBalanceBdt = s.currentUser.walletBalanceBdt + refBonus
+                walletBalanceBdt = if (supabaseClient.isConfigured) refBonus else s.currentUser.walletBalanceBdt + refBonus
             )
-            val peers = liveProfiles?.filter { it.id != newUser.id }?.ifEmpty { s.directoryMembers } ?: s.directoryMembers
             onPersistAuth(true, newUser.name, newUser.department)
             s.copy(
                 isAuthenticated = true,
                 currentUser = newUser,
-                directoryMembers = peers,
                 statusBannerMessage = when {
                     refBonus > 0 && s.appLanguage == "en" -> "Account created & +৳50 referral bonus credited!"
                     refBonus > 0 -> "অ্যাকাউন্ট তৈরি হয়েছে এবং +৳৫০ রেফারেল বোনাস যোগ হয়েছে!"
@@ -216,10 +293,14 @@ class SparcRepository(
                 }
             )
         }
+        if (supabaseClient.hasAuthenticatedUser) {
+            syncFromSupabaseNow(silent = true)
+        }
         return Result.success(Unit)
     }
 
     fun loginInstantDemo() {
+        supabaseClient.clearSession()
         val u = _state.value.currentUser
         onPersistAuth(true, u.name, u.department)
         _state.update {
@@ -263,6 +344,7 @@ class SparcRepository(
                 walletBalanceBdt = s.currentUser.walletBalanceBdt + bonusBdt,
                 gamificationPoints = s.currentUser.gamificationPoints + bonusPoints
             )
+            onPersistAuth(s.isAuthenticated, updatedUser.name, updatedUser.department)
             val updatedHistory = if (validReferral) {
                 listOf(
                     WalletTransactionItem(
@@ -287,13 +369,17 @@ class SparcRepository(
                 }
             )
         }
+        launchRemoteSync {
+            supabaseClient.updateMyProfileRemote(name, department, interests, skills, appliedReferralCode).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
     }
 
     // Section 2.2: Send Quick Invite / In-App Message (+Gamification Points)
     fun sendInviteMessage(receiver: UserProfile, body: String) {
         if (body.isBlank()) return
         _state.update { s ->
-            val msg = MemberMessage(
+            val msgItem = MemberMessage(
                 id = UUID.randomUUID().toString(),
                 senderId = s.currentUser.id,
                 senderName = s.currentUser.name,
@@ -302,7 +388,7 @@ class SparcRepository(
                 timestampLabel = if (s.appLanguage == "en") "Just now" else "এইমাত্র"
             )
             s.copy(
-                messages = listOf(msg) + s.messages,
+                messages = listOf(msgItem) + s.messages,
                 currentUser = s.currentUser.copy(
                     gamificationPoints = s.currentUser.gamificationPoints + 5
                 ),
@@ -312,6 +398,10 @@ class SparcRepository(
                     "${receiver.name}-কে আমন্ত্রণ বার্তা পাঠানো হয়েছে (+৫ পয়েন্ট)!"
                 }
             )
+        }
+        launchRemoteSync {
+            supabaseClient.sendInviteMessageRemote(receiver.id, body).getOrThrow()
+            syncFromSupabaseNow(silent = true)
         }
     }
 
@@ -361,6 +451,10 @@ class SparcRepository(
                 }
             )
         }
+        launchRemoteSync {
+            supabaseClient.topUpWalletRemote(method, amountBdt, manualTrxId).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
     }
 
     // Section 2.4 & 3.2: Log Reading + Highlight + Streak Update
@@ -374,6 +468,10 @@ class SparcRepository(
         visibility: HighlightVisibility
     ) {
         if (selectedText.isBlank()) return
+        val chapterId = _state.value.books.find { it.id == bookId }
+            ?.chapters?.find { it.chapterNo == chapterNo }?.id
+            ?: _state.value.books.first().chapters.first().id
+
         _state.update { s ->
             val hl = ReadingHighlight(
                 id = UUID.randomUUID().toString(),
@@ -405,6 +503,18 @@ class SparcRepository(
                 }
             )
         }
+        launchRemoteSync {
+            supabaseClient.saveHighlightAndLogReadingRemote(
+                bookId = bookId,
+                chapterId = chapterId,
+                pageNo = pageNo,
+                selectedText = selectedText,
+                note = note,
+                isUnderline = isUnderline,
+                visibility = visibility
+            ).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
     }
 
     // Section 3.5: Physical Book Order (Restricted to Admin, Teacher/Supervisor, SPARC Rep)
@@ -417,10 +527,10 @@ class SparcRepository(
             }
             return
         }
-        _state.update { s ->
-            val cost = if (mode == "Purchase") book.physicalPriceBdt else 0.0
-            if (cost > 0 && s.currentUser.walletBalanceBdt < cost) {
-                return@update s.copy(
+        val cost = if (mode == "Purchase") book.physicalPriceBdt else 0.0
+        if (cost > 0 && _state.value.currentUser.walletBalanceBdt < cost) {
+            _state.update { s ->
+                s.copy(
                     statusBannerMessage = if (s.appLanguage == "en") {
                         "Insufficient wallet balance (requires ৳${cost.toInt()})."
                     } else {
@@ -428,6 +538,9 @@ class SparcRepository(
                     }
                 )
             }
+            return
+        }
+        _state.update { s ->
             val order = PhysicalBookOrder(
                 id = UUID.randomUUID().toString(),
                 userId = s.currentUser.id,
@@ -437,7 +550,7 @@ class SparcRepository(
                 address = address.trim(),
                 phone = phone.trim(),
                 amountBdt = cost,
-                status = "Pending SPARC Rep Approval"
+                status = "Pending"
             )
             s.copy(
                 currentUser = s.currentUser.copy(
@@ -451,9 +564,54 @@ class SparcRepository(
                 }
             )
         }
+        launchRemoteSync {
+            supabaseClient.placeBookOrderRemote(book.id, mode, address, phone).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
     }
 
-    // Section 4.1 - 4.2: Join Member to Study Circle & Vote Supervisor
+    // Section 4.1 - 4.2: Create / Join Study Circle & Vote Supervisor
+    fun createNewStudyCircle(name: String, book: BookItem, minMembers: Int = 5) {
+        if (name.isBlank()) return
+        val localId = UUID.randomUUID().toString()
+        _state.update { s ->
+            val newCircle = StudyCircleGroup(
+                id = localId,
+                name = name.trim(),
+                bookId = book.id,
+                bookTitle = book.title,
+                minMembersRequired = minMembers.coerceAtLeast(2),
+                status = CircleStatus.FORMING,
+                memberIds = listOf(s.currentUser.id)
+            )
+            s.copy(
+                circles = s.circles + newCircle,
+                activeCircleId = localId,
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "Created Study Circle: ${name.trim()}"
+                } else {
+                    "নতুন স্টাডি সার্কেল তৈরি হয়েছে: ${name.trim()}"
+                }
+            )
+        }
+        launchRemoteSync {
+            val remoteId = supabaseClient.createCircleRemote(name, book.id, minMembers).getOrThrow()
+            if (remoteId.isNotBlank()) {
+                _state.update { it.copy(activeCircleId = remoteId) }
+            }
+            syncFromSupabaseNow(silent = true)
+        }
+    }
+
+    fun joinStudyCircle(circleId: String) {
+        addMemberToCircle(circleId, _state.value.currentUser.id)
+        _state.update { it.copy(activeCircleId = circleId) }
+        launchRemoteSync {
+            supabaseClient.joinCircleRemote(circleId).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
+    }
+
     fun addMemberToCircle(circleId: String, userId: String) {
         _state.update { s ->
             val updatedCircles = s.circles.map { c ->
@@ -464,7 +622,7 @@ class SparcRepository(
             }
             s.copy(
                 circles = updatedCircles,
-                statusBannerMessage = if (s.appLanguage == "en") "New member joined the circle!" else "নতুন সদস্য সার্কেলে যুক্ত হয়েছেন!"
+                statusBannerMessage = if (s.appLanguage == "en") "Joined the study circle!" else "স্টাডি সার্কেলে যুক্ত হয়েছেন!"
             )
         }
     }
@@ -484,10 +642,15 @@ class SparcRepository(
                 statusBannerMessage = if (s.appLanguage == "en") "Supervisor vote recorded." else "সুপারভাইজার নির্বাচনের ভোট রেকর্ড করা হয়েছে।"
             )
         }
+        launchRemoteSync {
+            supabaseClient.voteSupervisorRemote(circleId, candidateId).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
     }
 
     // Section 4.3: Rate-Limited Poke, Mute & 1-Tap Quick Reply + Poll & Debate
     fun sendPokeToMember(circleId: String, receiver: UserProfile, presetMessage: String, currentDhakaHour: Int = 15) {
+        var allowed = false
         _state.update { s ->
             val receiverStage = s.memberStageByUserId[receiver.id] ?: ProgressStage.READING_IN_PROGRESS
             val validation = SparcDomainEngine.validatePoke(
@@ -503,6 +666,7 @@ class SparcRepository(
                 is SparcDomainEngine.PokeValidationResult.Blocked ->
                     s.copy(statusBannerMessage = validation.reasonBn)
                 is SparcDomainEngine.PokeValidationResult.Allowed -> {
+                    allowed = true
                     val poke = PokeItem(
                         id = UUID.randomUUID().toString(),
                         circleId = circleId,
@@ -529,6 +693,12 @@ class SparcRepository(
                 }
             }
         }
+        if (allowed) {
+            launchRemoteSync {
+                supabaseClient.sendPokeRemote(circleId, 1, receiver.id, presetMessage).getOrThrow()
+                syncFromSupabaseNow(silent = true)
+            }
+        }
     }
 
     fun replyToPoke(pokeId: String, quickReply: String) {
@@ -539,9 +709,14 @@ class SparcRepository(
                 statusBannerMessage = if (s.appLanguage == "en") "Quick reply sent!" else "এক ট্যাপে রিপ্লাই পাঠানো হয়েছে: \"$quickReply\""
             )
         }
+        launchRemoteSync {
+            supabaseClient.replyPokeRemote(pokeId, quickReply).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
     }
 
     fun setPokeMuteScope(scope: MuteScope?) {
+        val circleId = _state.value.activeCircleId ?: _state.value.circles.firstOrNull()?.id ?: ""
         _state.update {
             it.copy(
                 activeMuteScope = scope,
@@ -553,6 +728,10 @@ class SparcRepository(
                 }
             )
         }
+        launchRemoteSync {
+            supabaseClient.setPokeMuteRemote(circleId, scope, 1).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
     }
 
     fun voteInPoll(pollId: String, optionIndex: Int) {
@@ -563,10 +742,15 @@ class SparcRepository(
                 }
             )
         }
+        launchRemoteSync {
+            supabaseClient.votePollRemote(pollId, optionIndex).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
     }
 
     fun postDebateComment(stance: String, body: String) {
         if (body.isBlank()) return
+        val threadId = _state.value.activeDebateThreadId ?: "66666666-6666-6666-6666-666666666601"
         _state.update { s ->
             val comment = DebateComment(
                 id = UUID.randomUUID().toString(),
@@ -576,18 +760,23 @@ class SparcRepository(
             )
             s.copy(debateComments = listOf(comment) + s.debateComments)
         }
+        launchRemoteSync {
+            supabaseClient.postDebateCommentRemote(threadId, stance, body).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
     }
 
     // Section 5: 6-Stage Chapter State Machine Actions
     fun startChapterReading(chapter: ChapterItem, targetDays: Int) {
+        val circleId = _state.value.activeCircleId ?: _state.value.circles.first().id
+        val dailyPages = SparcDomainEngine.calculateDailyPageTarget(chapter.totalPages, targetDays)
         _state.update { s ->
             val existing = s.myChapterProgress[chapter.chapterNo] ?: ChapterProgressState(
                 id = UUID.randomUUID().toString(),
-                circleId = s.circles.first().id,
+                circleId = circleId,
                 userId = s.currentUser.id,
                 chapterNo = chapter.chapterNo
             )
-            val dailyPages = SparcDomainEngine.calculateDailyPageTarget(chapter.totalPages, targetDays)
             val updated = existing.copy(
                 stage = ProgressStage.READING_STARTED,
                 targetDays = targetDays,
@@ -603,6 +792,17 @@ class SparcRepository(
                     "পড়া শুরু হয়েছে! প্রতিদিন $dailyPages পৃষ্ঠা পড়লে $targetDays দিনে শেষ হবে।"
                 }
             )
+        }
+        launchRemoteSync {
+            supabaseClient.upsertChapterStageRemote(
+                circleId = circleId,
+                chapterId = chapter.id,
+                chapterNo = chapter.chapterNo,
+                statusLabel = "Reading Started",
+                dailyPages = dailyPages,
+                targetDays = targetDays
+            ).getOrThrow()
+            syncFromSupabaseNow(silent = true)
         }
     }
 
@@ -634,6 +834,8 @@ class SparcRepository(
     }
 
     fun toggleChapterSection(chapter: ChapterItem, sectionId: String) {
+        val circleId = _state.value.activeCircleId ?: _state.value.circles.first().id
+        var nextSections: Set<String> = emptySet()
         _state.update { s ->
             val existing = s.myChapterProgress[chapter.chapterNo] ?: return@update s
             val nextSet = if (sectionId in existing.checkedSectionIds) {
@@ -641,6 +843,7 @@ class SparcRepository(
             } else {
                 existing.checkedSectionIds + sectionId
             }
+            nextSections = nextSet
             val nextStage = if (existing.stage.step < ProgressStage.READING_IN_PROGRESS.step && nextSet.isNotEmpty()) {
                 ProgressStage.READING_IN_PROGRESS
             } else existing.stage
@@ -651,9 +854,19 @@ class SparcRepository(
                 memberStageByUserId = s.memberStageByUserId + (s.currentUser.id to updated.stage)
             )
         }
+        launchRemoteSync {
+            supabaseClient.upsertChapterStageRemote(
+                circleId = circleId,
+                chapterId = chapter.id,
+                chapterNo = chapter.chapterNo,
+                statusLabel = "Reading in Progress",
+                completedSections = nextSections
+            ).getOrThrow()
+        }
     }
 
     fun declareReadingCompleted(chapter: ChapterItem) {
+        val circleId = _state.value.activeCircleId ?: _state.value.circles.first().id
         _state.update { s ->
             val existing = s.myChapterProgress[chapter.chapterNo] ?: return@update s
             val updated = existing.copy(stage = ProgressStage.READING_COMPLETED)
@@ -667,6 +880,15 @@ class SparcRepository(
                 }
             )
         }
+        launchRemoteSync {
+            supabaseClient.upsertChapterStageRemote(
+                circleId = circleId,
+                chapterId = chapter.id,
+                chapterNo = chapter.chapterNo,
+                statusLabel = "Reading Completed"
+            ).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
     }
 
     fun submitExercises(
@@ -674,9 +896,17 @@ class SparcRepository(
         answers: Map<String, String>,
         isReattempt: Boolean = false
     ) {
+        val circleId = _state.value.activeCircleId ?: _state.value.circles.first().id
+        var proceedRemote = true
         _state.update { s ->
-            val existing = s.myChapterProgress[chapter.chapterNo] ?: return@update s
+            val existing = s.myChapterProgress[chapter.chapterNo] ?: ChapterProgressState(
+                id = UUID.randomUUID().toString(),
+                circleId = circleId,
+                userId = s.currentUser.id,
+                chapterNo = chapter.chapterNo
+            )
             if (isReattempt && !SparcDomainEngine.canUseAutoScoreReattempt(existing)) {
+                proceedRemote = false
                 return@update s.copy(
                     statusBannerMessage = if (s.appLanguage == "en") {
                         "A single auto-scored reattempt is allowed 48 hours after first submission."
@@ -707,11 +937,28 @@ class SparcRepository(
                 }
             )
         }
+        if (proceedRemote) {
+            launchRemoteSync {
+                val progId = supabaseClient.upsertChapterStageRemote(
+                    circleId = circleId,
+                    chapterId = chapter.id,
+                    chapterNo = chapter.chapterNo,
+                    statusLabel = "Reading Completed"
+                ).getOrThrow()
+                if (progId.isNotBlank()) {
+                    supabaseClient.submitExercisesRemote(progId, answers, isReattempt).getOrThrow()
+                    // Re-sync pulls the newly RLS-unlocked chapter_answer_keys from PostgreSQL!
+                    syncFromSupabaseNow(silent = true)
+                }
+            }
+        }
     }
 
     fun submitSelfRatings(chapter: ChapterItem, ratings: List<Int>) {
+        var progId = ""
         _state.update { s ->
             val existing = s.myChapterProgress[chapter.chapterNo] ?: return@update s
+            progId = existing.id
             val evaluated = SparcDomainEngine.evaluateProgressVerification(
                 existing.copy(selfRatings = ratings),
                 chapter.type
@@ -731,9 +978,16 @@ class SparcRepository(
                 }
             )
         }
+        launchRemoteSync {
+            if (progId.isNotBlank()) {
+                supabaseClient.updateSelfRatingsRemote(progId, ratings).getOrThrow()
+                syncFromSupabaseNow(silent = true)
+            }
+        }
     }
 
     fun uploadSessionSlide(sessionId: String, fileName: String) {
+        var ok = false
         _state.update { s ->
             val target = s.sessions.find { it.id == sessionId } ?: return@update s
             if (target.hoursUntilSession < 24) {
@@ -745,6 +999,7 @@ class SparcRepository(
                     }
                 )
             }
+            ok = true
             s.copy(
                 sessions = s.sessions.map {
                     if (it.id == sessionId) it.copy(slideUploaded = true, slideFileName = fileName) else it
@@ -755,6 +1010,12 @@ class SparcRepository(
                     "স্লাইড ($fileName) সফলভাবে আপলোড হয়েছে!"
                 }
             )
+        }
+        if (ok) {
+            launchRemoteSync {
+                supabaseClient.uploadSessionSlideRemote(sessionId, fileName).getOrThrow()
+                syncFromSupabaseNow(silent = true)
+            }
         }
     }
 
@@ -788,8 +1049,15 @@ class SparcRepository(
             }
             return
         }
+        val circleId = _state.value.activeCircleId ?: _state.value.circles.first().id
+        val lang = _state.value.appLanguage
         _state.update { s ->
-            val existing = s.myChapterProgress[chapter.chapterNo] ?: return@update s
+            val existing = s.myChapterProgress[chapter.chapterNo] ?: ChapterProgressState(
+                id = UUID.randomUUID().toString(),
+                circleId = circleId,
+                userId = s.currentUser.id,
+                chapterNo = chapter.chapterNo
+            )
             val updatedBase = existing.copy(
                 writingSubmitted = true,
                 writingContent = content.trim()
@@ -818,10 +1086,15 @@ class SparcRepository(
                 }
             )
         }
+        launchRemoteSync {
+            supabaseClient.submitWritingTaskRemote(circleId, chapter.chapterNo, content, lang).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
     }
 
     // Section 6.3: Paid Supervision Wallet Settlement
     fun paySupervisionViaWallet(dealId: String) {
+        var proceed = false
         _state.update { s ->
             val deal = s.supervisionDeals.find { it.id == dealId } ?: return@update s
             if (deal.isPaidViaWallet) return@update s
@@ -834,6 +1107,7 @@ class SparcRepository(
                     }
                 )
             }
+            proceed = true
             val tx = WalletTransactionItem(
                 id = UUID.randomUUID().toString(),
                 method = PaymentMethod.SSLCOMMERZ,
@@ -856,6 +1130,12 @@ class SparcRepository(
                     "পেইড সুপারভিশন চুক্তি চূড়ান্ত এবং ওয়ালেট থেকে পরিশোধ সম্পন্ন!"
                 }
             )
+        }
+        if (proceed) {
+            launchRemoteSync {
+                supabaseClient.paySupervisionRemote(dealId).getOrThrow()
+                syncFromSupabaseNow(silent = true)
+            }
         }
     }
 
