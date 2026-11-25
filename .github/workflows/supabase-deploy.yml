@@ -58,8 +58,8 @@ jobs:
       - name: Link Project & Push SQL Migrations (Schema, Triggers, RLS & Seed Books)
         if: steps.check_secrets.outputs.configured == 'true'
         run: |
-          supabase link --project-ref "${{ steps.check_secrets.outputs.project_ref }}" --password "$SUPABASE_DB_PASSWORD"
-          supabase db push --password "$SUPABASE_DB_PASSWORD" --yes
+          supabase link --project-ref "${{ steps.check_secrets.outputs.project_ref }}"
+          supabase db push --remote --password "$SUPABASE_DB_PASSWORD" --yes
 
       - name: Sync Optional Edge Function Secrets
         if: steps.check_secrets.outputs.configured == 'true'
