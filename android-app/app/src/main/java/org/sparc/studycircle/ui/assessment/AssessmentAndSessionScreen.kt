@@ -30,7 +30,8 @@ import org.sparc.studycircle.core.data.SparcAppState
 import org.sparc.studycircle.core.data.SparcRepository
 import org.sparc.studycircle.core.domain.SparcDomainEngine
 import org.sparc.studycircle.core.model.*
-import org.sparc.studycircle.core.theme.*
+import org.sparc.studycircle.core.theme.LocalSparcPalette
+import org.sparc.studycircle.core.theme.SparcCrimson
 import org.sparc.studycircle.ui.components.*
 
 @Composable
@@ -38,7 +39,6 @@ fun AssessmentAndSessionScreen(
     state: SparcAppState,
     repository: SparcRepository
 ) {
-    // Sub-tabs: 0 = Screen 7 (Exercise Quiz & Self-Rating), 1 = Screen 8 (Live Video Session & Clinic), 2 = Screen 12 (Supervisor View)
     var subTab by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
     val book = state.books.first()
@@ -56,7 +56,7 @@ fun AssessmentAndSessionScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
             SparcSegmentedPills(
-                options = listOf("অনুশীলনী কুইজ", "লাইভ ভিডিও সেশন", "সুপারভাইজার ভিউ"),
+                options = listOf("অনুশীলনী কুইজ", "লাইভ সেশন", "সুপারভাইজার ভিউ"),
                 selectedIndex = subTab,
                 onSelect = { subTab = it }
             )
@@ -91,6 +91,7 @@ private fun QuizAndCalibrationView(
     progress: ChapterProgressState,
     repository: SparcRepository
 ) {
+    val p = LocalSparcPalette.current
     val isLocked = progress.stage.step >= ProgressStage.EXERCISES_SUBMITTED.step
     var draftAnswers by remember(progress.submittedAnswers) {
         mutableStateOf(
@@ -101,150 +102,141 @@ private fun QuizAndCalibrationView(
     }
     var selfRatingValue by remember { mutableIntStateOf(4) }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Warm Gold Compassionate Banner (Matching Screen 7 Mockup!)
-        Surface(
-            color = Color(0xFFF5B82E),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = SparcDomainEngine.COMPASSIONATE_OVERDUE_MESSAGE,
-                color = Color(0xFF1E293B),
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-            )
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = p.accentSoft,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = SparcDomainEngine.COMPASSIONATE_OVERDUE_MESSAGE,
+                    color = p.accentText,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                )
+            }
         }
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = "Chapter ${chapter.chapterNo} Exercise • Long Chapter",
-                    style = MaterialTheme.typography.headlineSmall
-                )
-                Text(
-                    text = "(${chapter.type.totalQuestions} Questions • Pass ${chapter.type.passMarks}/${chapter.type.totalMarks})",
+                    "অধ্যায় ${chapter.chapterNo} • ${chapter.type.name} QUIZ",
                     style = MaterialTheme.typography.titleMedium,
-                    color = SparcMutedInk
+                    color = p.primary
+                )
+                Text(
+                    "পাস ${chapter.type.passMarks}/${chapter.type.totalMarks}",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = p.muted
                 )
             }
+        }
 
-            items(chapter.questions.size) { index ->
-                val q = chapter.questions[index]
-                SparcScholarlyCard {
-                    Text(
-                        text = "[${q.sectionCode}] ${q.categoryLabel} (${q.maxMarks} pt): ${q.promptBn}",
-                        style = MaterialTheme.typography.titleMedium
-                    )
+        items(chapter.questions.size) { index ->
+            val q = chapter.questions[index]
+            SparcScholarlyCard {
+                Text(
+                    text = "[${q.sectionCode}] ${q.promptBn}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = p.text
+                )
 
-                    if (q.isAutoScored) {
-                        q.options.forEach { opt ->
-                            val selected = draftAnswers[q.id] == opt
-                            Surface(
-                                shape = RoundedCornerShape(50),
-                                color = if (selected) SparcEmerald else SparcSubtleBg,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable(enabled = !isLocked) {
-                                        draftAnswers = draftAnswers + (q.id to opt)
-                                    }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    RadioButton(
-                                        selected = selected,
-                                        onClick = null,
-                                        colors = RadioButtonDefaults.colors(
-                                            selectedColor = Color.White,
-                                            unselectedColor = SparcMutedInk
-                                        )
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        text = opt,
-                                        color = if (selected) Color.White else SparcInk,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        OutlinedTextField(
-                            value = draftAnswers[q.id] ?: "",
-                            onValueChange = { if (!isLocked) draftAnswers = draftAnswers + (q.id to it) },
-                            enabled = !isLocked,
-                            minLines = 3,
-                            placeholder = { Text("বাংলা বা ইংরেজিতে আপনার বিশ্লেষণ লিখুন...") },
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    if (isLocked) {
+                if (q.isAutoScored) {
+                    q.options.forEach { opt ->
+                        val selected = draftAnswers[q.id] == opt
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = SparcEmeraldContainer,
-                            modifier = Modifier.fillMaxWidth()
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (selected) p.primary else p.cardAlt,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = !isLocked) {
+                                    draftAnswers = draftAnswers + (q.id to opt)
+                                }
                         ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                q.lockedCorrectAnswer?.let { ans ->
-                                    Text("✔ Answer Key: $ans", fontWeight = FontWeight.Bold, color = SparcEmeraldDark)
-                                    Text(q.explanationBn, fontSize = 12.sp, color = SparcEmeraldDark)
-                                }
-                                if (q.supervisorModelPoints.isNotEmpty()) {
-                                    Text("মডেল পয়েন্টস:", fontWeight = FontWeight.Bold, color = SparcEmeraldDark)
-                                    q.supervisorModelPoints.forEach { pt ->
-                                        Text("• $pt", fontSize = 12.sp, color = SparcEmeraldDark)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Self-Rating Calibration Slider Card
-            item {
-                SparcScholarlyCard {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Learning Outcome Self-Rating (1-5)", style = MaterialTheme.typography.titleMedium)
-                        Text("$selfRatingValue / 5", fontWeight = FontWeight.Bold, color = SparcEmerald)
-                    }
-                    Slider(
-                        value = selfRatingValue.toFloat(),
-                        onValueChange = { selfRatingValue = it.toInt() },
-                        valueRange = 1f..5f,
-                        steps = 3,
-                        colors = SliderDefaults.colors(
-                            thumbColor = SparcEmerald,
-                            activeTrackColor = SparcEmerald
-                        )
-                    )
-                    SparcPrimaryButton(
-                        text = if (!isLocked) "Submit & Unlock Answer Key" else "Save Self-Rating ($selfRatingValue/5)",
-                        onClick = {
-                            if (progress.stage.step < ProgressStage.READING_COMPLETED.step) {
-                                repository.declareReadingCompleted(chapter)
-                            }
-                            if (!isLocked) {
-                                repository.submitExercises(chapter, draftAnswers)
-                            }
-                            repository.submitSelfRatings(
-                                chapter,
-                                List(chapter.learningOutcomes.size) { selfRatingValue }
+                            Text(
+                                text = if (selected) "✓ $opt" else opt,
+                                color = if (selected) Color.White else p.text,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp)
                             )
                         }
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = draftAnswers[q.id] ?: "",
+                        onValueChange = { if (!isLocked) draftAnswers = draftAnswers + (q.id to it) },
+                        enabled = !isLocked,
+                        minLines = 3,
+                        placeholder = { Text("বাংলা বা ইংরেজিতে আপনার উত্তর লিখুন...") },
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
+
+                if (isLocked) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = p.primarySoft,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            q.lockedCorrectAnswer?.let { ans ->
+                                Text("✔ Answer Key: $ans", fontWeight = FontWeight.Bold, color = p.primarySoftText)
+                                Text(q.explanationBn, fontSize = 12.sp, color = p.primarySoftText)
+                            }
+                            if (q.supervisorModelPoints.isNotEmpty()) {
+                                Text("মডেল পয়েন্টস:", fontWeight = FontWeight.Bold, color = p.primarySoftText)
+                                q.supervisorModelPoints.forEach { pt ->
+                                    Text("• $pt", fontSize = 12.sp, color = p.primarySoftText)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            SparcScholarlyCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("লার্নিং আউটকাম সেলফ-রেটিং", style = MaterialTheme.typography.titleMedium, color = p.text)
+                    Text("$selfRatingValue / 5", fontWeight = FontWeight.ExtraBold, color = p.primary)
+                }
+                Slider(
+                    value = selfRatingValue.toFloat(),
+                    onValueChange = { selfRatingValue = it.toInt() },
+                    valueRange = 1f..5f,
+                    steps = 3
+                )
+                SparcPrimaryButton(
+                    text = if (!isLocked) "উত্তর জমা দিন ও Answer Key খুলুন" else "সেলফ-রেটিং আপডেট করুন ($selfRatingValue/5)",
+                    onClick = {
+                        if (progress.stage.step < ProgressStage.READING_COMPLETED.step) {
+                            repository.declareReadingCompleted(chapter)
+                        }
+                        if (!isLocked) {
+                            repository.submitExercises(chapter, draftAnswers)
+                        }
+                        repository.submitSelfRatings(
+                            chapter,
+                            List(chapter.learningOutcomes.size) { selfRatingValue }
+                        )
+                    }
+                )
             }
         }
     }
@@ -257,6 +249,7 @@ private fun LiveSessionAndClinicView(
     onJoinJitsi: (OnlineSessionItem) -> Unit,
     onOpenExternal: (String) -> Unit
 ) {
+    val p = LocalSparcPalette.current
     val mainSession = sessions.first()
     val clinicSession = sessions.last()
 
@@ -265,48 +258,41 @@ private fun LiveSessionAndClinicView(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // SCREEN 8: 40-Min Online Session with Jitsi 2x2 Tile Preview + Meet/Zoom
         item {
             SparcScholarlyCard {
-                Text(
-                    "Chapter 1 Online Session\n(Part 1 of 2 • 40 Min)",
-                    style = MaterialTheme.typography.titleLarge
-                )
-                Text(
-                    "Presenter: ${mainSession.presenterName}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = SparcMutedInk
-                )
-
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = SparcEmerald,
-                    modifier = Modifier.clickable {
-                        repository.uploadSessionSlide(mainSession.id, "CPAR_Ch1_Slides.pdf")
-                    }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = if (mainSession.slideUploaded)
-                            "✓ Slide Deck Uploaded (24h Verified)"
-                        else "Upload Slide Deck (24h Before Session)",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                    )
+                    Text("অনলাইন সেশন (পর্ব ১/২ • ৪০ মি.)", style = MaterialTheme.typography.titleMedium, color = p.text)
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = p.primarySoft,
+                        modifier = Modifier.clickable {
+                            repository.uploadSessionSlide(mainSession.id, "CPAR_Ch1_Slides.pdf")
+                        }
+                    ) {
+                        Text(
+                            text = if (mainSession.slideUploaded) "✓ স্লাইড যাচাইকৃত" else "+ স্লাইড আপলোড",
+                            color = p.primarySoftText,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
                 }
 
-                // 2x2 Live Researcher Video Tile Preview
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Color(0xFF0F172A))
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFF0B1120))
                         .padding(8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        VideoParticipantTile("তানভীর (উপস্থাপক)", Modifier.weight(1f))
+                        VideoParticipantTile("তানভীর (Live)", Modifier.weight(1f))
                         VideoParticipantTile("ড. নুসরাত জাহান", Modifier.weight(1f))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -315,47 +301,42 @@ private fun LiveSessionAndClinicView(
                     }
                 }
 
-                SparcPrimaryButton(
-                    text = "Join In-App Video (Jitsi)",
-                    onClick = { onJoinJitsi(mainSession) }
-                )
-
-                OutlinedButton(
-                    onClick = { onOpenExternal(mainSession.externalMeetingUrl) },
-                    shape = RoundedCornerShape(50),
-                    border = BorderStroke(1.2.dp, SparcEmerald),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Open Google Meet / Zoom", color = SparcEmerald, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = { onJoinJitsi(mainSession) },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = p.primary),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Join Jitsi Video", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = p.cardAlt,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { onOpenExternal(mainSession.externalMeetingUrl) }
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 11.dp)) {
+                            Text("Meet / Zoom ↗", color = p.text, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                        }
+                    }
                 }
             }
         }
 
-        // Monthly Live Research Clinic Card
         item {
             SparcScholarlyCard {
-                Text("Monthly Live Research Clinic", style = MaterialTheme.typography.titleLarge)
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = SparcAmber,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Live Q&A with Senior Researchers • Sat 9:00 PM",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(12.dp)
-                    )
-                }
-                OutlinedButton(
-                    onClick = { onJoinJitsi(clinicSession) },
-                    shape = RoundedCornerShape(50),
-                    border = BorderStroke(1.2.dp, SparcEmerald),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Join Clinic / Submit Research Question", color = SparcEmerald, fontWeight = FontWeight.Bold)
-                }
+                Text("মাসিক লাইভ রিসার্চ ক্লিনিক", style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(
+                    "মাসের শেষ শনিবার রাত ৯:০০ • সিনিয়র গবেষকদের সাথে সরাসরি Q&A",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = p.muted
+                )
+                SparcPrimaryButton(
+                    text = "ক্লিনিকে জয়েন / প্রশ্ন জমা দিন",
+                    onClick = { onJoinJitsi(clinicSession) }
+                )
             }
         }
     }
@@ -365,21 +346,17 @@ private fun LiveSessionAndClinicView(
 private fun VideoParticipantTile(name: String, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
-            .height(74.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .height(68.dp)
+            .clip(RoundedCornerShape(12.dp))
             .background(Color(0xFF1E293B))
             .padding(8.dp)
     ) {
-        SparcAvatarCircle(
-            name = name,
-            size = 32.dp,
-            bgColor = SparcEmerald,
-            textColor = Color.White
-        )
+        SparcAvatarCircle(name = name, size = 28.dp)
         Text(
-            text = "🎙 $name",
+            text = name,
             color = Color.White,
             fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
             modifier = Modifier.align(Alignment.BottomStart)
         )
     }
@@ -387,76 +364,63 @@ private fun VideoParticipantTile(name: String, modifier: Modifier = Modifier) {
 
 @Composable
 private fun SupervisorMobileGradingView() {
-    var awardedMarks by remember { mutableIntStateOf(2) }
+    val p = LocalSparcPalette.current
+    var awardedMarks by remember { mutableIntStateOf(3) }
     var overrideApproved by remember { mutableStateOf(false) }
 
-    // SCREEN 12: Supervisor Mobile Red-Flag & Manual Grading Dashboard
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            SparcScholarlyCard(borderColor = Color(0xFFFCA5A5)) {
+            SparcScholarlyCard(borderColor = SparcCrimson.copy(alpha = 0.5f)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("🚨 Needs Support Alert", style = MaterialTheme.typography.titleMedium, color = SparcCrimson)
-                    Surface(shape = RoundedCornerShape(50), color = SparcCrimsonContainer) {
+                    Text("Needs Support (≥৩ রেড ফ্ল্যাগ)", style = MaterialTheme.typography.titleMedium, color = SparcCrimson)
+                    Surface(shape = RoundedCornerShape(50), color = SparcCrimson.copy(alpha = 0.15f)) {
                         Text(
-                            "3 Red Flags",
+                            "সাদিয়া ইসলাম",
                             color = SparcCrimson,
-                            fontSize = 11.sp,
+                            fontSize = 11.5.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }
                 }
-                Text("সদস্য: সাদিয়া ইসলাম (Sociology)", fontWeight = FontWeight.Bold)
-                Surface(shape = RoundedCornerShape(50), color = SparcAmberContainer) {
-                    Text(
-                        "Calibration: Over-confident (Self 4.5 • Score 38%)",
-                        color = SparcAmberDark,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
-                }
                 Text(
-                    "Poke Summary: মোট ৫টি Poke পেয়েছেন, ১টি রিপ্লাই দিয়েছেন (বার্তা গোপন রাখা হয়েছে)।",
+                    "• ক্যালিব্রেশন: Over-confident (Self 4.5 • Score 38%)\n• প্রাপ্ত Poke সংখ্যা: ৫টি (বার্তা গোপন রাখা হয়েছে)",
                     fontSize = 12.sp,
-                    color = SparcMutedInk
+                    color = p.muted
                 )
             }
         }
 
         item {
             SparcScholarlyCard {
-                Text("Manual Scoring [F–J]: Scenario Analysis", style = MaterialTheme.typography.titleMedium)
+                Text("সুপারভাইজার ম্যানুয়াল স্কোরিং [F–J]", style = MaterialTheme.typography.titleMedium, color = p.text)
                 Text(
-                    "উত্তর: \"Sayings, Doings ও Relatings বিশ্লেষণ করে বিভাগে অংশগ্রহণমূলক সংলাপ তৈরি করা সম্ভব।\"",
+                    "“Sayings, Doings ও Relatings বিশ্লেষণ করে বিভাগে অংশগ্রহণমূলক সংলাপ তৈরি করা সম্ভব।”",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = SparcMutedInk
+                    color = p.muted
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     (0..3).forEach { m ->
                         val active = awardedMarks == m
                         Surface(
-                            shape = RoundedCornerShape(50),
-                            color = if (active) SparcEmerald else SparcSubtleBg,
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (active) p.primary else p.cardAlt,
                             modifier = Modifier
                                 .weight(1f)
                                 .clickable { awardedMarks = m }
                         ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.padding(vertical = 8.dp)
-                            ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 10.dp)) {
                                 Text(
-                                    "$m pts",
-                                    color = if (active) Color.White else SparcInk,
+                                    "$m pt",
+                                    color = if (active) Color.White else p.text,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 12.sp
                                 )
@@ -465,7 +429,7 @@ private fun SupervisorMobileGradingView() {
                     }
                 }
                 SparcPrimaryButton(
-                    text = if (overrideApproved) "✓ Grade Saved & Override Enabled" else "Save Score & Approve Override",
+                    text = if (overrideApproved) "✓ স্কোর সংরক্ষিত ও Override সক্রিয়" else "স্কোর সংরক্ষণ ও Override অনুমোদন",
                     onClick = { overrideApproved = true }
                 )
             }
@@ -480,11 +444,12 @@ private fun InAppJitsiVideoDialog(
     displayName: String,
     onDismiss: () -> Unit
 ) {
+    val p = LocalSparcPalette.current
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Surface(modifier = Modifier.fillMaxSize()) {
+        Surface(modifier = Modifier.fillMaxSize(), color = p.card) {
             Column(modifier = Modifier.fillMaxSize()) {
                 Row(
                     modifier = Modifier
@@ -492,11 +457,7 @@ private fun InAppJitsiVideoDialog(
                         .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = session.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Text(session.title, style = MaterialTheme.typography.titleMedium, color = p.text, modifier = Modifier.weight(1f))
                     Button(
                         onClick = onDismiss,
                         colors = ButtonDefaults.buttonColors(containerColor = SparcCrimson)

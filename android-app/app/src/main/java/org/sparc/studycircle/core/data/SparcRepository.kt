@@ -9,6 +9,7 @@ import org.sparc.studycircle.core.model.*
 import java.util.UUID
 
 data class SparcAppState(
+    val visualTheme: SparcVisualTheme = SparcVisualTheme.COBALT_SAAS,
     val currentUser: UserProfile,
     val directoryMembers: List<UserProfile>,
     val messages: List<MemberMessage>,
@@ -30,10 +31,22 @@ data class SparcAppState(
 )
 
 class SparcRepository(
-    private val supabaseClient: SupabaseRestClient = SupabaseRestClient()
+    private val supabaseClient: SupabaseRestClient = SupabaseRestClient(),
+    initialTheme: SparcVisualTheme = SparcVisualTheme.COBALT_SAAS,
+    private val onPersistTheme: (SparcVisualTheme) -> Unit = {}
 ) {
-    private val _state = MutableStateFlow(createInitialSeededState())
+    private val _state = MutableStateFlow(createInitialSeededState().copy(visualTheme = initialTheme))
     val state: StateFlow<SparcAppState> = _state.asStateFlow()
+
+    fun setVisualTheme(theme: SparcVisualTheme) {
+        onPersistTheme(theme)
+        _state.update {
+            it.copy(
+                visualTheme = theme,
+                statusBannerMessage = "থিম পরিবর্তন করা হয়েছে: ${theme.titleBn}"
+            )
+        }
+    }
 
     fun dismissBanner() {
         _state.update { it.copy(statusBannerMessage = null) }

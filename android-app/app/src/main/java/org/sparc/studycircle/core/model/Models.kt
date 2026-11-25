@@ -3,6 +3,25 @@ package org.sparc.studycircle.core.model
 import kotlinx.serialization.Serializable
 
 @Serializable
+enum class SparcVisualTheme(
+    val titleBn: String,
+    val subtitleBn: String
+) {
+    COBALT_SAAS(
+        titleBn = "Cobalt SaaS (Light)",
+        subtitleBn = "Coursera / Brilliant ধাঁচের আল্ট্রা-ক্লিন সাদা ও ইলেকট্রিক ব্লু"
+    ),
+    MIDNIGHT_GLASS(
+        titleBn = "Midnight Glass (Dark)",
+        subtitleBn = "Linear / Audible ধাঁচের প্রিমিয়াম ডার্ক গ্লাসমরফিজম"
+    ),
+    OCEAN_HERO(
+        titleBn = "Ocean Hero (Layered)",
+        subtitleBn = "Blinkist / Headspace ধাঁচের কার্ভড টিল হিরো ও ডার্ক ফ্লোটিং ডক"
+    )
+}
+
+@Serializable
 enum class UserRole { MEMBER, SUPERVISOR, SPARC_REP, ADMIN }
 
 @Serializable

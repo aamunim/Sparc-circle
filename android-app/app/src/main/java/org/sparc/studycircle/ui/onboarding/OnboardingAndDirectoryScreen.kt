@@ -22,7 +22,7 @@ import org.sparc.studycircle.core.data.SparcAppState
 import org.sparc.studycircle.core.data.SparcRepository
 import org.sparc.studycircle.core.domain.SparcDomainEngine
 import org.sparc.studycircle.core.model.UserProfile
-import org.sparc.studycircle.core.theme.*
+import org.sparc.studycircle.core.theme.LocalSparcPalette
 import org.sparc.studycircle.ui.components.*
 
 private val ALL_DEPARTMENTS = listOf(
@@ -41,7 +41,7 @@ fun OnboardingAndDirectoryScreen(
     state: SparcAppState,
     repository: SparcRepository
 ) {
-    // Sub-tabs: 0 = Screen 2 (Researcher Directory), 1 = Screen 1 (Onboarding & Profile Setup)
+    val p = LocalSparcPalette.current
     var subTab by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedDept by remember { mutableStateOf("All Depts") }
@@ -60,14 +60,13 @@ fun OnboardingAndDirectoryScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
             SparcSegmentedPills(
-                options = listOf("গবেষক ডিরেক্টরি (১৮৪+)", "প্রোফাইল ও স্কিল সেটআপ"),
+                options = listOf("গবেষক ডিরেক্টরি", "প্রোফাইল ও স্কিল সেটআপ"),
                 selectedIndex = subTab,
                 onSelect = { subTab = it }
             )
         }
 
         if (subTab == 1) {
-            // SCREEN 1: Onboarding, Skills & Referral Bonus Setup
             OnboardingProfileSetupView(
                 currentUser = state.currentUser,
                 onSave = { name, dept, interests, skills, refCode ->
@@ -76,29 +75,23 @@ fun OnboardingAndDirectoryScreen(
                 }
             )
         } else {
-            // SCREEN 2: Researcher Directory + Quick Invite Bottom Sheet
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
-                    Text(
-                        text = "Researcher Directory (184 Members)",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = SparcInk
-                    )
-                    Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        placeholder = { Text("নাম বা দক্ষতা দিয়ে খুঁজুন...") },
+                        placeholder = { Text("গবেষক বা দক্ষতা দিয়ে খুঁজুন...") },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         shape = RoundedCornerShape(16.dp),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedContainerColor = SparcSurface,
-                            focusedContainerColor = SparcSurface
+                            unfocusedContainerColor = p.card,
+                            focusedContainerColor = p.card,
+                            unfocusedBorderColor = p.border
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -107,16 +100,16 @@ fun OnboardingAndDirectoryScreen(
                         items(ALL_DEPARTMENTS) { dept ->
                             val selected = selectedDept == dept
                             Surface(
-                                shape = RoundedCornerShape(50),
-                                color = if (selected) SparcEmerald else SparcSurface,
-                                border = BorderStroke(1.dp, if (selected) SparcEmerald else SparcCardBorder),
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (selected) p.primary else p.card,
+                                border = BorderStroke(1.dp, if (selected) p.primary else p.border),
                                 modifier = Modifier.clickable { selectedDept = dept }
                             ) {
                                 Text(
                                     text = if (dept == "All Depts") "সব বিভাগ" else dept,
-                                    color = if (selected) Color.White else SparcInk,
+                                    color = if (selected) Color.White else p.text,
                                     fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
+                                    fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
                                 )
                             }
@@ -127,74 +120,43 @@ fun OnboardingAndDirectoryScreen(
                 items(filteredMembers, key = { it.id }) { member ->
                     SparcScholarlyCard {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            SparcAvatarCircle(
-                                name = member.name,
-                                size = 48.dp,
-                                bgColor = SparcEmeraldDark
-                            )
+                            SparcAvatarCircle(name = member.name, size = 44.dp)
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
+                                Text(member.name, style = MaterialTheme.typography.titleMedium, color = p.text)
                                 Text(
-                                    text = "${member.name} (${member.department})",
-                                    style = MaterialTheme.typography.titleMedium
+                                    "${member.department} • ★ ${member.rating} • 🔥 ${member.readingStreakDays}d",
+                                    fontSize = 12.sp,
+                                    color = p.muted
                                 )
-                                Spacer(Modifier.height(4.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Surface(
-                                        shape = RoundedCornerShape(50),
-                                        color = SparcAmberContainer
-                                    ) {
-                                        Text(
-                                            text = "★ ${member.rating} Star",
-                                            color = SparcAmberDark,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp)
-                                        )
-                                    }
-                                    Surface(
-                                        shape = RoundedCornerShape(50),
-                                        color = SparcAmberContainer
-                                    ) {
-                                        Text(
-                                            text = "🔥 ${member.readingStreakDays}d Streak",
-                                            color = SparcAmberDark,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp)
-                                        )
-                                    }
-                                }
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = p.primarySoft,
+                                modifier = Modifier.clickable { inviteTarget = member }
+                            ) {
+                                Text(
+                                    text = "Invite +",
+                                    color = p.primarySoftText,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                                )
                             }
                         }
 
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             member.skills.forEach { sk ->
-                                Surface(
-                                    shape = RoundedCornerShape(50),
-                                    color = SparcSubtleBg
-                                ) {
+                                Surface(shape = RoundedCornerShape(10.dp), color = p.cardAlt) {
                                     Text(
                                         text = sk,
-                                        fontSize = 12.sp,
-                                        color = SparcInk,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                                        fontSize = 11.5.sp,
+                                        color = p.text,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                                     )
                                 }
                             }
-                        }
-
-                        OutlinedButton(
-                            onClick = { inviteTarget = member },
-                            shape = RoundedCornerShape(50),
-                            border = BorderStroke(1.2.dp, SparcEmerald),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = "Invite to Circle (গ্রুপে আমন্ত্রণ জানান)",
-                                color = SparcEmerald,
-                                fontWeight = FontWeight.Bold
-                            )
                         }
                     }
                 }
@@ -202,11 +164,11 @@ fun OnboardingAndDirectoryScreen(
         }
     }
 
-    // Sleek Material 3 ModalBottomSheet matching Screen 2 mockup!
     inviteTarget?.let { target ->
         ModalBottomSheet(
             onDismissRequest = { inviteTarget = null },
-            containerColor = SparcSurface,
+            containerColor = p.card,
+            contentColor = p.text,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
         ) {
             var chosenIdx by remember { mutableIntStateOf(0) }
@@ -218,24 +180,14 @@ fun OnboardingAndDirectoryScreen(
                     .padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = "Invite ${target.name}",
-                    style = MaterialTheme.typography.titleLarge
-                )
-                Text(
-                    text = "কুইক মেসেজ টেমপ্লেট বেছে নিন:",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = SparcMutedInk
-                )
+                Text("Invite ${target.name}", style = MaterialTheme.typography.titleLarge, color = p.text)
+                Text("কুইক মেসেজ টেমপ্লেট বেছে নিন:", fontSize = 12.sp, color = p.muted)
                 templates.forEachIndexed { idx, tpl ->
                     val selected = idx == chosenIdx
                     Surface(
                         shape = RoundedCornerShape(14.dp),
-                        color = if (selected) SparcEmeraldContainer.copy(alpha = 0.35f) else SparcSurface,
-                        border = BorderStroke(
-                            width = if (selected) 2.dp else 1.dp,
-                            color = if (selected) SparcEmerald else SparcCardBorder
-                        ),
+                        color = if (selected) p.primarySoft else p.cardAlt,
+                        border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) p.primary else p.border),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { chosenIdx = idx }
@@ -246,22 +198,18 @@ fun OnboardingAndDirectoryScreen(
                         ) {
                             Text(
                                 text = tpl,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) p.primarySoftText else p.text,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                                 modifier = Modifier.weight(1f)
                             )
                             if (selected) {
-                                Icon(
-                                    Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    tint = SparcEmerald
-                                )
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = p.primary)
                             }
                         }
                     }
                 }
                 SparcPrimaryButton(
-                    text = "Send Invite (+5 pts) ⊕",
+                    text = "আমন্ত্রণ পাঠান (+৫ পয়েন্ট)",
                     onClick = {
                         repository.sendInviteMessage(target, templates[chosenIdx])
                         inviteTarget = null
@@ -279,6 +227,7 @@ private fun OnboardingProfileSetupView(
     currentUser: UserProfile,
     onSave: (String, String, List<String>, List<String>, String) -> Unit
 ) {
+    val p = LocalSparcPalette.current
     var name by remember { mutableStateOf(currentUser.name) }
     var department by remember { mutableStateOf(currentUser.department) }
     var interests by remember { mutableStateOf(currentUser.researchInterests.toSet()) }
@@ -292,21 +241,13 @@ private fun OnboardingProfileSetupView(
     ) {
         item {
             SparcScholarlyCard {
-                Text(
-                    text = "Create Researcher Profile • Step 2 of 2",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = SparcMutedInk
-                )
-                Text(
-                    text = "SPARC Study Circle",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = SparcEmerald
-                )
+                Text("STEP 2 OF 2 • RESEARCHER SETUP", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = p.primary)
+                Text("গবেষক প্রোফাইল ও দক্ষতা নির্বাচন", style = MaterialTheme.typography.titleLarge, color = p.text)
 
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("গবেষকের নাম (Name)") },
+                    label = { Text("গবেষকের নাম") },
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -318,110 +259,75 @@ private fun OnboardingProfileSetupView(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Text("Research Interests (গবেষণার আগ্রহ):", style = MaterialTheme.typography.titleMedium)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                Text("রিসার্চ ইন্টারেস্ট:", style = MaterialTheme.typography.titleMedium, color = p.text)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ALL_INTEREST_TAGS.forEach { tag ->
                         val active = tag in interests
                         Surface(
-                            shape = RoundedCornerShape(50),
-                            color = if (active) SparcEmerald else SparcSurface,
-                            border = BorderStroke(1.dp, if (active) SparcEmerald else SparcCardBorder),
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (active) p.primary else p.cardAlt,
                             modifier = Modifier.clickable {
                                 interests = if (active) interests - tag else interests + tag
                             }
                         ) {
                             Text(
                                 text = if (active) "✓ $tag" else tag,
-                                color = if (active) Color.White else SparcInk,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                                color = if (active) Color.White else p.text,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
                             )
                         }
                     }
                 }
 
-                Text("Core Research Skills (কো-অথর ম্যাচমেকিং):", style = MaterialTheme.typography.titleMedium)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ALL_SKILL_TAGS.forEachIndexed { idx, sk ->
+                Text("কো-অথর ম্যাচমেকিং স্কিলস:", style = MaterialTheme.typography.titleMedium, color = p.text)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ALL_SKILL_TAGS.forEach { sk ->
                         val active = sk in skills
-                        val bg = when {
-                            active && idx % 2 == 1 -> SparcAmberContainer
-                            active -> SparcEmerald
-                            else -> SparcSurface
-                        }
-                        val fg = when {
-                            active && idx % 2 == 1 -> SparcAmberDark
-                            active -> Color.White
-                            else -> SparcInk
-                        }
                         Surface(
-                            shape = RoundedCornerShape(50),
-                            color = bg,
-                            border = BorderStroke(1.dp, if (active) Color.Transparent else SparcCardBorder),
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (active) p.primarySoft else p.cardAlt,
+                            border = BorderStroke(1.dp, if (active) p.primary else p.border),
                             modifier = Modifier.clickable {
                                 skills = if (active) skills - sk else skills + sk
                             }
                         ) {
                             Text(
-                                text = "✦ $sk",
-                                color = fg,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                                text = if (active) "✓ $sk" else sk,
+                                color = if (active) p.primarySoftText else p.text,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
                             )
                         }
                     }
                 }
 
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = SparcParchment,
-                    border = BorderStroke(1.dp, SparcCardBorder)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                Surface(shape = RoundedCornerShape(14.dp), color = p.accentSoft) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Have a Referral Code? (Optional)", fontWeight = FontWeight.Bold)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedTextField(
-                                value = referralInput,
-                                onValueChange = { referralInput = it },
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
-                            )
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = Color(0xFF15803D)
-                            ) {
-                                Text(
-                                    text = "+BDT 50\nBonus",
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
-                                )
-                            }
-                        }
+                        OutlinedTextField(
+                            value = referralInput,
+                            onValueChange = { referralInput = it },
+                            label = { Text("রেফারেল কোড") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text("+৳৫০ বোনাস!", color = p.accentText, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
                     }
                 }
 
                 SparcPrimaryButton(
-                    text = "Complete Setup & Join Circle",
-                    onClick = {
-                        onSave(name, department, interests.toList(), skills.toList(), referralInput)
-                    }
+                    text = "প্রোফাইল সংরক্ষণ করুন",
+                    onClick = { onSave(name, department, interests.toList(), skills.toList(), referralInput) }
                 )
             }
         }

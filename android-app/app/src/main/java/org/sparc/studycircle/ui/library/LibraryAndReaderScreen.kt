@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -22,7 +21,7 @@ import org.sparc.studycircle.core.data.SparcRepository
 import org.sparc.studycircle.core.domain.SparcDomainEngine
 import org.sparc.studycircle.core.model.BookItem
 import org.sparc.studycircle.core.model.HighlightVisibility
-import org.sparc.studycircle.core.theme.*
+import org.sparc.studycircle.core.theme.LocalSparcPalette
 import org.sparc.studycircle.ui.components.*
 
 @Composable
@@ -31,25 +30,21 @@ fun LibraryAndReaderScreen(
     repository: SparcRepository,
     initialSubTab: Int = 0
 ) {
-    // Sub-tabs: 0 = Screen 3 (Academic Library), 1 = Screen 4 (Smart Paper Reader & Audio)
     var subTab by remember(initialSubTab) { mutableIntStateOf(initialSubTab) }
     var selectedBookId by remember { mutableStateOf(state.books.first().id) }
     val selectedBook = state.books.find { it.id == selectedBookId } ?: state.books.first()
-    val chapter = selectedBook.chapters.first()
-
     var orderDialogBook by remember { mutableStateOf<BookItem?>(null) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
             SparcSegmentedPills(
-                options = listOf("একাডেমিক লাইব্রেরি", "স্মার্ট বুক রিডার ও অডিও"),
+                options = listOf("ডিজিটাল লাইব্রেরি", "স্মার্ট রিডার ও অডিও"),
                 selectedIndex = subTab,
                 onSelect = { subTab = it }
             )
         }
 
         if (subTab == 0) {
-            // SCREEN 3: SPARC Academic Library & Confidential Hardcopy Order
             AcademicLibraryCatalogView(
                 books = state.books,
                 onReadFreeChapter = { book ->
@@ -59,12 +54,7 @@ fun LibraryAndReaderScreen(
                 onOrderHardcopy = { book -> orderDialogBook = book }
             )
         } else {
-            // SCREEN 4: Smart Paper Reader, Floating Privacy Popover & Mini Audio Waveform Player
-            SmartPaperReaderView(
-                book = selectedBook,
-                state = state,
-                repository = repository
-            )
+            SmartPaperReaderView(book = selectedBook, repository = repository)
         }
     }
 
@@ -86,75 +76,38 @@ private fun AcademicLibraryCatalogView(
     onReadFreeChapter: (BookItem) -> Unit,
     onOrderHardcopy: (BookItem) -> Unit
 ) {
-    var selectedCat by remember { mutableStateOf("All Books") }
-    val categories = listOf("All Books", "Action Research", "Methodology", "Qualitative")
+    val p = LocalSparcPalette.current
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        item {
-            Text("SPARC Academic Library", style = MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.height(10.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(categories) { cat ->
-                    val active = selectedCat == cat
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = if (active) Color(0xFFE7E5DC) else SparcSurface,
-                        border = BorderStroke(1.dp, SparcCardBorder),
-                        modifier = Modifier.clickable { selectedCat = cat }
-                    ) {
-                        Text(
-                            text = cat,
-                            fontSize = 12.sp,
-                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
-                        )
-                    }
-                }
-            }
-        }
-
         items(books, key = { it.id }) { book ->
             SparcScholarlyCard {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalAlignment = Alignment.Top
                 ) {
-                    // Editorial Book Cover Illustration
                     Box(
                         modifier = Modifier
-                            .width(96.dp)
-                            .height(136.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                if (book.id.contains("cpar")) SparcEmerald else Color(0xFF155E75)
-                            )
+                            .width(84.dp)
+                            .height(118.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(p.primaryGradient)
                             .padding(10.dp)
                     ) {
                         Column(
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(18.dp)
-                                    .height(4.dp)
-                                    .background(SparcAmber)
-                            )
+                            Text("SPARC CORE", color = Color.White.copy(alpha = 0.8f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
                             Text(
-                                text = book.title.take(28),
-                                color = Color(0xFFFDE68A),
+                                text = book.title.take(26),
+                                color = Color.White,
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.ExtraBold,
                                 lineHeight = 14.sp
-                            )
-                            Text(
-                                text = book.author.take(18),
-                                color = Color.White.copy(alpha = 0.85f),
-                                fontSize = 9.sp
                             )
                         }
                     }
@@ -164,63 +117,45 @@ private fun AcademicLibraryCatalogView(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         if (book.isFirstChapterFree) {
-                            Surface(
-                                shape = RoundedCornerShape(50),
-                                color = SparcOliveBadge
-                            ) {
+                            Surface(shape = RoundedCornerShape(8.dp), color = p.accentSoft) {
                                 Text(
-                                    text = "1st Chapter & Quiz FREE",
-                                    color = Color.White,
-                                    fontSize = 11.sp,
+                                    text = "১ম অধ্যায় ও কুইজ ফ্রি",
+                                    color = p.accentText,
+                                    fontSize = 10.5.sp,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                 )
                             }
                         }
-                        Text(book.title, style = MaterialTheme.typography.titleMedium)
-                        Text(book.author, style = MaterialTheme.typography.bodyMedium, color = SparcMutedInk)
+                        Text(book.title, style = MaterialTheme.typography.titleMedium, color = p.text)
                         Text(
-                            "${book.totalChapters} Chapters • Min ${book.minMembersRequired} Members",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = SparcInk
+                            "${book.author} • ${book.totalChapters} অধ্যায় • ৳${book.physicalPriceBdt.toInt()}",
+                            fontSize = 12.sp,
+                            color = p.muted
                         )
                     }
                 }
 
-                SparcPrimaryButton(
-                    text = "Read Chapter 1 Free (১ম অধ্যায় ফ্রি পড়ুন)",
-                    onClick = { onReadFreeChapter(book) }
-                )
-
-                OutlinedButton(
-                    onClick = { onOrderHardcopy(book) },
-                    shape = RoundedCornerShape(50),
-                    border = BorderStroke(1.2.dp, SparcInk),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Order Hardcopy (BDT ${book.physicalPriceBdt.toInt()})",
-                        color = SparcInk,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-
-        item {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = SparcSurface,
-                border = BorderStroke(1.dp, SparcCardBorder),
-                shadowElevation = 3.dp
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Text("Confidential Hardcopy Request: Purchase or Borrow", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text(
-                        "• শুধুমাত্র SPARC অ্যাডমিন, শিক্ষক ও অনুমোদিত প্রতিনিধির কাছে দৃশ্যমান।",
-                        fontSize = 12.sp,
-                        color = SparcMutedInk
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = { onReadFreeChapter(book) },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = p.primary),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("ফ্রি অধ্যায় পড়ুন", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = p.cardAlt,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { onOrderHardcopy(book) }
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 11.dp)) {
+                            Text("হার্ডকপি অর্ডার", color = p.text, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                        }
+                    }
                 }
             }
         }
@@ -230,9 +165,9 @@ private fun AcademicLibraryCatalogView(
 @Composable
 private fun SmartPaperReaderView(
     book: BookItem,
-    state: SparcAppState,
     repository: SparcRepository
 ) {
+    val p = LocalSparcPalette.current
     val chapter = book.chapters.first()
     var targetDays by remember { mutableIntStateOf(8) }
     val dailyPages = SparcDomainEngine.calculateDailyPageTarget(chapter.totalPages, targetDays)
@@ -241,193 +176,116 @@ private fun SmartPaperReaderView(
     var isAudioPlaying by remember { mutableStateOf(true) }
     var speedIdx by remember { mutableIntStateOf(1) }
     val speeds = listOf("1.0x", "1.25x", "1.5x")
-    var showFlashNotes by remember { mutableStateOf(false) }
+    val activeQuote = "Sayings, doings and relatings hang together in the project of a practice."
 
-    val activeHighlightQuote = "Sayings, doings and relatings hang together in the project of a practice."
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            SparcScholarlyCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("পেজ এস্টিমেটর ($targetDays দিনে শেষ)", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = p.text)
+                    Surface(shape = RoundedCornerShape(8.dp), color = p.primarySoft) {
+                        Text(
+                            "দৈনিক $dailyPages পৃষ্ঠা",
+                            color = p.primarySoftText,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+                Slider(
+                    value = targetDays.toFloat(),
+                    onValueChange = { targetDays = it.toInt().coerceAtLeast(1) },
+                    valueRange = 3f..14f,
+                    steps = 10
+                )
+            }
+        }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Top Reading Progress & Estimator Strip
-        LinearProgressIndicator(
-            progress = { 18f / chapter.totalPages.toFloat() },
-            color = SparcEmerald,
-            trackColor = Color(0xFFE2E8F0),
-            modifier = Modifier.fillMaxWidth()
-        )
-        Surface(color = SparcSurface) {
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        item {
+            SparcScholarlyCard(containerColor = p.readerPaper) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(
-                        "Page 18 of ${chapter.totalPages} • ~$dailyPages pages/day target ($targetDays days)",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = "টার্গেট দিন বদলান",
-                        fontSize = 12.sp,
-                        color = SparcEmerald,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable {
-                            targetDays = if (targetDays >= 12) 4 else targetDays + 2
-                        }
-                    )
+                    Text(chapter.title, style = MaterialTheme.typography.titleMedium, color = p.text, modifier = Modifier.weight(1f))
+                    Text("১৮ / ${chapter.totalPages}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = p.primary)
                 }
-            }
-        }
 
-        // Paper-toned Editorial Reader Body
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .background(SparcReaderPaper),
-            contentPadding = PaddingValues(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item {
-                Text(
-                    text = chapter.title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = SparcInk
-                )
-            }
-
-            item {
-                Text(
-                    text = chapter.sections.first().paragraphPreview.first(),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = SparcInk
-                )
-            }
-
-            // Floating Contextual Highlight Privacy Popover + Highlighted Quote (Matching Screen 4 Mockup!)
-            item {
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = SparcSurface,
-                    border = BorderStroke(1.dp, SparcCardBorder),
-                    shadowElevation = 6.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            listOf(
-                                HighlightVisibility.PRIVATE to "Private",
-                                HighlightVisibility.SUPERVISOR to "Supervisor",
-                                HighlightVisibility.GROUP to "Group"
-                            ).forEach { (vis, label) ->
-                                val active = selectedPrivacy == vis
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(50))
-                                        .background(if (active) SparcEmerald else SparcSubtleBg)
-                                        .clickable {
-                                            selectedPrivacy = vis
-                                            repository.addHighlightAndLogReading(
-                                                bookId = book.id,
-                                                chapterNo = chapter.chapterNo,
-                                                pageNo = 18,
-                                                selectedText = activeHighlightQuote,
-                                                note = "প্রপোজালের তাত্ত্বিক ফ্রেমওয়ার্কে উদ্ধৃত করব",
-                                                isUnderline = false,
-                                                visibility = vis
-                                            )
-                                        }
-                                        .padding(vertical = 7.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = label,
-                                        color = if (active) Color.White else SparcInk,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
+                // Segmented Privacy Selector
+                Surface(shape = RoundedCornerShape(12.dp), color = p.cardAlt) {
+                    Row(modifier = Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        listOf(
+                            HighlightVisibility.PRIVATE to "Private",
+                            HighlightVisibility.SUPERVISOR to "Supervisor",
+                            HighlightVisibility.GROUP to "Group"
+                        ).forEach { (vis, label) ->
+                            val active = selectedPrivacy == vis
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(9.dp))
+                                    .background(if (active) p.primary else Color.Transparent)
+                                    .clickable {
+                                        selectedPrivacy = vis
+                                        repository.addHighlightAndLogReading(
+                                            bookId = book.id,
+                                            chapterNo = chapter.chapterNo,
+                                            pageNo = 18,
+                                            selectedText = activeQuote,
+                                            note = "প্রপোজালে উদ্ধৃত করব",
+                                            isUnderline = false,
+                                            visibility = vis
+                                        )
+                                    }
+                                    .padding(vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    label,
+                                    color = if (active) Color.White else p.muted,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
-
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = SparcSubtleBg,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = "💬 নোট: প্রপোজালের তাত্ত্বিক ফ্রেমওয়ার্কে এটি উদ্ধৃত করব",
-                                fontSize = 12.sp,
-                                color = SparcMutedInk,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
-                            )
-                        }
                     }
                 }
 
-                Spacer(Modifier.height(8.dp))
-
-                Text(
-                    text = activeHighlightQuote,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = SparcInk,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(SparcHighlightYellow)
-                        .padding(10.dp)
-                )
-            }
-
-            items(chapter.sections.drop(1)) { sec ->
-                Text(sec.title, style = MaterialTheme.typography.titleMedium)
-                sec.paragraphPreview.forEach { p ->
-                    Text(p, style = MaterialTheme.typography.bodyLarge)
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = p.accentSoft,
+                    border = BorderStroke(1.dp, p.accent.copy(alpha = 0.4f))
+                ) {
+                    Text(
+                        text = "“$activeQuote”",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = p.text,
+                        modifier = Modifier.padding(12.dp)
+                    )
                 }
-            }
 
-            if (showFlashNotes) {
-                item {
-                    SparcScholarlyCard {
-                        Text("⚡ বাইট-সাইজড ফ্ল্যাশ-নোটস", style = MaterialTheme.typography.titleMedium)
-                        chapter.flashNotes.forEach { n ->
-                            Text("• $n", style = MaterialTheme.typography.bodyMedium)
-                        }
+                chapter.sections.forEach { sec ->
+                    Text(sec.title, style = MaterialTheme.typography.titleMedium, color = p.text)
+                    sec.paragraphPreview.forEach { para ->
+                        Text(para, style = MaterialTheme.typography.bodyMedium, color = p.muted)
                     }
                 }
             }
         }
 
-        // Docked Flash Notes Pill + Frosted Mini Audio Waveform Player
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(SparcReaderPaper)
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = Color(0xFFE7E5DC),
-                border = BorderStroke(1.dp, SparcCardBorder),
-                modifier = Modifier.clickable { showFlashNotes = !showFlashNotes }
-            ) {
-                Text(
-                    text = "Flash Notes (${chapter.flashNotes.size})",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                )
-            }
-
+        item {
             SparcAudioWaveformBar(
-                title = "Bangla Audio Summary",
-                timeLabel = "02:45 / 06:30",
+                title = "বাংলা অডিও সামারি",
+                timeLabel = "০২:৪৫ / ০৬:৩০",
                 speedLabel = speeds[speedIdx],
                 isPlaying = isAudioPlaying,
                 onTogglePlay = { isAudioPlaying = !isAudioPlaying },
@@ -443,19 +301,23 @@ private fun HardcopyOrderDialog(
     onDismiss: () -> Unit,
     onConfirm: (String, String, String) -> Unit
 ) {
+    val p = LocalSparcPalette.current
     var mode by remember { mutableStateOf("Purchase") }
     var address by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = p.card,
+        titleContentColor = p.text,
+        textContentColor = p.text,
         title = { Text("হার্ডকপি বই অর্ডার / সংগ্রহ") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "গোপনীয়তা: এই অর্ডারের তথ্য কেবল SPARC অ্যাডমিন, শিক্ষক বা অনুমোদিত প্রতিনিধি দেখতে পাবেন।",
+                    "গোপনীয়তা: শুধুমাত্র SPARC অ্যাডমিন, শিক্ষক বা প্রতিনিধি দেখতে পাবেন।",
                     fontSize = 12.sp,
-                    color = SparcEmerald
+                    color = p.primary
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
@@ -469,30 +331,20 @@ private fun HardcopyOrderDialog(
                         label = { Text("সংগ্রহ (Borrow)") }
                     )
                 }
-                OutlinedTextField(
-                    value = address,
-                    onValueChange = { address = it },
-                    label = { Text("বিভাগ / ডেলিভারি ঠিকানা") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = phone,
-                    onValueChange = { phone = it },
-                    label = { Text("মোবাইল নম্বর") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text("ঠিকানা") })
+                OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text("মোবাইল নম্বর") })
             }
         },
         confirmButton = {
             Button(
                 onClick = { onConfirm(mode, address, phone) },
-                colors = ButtonDefaults.buttonColors(containerColor = SparcEmerald)
+                colors = ButtonDefaults.buttonColors(containerColor = p.primary)
             ) {
-                Text("অর্ডার নিশ্চিত করুন")
+                Text("নিশ্চিত করুন")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("বাতিল") }
+            TextButton(onClick = onDismiss) { Text("বাতিল", color = p.muted) }
         }
     )
 }

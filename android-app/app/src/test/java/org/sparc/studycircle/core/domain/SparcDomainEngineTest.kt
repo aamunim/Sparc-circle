@@ -223,4 +223,22 @@ class SparcDomainEngineTest {
             )
         )
     }
+
+    @Test
+    fun `repository supports switching and persisting all 3 modern visual UI themes`() {
+        var persisted: SparcVisualTheme? = null
+        val repo = org.sparc.studycircle.core.data.SparcRepository(
+            initialTheme = SparcVisualTheme.COBALT_SAAS,
+            onPersistTheme = { persisted = it }
+        )
+        assertEquals(SparcVisualTheme.COBALT_SAAS, repo.state.value.visualTheme)
+
+        repo.setVisualTheme(SparcVisualTheme.MIDNIGHT_GLASS)
+        assertEquals(SparcVisualTheme.MIDNIGHT_GLASS, repo.state.value.visualTheme)
+        assertEquals(SparcVisualTheme.MIDNIGHT_GLASS, persisted)
+
+        repo.setVisualTheme(SparcVisualTheme.OCEAN_HERO)
+        assertEquals(SparcVisualTheme.OCEAN_HERO, repo.state.value.visualTheme)
+        assertEquals(SparcVisualTheme.OCEAN_HERO, persisted)
+    }
 }
