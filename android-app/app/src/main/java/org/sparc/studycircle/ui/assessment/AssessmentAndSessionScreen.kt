@@ -7,22 +7,22 @@ import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.UploadFile
-import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -30,12 +30,16 @@ import org.sparc.studycircle.core.data.SparcAppState
 import org.sparc.studycircle.core.data.SparcRepository
 import org.sparc.studycircle.core.domain.SparcDomainEngine
 import org.sparc.studycircle.core.model.*
+import org.sparc.studycircle.core.theme.*
+import org.sparc.studycircle.ui.components.*
 
 @Composable
 fun AssessmentAndSessionScreen(
     state: SparcAppState,
     repository: SparcRepository
 ) {
+    // Sub-tabs: 0 = Screen 7 (Exercise Quiz & Self-Rating), 1 = Screen 8 (Live Video Session & Clinic), 2 = Screen 12 (Supervisor View)
+    var subTab by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
     val book = state.books.first()
     val chapter = book.chapters.first()
@@ -47,298 +51,28 @@ fun AssessmentAndSessionScreen(
         chapterNo = chapter.chapterNo
     )
 
-    val groupThreshold = SparcDomainEngine.evaluateGroupSessionTrigger(
-        totalMembers = circle.memberIds.size,
-        memberStages = circle.memberIds.map { state.memberStageByUserId[it] ?: ProgressStage.NOT_STARTED },
-        daysSinceLastSession = circle.daysSinceLastSession
-    )
-
-    var draftAnswers by remember(progress.submittedAnswers) {
-        mutableStateOf(progress.submittedAnswers)
-    }
-    var draftRatings by remember(progress.selfRatings) {
-        mutableStateOf(
-            if (progress.selfRatings.size == chapter.learningOutcomes.size) progress.selfRatings
-            else List(chapter.learningOutcomes.size) { 4 }
-        )
-    }
     var activeJitsiSession by remember { mutableStateOf<OnlineSessionItem?>(null) }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // 80% / 10-Day Group Session Threshold Banner (Section 5.4 & 7.2)
-        item {
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("দলীয় সেশন প্রোগ্রেশন (লক্ষ্যমাত্রা ৮০% বা ১০ দিন)", style = MaterialTheme.typography.titleMedium)
-                    LinearProgressIndicator(
-                        progress = { (groupThreshold.completionRatePercent / 100.0).toFloat().coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        "অনুশীলনী জমা দিয়েছেন: ${groupThreshold.completionRatePercent.toInt()}% সদস্য • আগের সেশন: ${circle.daysSinceLastSession} দিন আগে",
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    groupThreshold.triggerReasonBn?.let { reason ->
-                        Surface(
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(reason, modifier = Modifier.padding(8.dp), fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
-            }
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+            SparcSegmentedPills(
+                options = listOf("অনুশীলনী কুইজ", "লাইভ ভিডিও সেশন", "সুপারভাইজার ভিউ"),
+                selectedIndex = subTab,
+                onSelect = { subTab = it }
+            )
         }
 
-        // 6-Stage State Machine Card (Section 5.1)
-        item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "৬-ধাপের শিখন স্ট্যাটাস: ধাপ ${progress.stage.step}/৬ — ${progress.stage.labelBn}",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        "অধ্যায়ের ধরন: ${chapter.type.name} (${chapter.type.totalQuestions}টি প্রশ্ন • মোট ${chapter.type.totalMarks} • পাস ${chapter.type.passMarks} • রেড-ফ্ল্যাগ <${chapter.type.redFlagMarks})",
-                        style = MaterialTheme.typography.labelMedium
-                    )
-
-                    if (progress.expectedCompletionDaysFromToday < 0 &&
-                        progress.stage.step < ProgressStage.EXERCISES_SUBMITTED.step
-                    ) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                "💛 ${SparcDomainEngine.COMPASSIONATE_OVERDUE_MESSAGE}",
-                                modifier = Modifier.padding(10.dp),
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (progress.stage == ProgressStage.NOT_STARTED) {
-                            Button(onClick = { repository.startChapterReading(chapter, targetDays = 7) }) {
-                                Text("Start Reading ঘোষণা দিন")
-                            }
-                        }
-                        if (SparcDomainEngine.canModifyExpectedDate(progress) &&
-                            progress.stage != ProgressStage.NOT_STARTED
-                        ) {
-                            OutlinedButton(onClick = {
-                                repository.modifyExpectedDateOnce(chapter.chapterNo, progress.expectedCompletionDaysFromToday + 3)
-                            }) {
-                                Text("সম্ভাব্য তারিখ +৩ দিন বাড়ান (১ বার)")
-                            }
-                        }
-                    }
-
-                    // Stage 3: Section Checkboxes
-                    Text("অধ্যায়ের সেকশন চেকলিস্ট:", style = MaterialTheme.typography.labelMedium)
-                    chapter.sections.forEach { sec ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = sec.id in progress.checkedSectionIds,
-                                onCheckedChange = { repository.toggleChapterSection(chapter, sec.id) },
-                                enabled = progress.stage.step < ProgressStage.EXERCISES_SUBMITTED.step
-                            )
-                            Text(sec.title, style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
-
-                    if (progress.stage.step < ProgressStage.READING_COMPLETED.step) {
-                        Button(
-                            onClick = { repository.declareReadingCompleted(chapter) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("আমি এই অধ্যায় পড়া শেষ করেছি (Exercises আনলক করুন)")
-                        }
-                    }
+        when (subTab) {
+            0 -> QuizAndCalibrationView(chapter = chapter, progress = progress, repository = repository)
+            1 -> LiveSessionAndClinicView(
+                sessions = state.sessions,
+                repository = repository,
+                onJoinJitsi = { activeJitsiSession = it },
+                onOpenExternal = { url ->
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
                 }
-            }
-        }
-
-        // Stage 4 -> 5: Exercises (Auto A-E + Supervisor F-J) (Section 5.3)
-        if (progress.stage.step >= ProgressStage.READING_COMPLETED.step) {
-            val isLocked = progress.stage.step >= ProgressStage.EXERCISES_SUBMITTED.step
-            item {
-                ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            if (isLocked) "অনুশীলনী জমা সম্পন্ন (উত্তর লকড • Answer Key আনলকড)"
-                            else "অধ্যায়ভিত্তিক অনুশীলনী (A–E অটো-স্কোরিং ও F–J বিশ্লেষণী প্রশ্ন)",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-
-                        chapter.questions.forEach { q ->
-                            OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text(
-                                        "[${q.sectionCode}] প্রশ্ন ${q.questionNo} (${q.categoryLabel} • ${q.maxMarks} নম্বর)",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(q.promptBn, fontWeight = FontWeight.Medium)
-
-                                    if (q.isAutoScored) {
-                                        q.options.forEach { opt ->
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                RadioButton(
-                                                    selected = draftAnswers[q.id] == opt,
-                                                    onClick = {
-                                                        if (!isLocked) draftAnswers = draftAnswers + (q.id to opt)
-                                                    },
-                                                    enabled = !isLocked
-                                                )
-                                                Text(opt)
-                                            }
-                                        }
-                                    } else {
-                                        OutlinedTextField(
-                                            value = draftAnswers[q.id] ?: "",
-                                            onValueChange = {
-                                                if (!isLocked) draftAnswers = draftAnswers + (q.id to it)
-                                            },
-                                            enabled = !isLocked,
-                                            label = { Text("বাংলা বা ইংরেজিতে উত্তর লিখুন") },
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                    }
-
-                                    // Answer Key & Supervisor Model Points ONLY visible AFTER submission!
-                                    if (isLocked) {
-                                        Surface(
-                                            color = MaterialTheme.colorScheme.primaryContainer,
-                                            shape = RoundedCornerShape(6.dp),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Column(modifier = Modifier.padding(8.dp)) {
-                                                q.lockedCorrectAnswer?.let { ans ->
-                                                    Text("✔ সঠিক উত্তর: $ans", fontWeight = FontWeight.Bold)
-                                                    Text(q.explanationBn, style = MaterialTheme.typography.bodyMedium)
-                                                }
-                                                if (q.supervisorModelPoints.isNotEmpty()) {
-                                                    Text("সুপারভাইজার মডেল পয়েন্টস:", fontWeight = FontWeight.Bold)
-                                                    q.supervisorModelPoints.forEach { pt ->
-                                                        Text("• $pt", style = MaterialTheme.typography.bodyMedium)
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        if (!isLocked) {
-                            Button(
-                                onClick = { repository.submitExercises(chapter, draftAnswers) },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("উত্তর জমা দিন ও Answer Key আনলক করুন")
-                            }
-                        } else {
-                            val total = progress.autoScore + (progress.supervisorScore ?: 0)
-                            Text(
-                                "আপনার বর্তমান ব্যক্তিগত স্কোর: $total / ${chapter.type.totalMarks} (অটো: ${progress.autoScore}, সুপারভাইজার: ${progress.supervisorScore ?: 0})",
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                "রি-অ্যাটেম্পট নিয়ম: প্রথম জমার ৪৮ ঘণ্টা পর অটো-স্কোরড অংশে ১ বার রি-অ্যাটেম্পট নেওয়া যাবে (প্রথম নম্বর সংরক্ষিত থাকবে)।",
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Stage 5 -> 6: Self-Rating & Calibration Check (Section 5.1 & 5.3)
-        if (progress.stage.step >= ProgressStage.EXERCISES_SUBMITTED.step) {
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("লার্নিং আউটকাম আত্মমূল্যায়ন (Self-Rating ১–৫)", style = MaterialTheme.typography.titleMedium)
-                        chapter.learningOutcomes.forEachIndexed { idx, lo ->
-                            Text(lo, style = MaterialTheme.typography.bodyMedium)
-                            Slider(
-                                value = draftRatings[idx].toFloat(),
-                                onValueChange = { v ->
-                                    draftRatings = draftRatings.toMutableList().also { it[idx] = v.toInt() }
-                                },
-                                valueRange = 1f..5f,
-                                steps = 3
-                            )
-                            Text("রেটিং: ${draftRatings[idx]}/৫", style = MaterialTheme.typography.labelMedium)
-                        }
-                        Button(onClick = { repository.submitSelfRatings(chapter, draftRatings) }) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("আত্মমূল্যায়ন সংরক্ষণ ও যাচাই করুন")
-                        }
-                        progress.calibrationFlags.forEach { flag ->
-                            Text("ক্যালিব্রেশন নোট: ${flag.labelBn}", color = MaterialTheme.colorScheme.secondary)
-                        }
-                    }
-                }
-            }
-        }
-
-        // Online Sessions (Jitsi In-App Live Video + Google Meet/Zoom + Slide Upload + Live Clinic) (Sec 5.2)
-        item {
-            Spacer(Modifier.height(4.dp))
-            Text("অনলাইন সেশন (৪০ মিনিট) ও লাইভ রিসার্চ ক্লিনিক", style = MaterialTheme.typography.titleMedium)
-        }
-
-        items(state.sessions, key = { it.id }) { sess ->
-            OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(sess.title, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        if (sess.isResearchClinic) {
-                            Badge { Text("Live Clinic") }
-                        }
-                    }
-                    Text("${sess.scheduleLabel} • উপস্থাপক: ${sess.presenterName}", style = MaterialTheme.typography.bodyMedium)
-
-                    if (!sess.isResearchClinic) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
-                                onClick = { repository.uploadSessionSlide(sess.id, "CPAR_Ch1_Presentation.pdf") }
-                            ) {
-                                Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text(if (sess.slideUploaded) "স্লাইড আপলোডকৃত ✔" else "স্লাইড আপলোড (২৪ ঘণ্টা আগে)")
-                            }
-                        }
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { activeJitsiSession = sess }) {
-                            Icon(Icons.Default.Videocam, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("ইন-অ্যাপ ভিডিও জয়েন (Jitsi)")
-                        }
-                        OutlinedButton(onClick = {
-                            runCatching {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(sess.externalMeetingUrl)))
-                            }
-                        }) {
-                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Meet / Zoom")
-                        }
-                    }
-                }
-            }
+            )
+            2 -> SupervisorMobileGradingView()
         }
     }
 
@@ -348,6 +82,394 @@ fun AssessmentAndSessionScreen(
             displayName = state.currentUser.name,
             onDismiss = { activeJitsiSession = null }
         )
+    }
+}
+
+@Composable
+private fun QuizAndCalibrationView(
+    chapter: ChapterItem,
+    progress: ChapterProgressState,
+    repository: SparcRepository
+) {
+    val isLocked = progress.stage.step >= ProgressStage.EXERCISES_SUBMITTED.step
+    var draftAnswers by remember(progress.submittedAnswers) {
+        mutableStateOf(
+            progress.submittedAnswers.ifEmpty {
+                mapOf("q1" to "Sayings, Doings, and Relatings", "q2" to "মিথ্যা (False)")
+            }
+        )
+    }
+    var selfRatingValue by remember { mutableIntStateOf(4) }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Warm Gold Compassionate Banner (Matching Screen 7 Mockup!)
+        Surface(
+            color = Color(0xFFF5B82E),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = SparcDomainEngine.COMPASSIONATE_OVERDUE_MESSAGE,
+                color = Color(0xFF1E293B),
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+            )
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            item {
+                Text(
+                    text = "Chapter ${chapter.chapterNo} Exercise • Long Chapter",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Text(
+                    text = "(${chapter.type.totalQuestions} Questions • Pass ${chapter.type.passMarks}/${chapter.type.totalMarks})",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = SparcMutedInk
+                )
+            }
+
+            items(chapter.questions.size) { index ->
+                val q = chapter.questions[index]
+                SparcScholarlyCard {
+                    Text(
+                        text = "[${q.sectionCode}] ${q.categoryLabel} (${q.maxMarks} pt): ${q.promptBn}",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    if (q.isAutoScored) {
+                        q.options.forEach { opt ->
+                            val selected = draftAnswers[q.id] == opt
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = if (selected) SparcEmerald else SparcSubtleBg,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(enabled = !isLocked) {
+                                        draftAnswers = draftAnswers + (q.id to opt)
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = selected,
+                                        onClick = null,
+                                        colors = RadioButtonDefaults.colors(
+                                            selectedColor = Color.White,
+                                            unselectedColor = SparcMutedInk
+                                        )
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = opt,
+                                        color = if (selected) Color.White else SparcInk,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = draftAnswers[q.id] ?: "",
+                            onValueChange = { if (!isLocked) draftAnswers = draftAnswers + (q.id to it) },
+                            enabled = !isLocked,
+                            minLines = 3,
+                            placeholder = { Text("বাংলা বা ইংরেজিতে আপনার বিশ্লেষণ লিখুন...") },
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    if (isLocked) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = SparcEmeraldContainer,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                q.lockedCorrectAnswer?.let { ans ->
+                                    Text("✔ Answer Key: $ans", fontWeight = FontWeight.Bold, color = SparcEmeraldDark)
+                                    Text(q.explanationBn, fontSize = 12.sp, color = SparcEmeraldDark)
+                                }
+                                if (q.supervisorModelPoints.isNotEmpty()) {
+                                    Text("মডেল পয়েন্টস:", fontWeight = FontWeight.Bold, color = SparcEmeraldDark)
+                                    q.supervisorModelPoints.forEach { pt ->
+                                        Text("• $pt", fontSize = 12.sp, color = SparcEmeraldDark)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Self-Rating Calibration Slider Card
+            item {
+                SparcScholarlyCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Learning Outcome Self-Rating (1-5)", style = MaterialTheme.typography.titleMedium)
+                        Text("$selfRatingValue / 5", fontWeight = FontWeight.Bold, color = SparcEmerald)
+                    }
+                    Slider(
+                        value = selfRatingValue.toFloat(),
+                        onValueChange = { selfRatingValue = it.toInt() },
+                        valueRange = 1f..5f,
+                        steps = 3,
+                        colors = SliderDefaults.colors(
+                            thumbColor = SparcEmerald,
+                            activeTrackColor = SparcEmerald
+                        )
+                    )
+                    SparcPrimaryButton(
+                        text = if (!isLocked) "Submit & Unlock Answer Key" else "Save Self-Rating ($selfRatingValue/5)",
+                        onClick = {
+                            if (progress.stage.step < ProgressStage.READING_COMPLETED.step) {
+                                repository.declareReadingCompleted(chapter)
+                            }
+                            if (!isLocked) {
+                                repository.submitExercises(chapter, draftAnswers)
+                            }
+                            repository.submitSelfRatings(
+                                chapter,
+                                List(chapter.learningOutcomes.size) { selfRatingValue }
+                            )
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LiveSessionAndClinicView(
+    sessions: List<OnlineSessionItem>,
+    repository: SparcRepository,
+    onJoinJitsi: (OnlineSessionItem) -> Unit,
+    onOpenExternal: (String) -> Unit
+) {
+    val mainSession = sessions.first()
+    val clinicSession = sessions.last()
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // SCREEN 8: 40-Min Online Session with Jitsi 2x2 Tile Preview + Meet/Zoom
+        item {
+            SparcScholarlyCard {
+                Text(
+                    "Chapter 1 Online Session\n(Part 1 of 2 • 40 Min)",
+                    style = MaterialTheme.typography.titleLarge
+                )
+                Text(
+                    "Presenter: ${mainSession.presenterName}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = SparcMutedInk
+                )
+
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = SparcEmerald,
+                    modifier = Modifier.clickable {
+                        repository.uploadSessionSlide(mainSession.id, "CPAR_Ch1_Slides.pdf")
+                    }
+                ) {
+                    Text(
+                        text = if (mainSession.slideUploaded)
+                            "✓ Slide Deck Uploaded (24h Verified)"
+                        else "Upload Slide Deck (24h Before Session)",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                    )
+                }
+
+                // 2x2 Live Researcher Video Tile Preview
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0xFF0F172A))
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        VideoParticipantTile("তানভীর (উপস্থাপক)", Modifier.weight(1f))
+                        VideoParticipantTile("ড. নুসরাত জাহান", Modifier.weight(1f))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        VideoParticipantTile("ফারহান সাদিক", Modifier.weight(1f))
+                        VideoParticipantTile("মালিহা তাবাসসুম", Modifier.weight(1f))
+                    }
+                }
+
+                SparcPrimaryButton(
+                    text = "Join In-App Video (Jitsi)",
+                    onClick = { onJoinJitsi(mainSession) }
+                )
+
+                OutlinedButton(
+                    onClick = { onOpenExternal(mainSession.externalMeetingUrl) },
+                    shape = RoundedCornerShape(50),
+                    border = BorderStroke(1.2.dp, SparcEmerald),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Open Google Meet / Zoom", color = SparcEmerald, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        // Monthly Live Research Clinic Card
+        item {
+            SparcScholarlyCard {
+                Text("Monthly Live Research Clinic", style = MaterialTheme.typography.titleLarge)
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = SparcAmber,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Live Q&A with Senior Researchers • Sat 9:00 PM",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+                OutlinedButton(
+                    onClick = { onJoinJitsi(clinicSession) },
+                    shape = RoundedCornerShape(50),
+                    border = BorderStroke(1.2.dp, SparcEmerald),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Join Clinic / Submit Research Question", color = SparcEmerald, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VideoParticipantTile(name: String, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .height(74.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF1E293B))
+            .padding(8.dp)
+    ) {
+        SparcAvatarCircle(
+            name = name,
+            size = 32.dp,
+            bgColor = SparcEmerald,
+            textColor = Color.White
+        )
+        Text(
+            text = "🎙 $name",
+            color = Color.White,
+            fontSize = 10.sp,
+            modifier = Modifier.align(Alignment.BottomStart)
+        )
+    }
+}
+
+@Composable
+private fun SupervisorMobileGradingView() {
+    var awardedMarks by remember { mutableIntStateOf(2) }
+    var overrideApproved by remember { mutableStateOf(false) }
+
+    // SCREEN 12: Supervisor Mobile Red-Flag & Manual Grading Dashboard
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            SparcScholarlyCard(borderColor = Color(0xFFFCA5A5)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("🚨 Needs Support Alert", style = MaterialTheme.typography.titleMedium, color = SparcCrimson)
+                    Surface(shape = RoundedCornerShape(50), color = SparcCrimsonContainer) {
+                        Text(
+                            "3 Red Flags",
+                            color = SparcCrimson,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+                Text("সদস্য: সাদিয়া ইসলাম (Sociology)", fontWeight = FontWeight.Bold)
+                Surface(shape = RoundedCornerShape(50), color = SparcAmberContainer) {
+                    Text(
+                        "Calibration: Over-confident (Self 4.5 • Score 38%)",
+                        color = SparcAmberDark,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+                Text(
+                    "Poke Summary: মোট ৫টি Poke পেয়েছেন, ১টি রিপ্লাই দিয়েছেন (বার্তা গোপন রাখা হয়েছে)।",
+                    fontSize = 12.sp,
+                    color = SparcMutedInk
+                )
+            }
+        }
+
+        item {
+            SparcScholarlyCard {
+                Text("Manual Scoring [F–J]: Scenario Analysis", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "উত্তর: \"Sayings, Doings ও Relatings বিশ্লেষণ করে বিভাগে অংশগ্রহণমূলক সংলাপ তৈরি করা সম্ভব।\"",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = SparcMutedInk
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    (0..3).forEach { m ->
+                        val active = awardedMarks == m
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = if (active) SparcEmerald else SparcSubtleBg,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { awardedMarks = m }
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            ) {
+                                Text(
+                                    "$m pts",
+                                    color = if (active) Color.White else SparcInk,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                }
+                SparcPrimaryButton(
+                    text = if (overrideApproved) "✓ Grade Saved & Override Enabled" else "Save Score & Approve Override",
+                    onClick = { overrideApproved = true }
+                )
+            }
+        }
     }
 }
 
@@ -375,7 +497,12 @@ private fun InAppJitsiVideoDialog(
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.weight(1f)
                     )
-                    Button(onClick = onDismiss) { Text("লিভ সেশন") }
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(containerColor = SparcCrimson)
+                    ) {
+                        Text("লিভ সেশন")
+                    }
                 }
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),

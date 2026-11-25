@@ -1,281 +1,439 @@
 package org.sparc.studycircle.ui.circle
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.HowToVote
-import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.sparc.studycircle.core.data.SparcAppState
 import org.sparc.studycircle.core.data.SparcRepository
 import org.sparc.studycircle.core.domain.SparcDomainEngine
 import org.sparc.studycircle.core.model.*
+import org.sparc.studycircle.core.theme.*
+import org.sparc.studycircle.ui.components.*
 
 @Composable
 fun StudyCircleScreen(
     state: SparcAppState,
-    repository: SparcRepository
+    repository: SparcRepository,
+    onContinueReading: () -> Unit = {}
 ) {
+    // Sub-tabs: 0 = Screen 5 (Study Circle Hub), 1 = Screen 6 (Supervisor Election, Poke & Debate)
+    var subTab by remember { mutableIntStateOf(0) }
     val circle = state.circles.first()
+    val chapter = state.books.first().chapters.first()
+    val myProgress = state.myChapterProgress[chapter.chapterNo]
+        ?: ChapterProgressState("p-init", circle.id, state.currentUser.id, chapter.chapterNo)
+
     val allUsersById = remember(state.currentUser, state.directoryMembers) {
         (listOf(state.currentUser) + state.directoryMembers).associateBy { it.id }
     }
-    val circleMembers = circle.memberIds.mapNotNull { allUsersById[it] }
-    val supervisor = circle.supervisorId?.let { allUsersById[it] }
+    val circlePeers = circle.memberIds.mapNotNull { allUsersById[it] }
+        .filter { it.id != state.currentUser.id }
 
-    var pokeReceiver by remember { mutableStateOf<UserProfile?>(null) }
-    var debateStance by remember { mutableStateOf("পক্ষে (Support)") }
-    var debateInput by remember { mutableStateOf("") }
+    var pokeTarget by remember { mutableStateOf<UserProfile?>(null) }
 
-    val pokesSentByMeToday = state.pokesToday.count { it.senderId == state.currentUser.id }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // Circle Header & Threshold Activation (Section 4.1)
-        item {
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(circle.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                        Badge(
-                            containerColor = if (circle.status == CircleStatus.ACTIVE)
-                                MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
-                        ) {
-                            Text(circle.status.labelBn, color = MaterialTheme.colorScheme.onPrimary)
-                        }
-                    }
-                    Text("বই: ${circle.bookTitle}", style = MaterialTheme.typography.bodyMedium)
-                    val ratio = (circle.memberIds.size.toFloat() / circle.minMembersRequired.toFloat()).coerceAtMost(1f)
-                    LinearProgressIndicator(progress = { ratio }, modifier = Modifier.fillMaxWidth())
-                    Text(
-                        "সদস্য সংখ্যা: ${circle.memberIds.size} / ন্যূনতম ${circle.minMembersRequired} জন (থ্রেশহোল্ড পূর্ণ হলে Active)",
-                        style = MaterialTheme.typography.labelMedium
-                    )
-
-                    HorizontalDivider()
-                    // Dual Supervisor Assignment & Voting (Section 4.2)
-                    Text(
-                        text = if (supervisor != null) {
-                            val modeBn = if (circle.supervisorAssignmentType == SupervisorAssignmentType.ADMIN_ASSIGNED)
-                                "অ্যাডমিন অ্যাসাইনড" else "সদস্যদের ভোটে নির্বাচিত"
-                            "সুপারভাইজার: ${supervisor.name} ($modeBn)"
-                        } else {
-                            "সুপারভাইজার এখনো নির্বাচিত হয়নি — ভোট দিন:"
-                        },
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(circleMembers.filter { it.id != state.currentUser.id }) { candidate ->
-                            AssistChip(
-                                onClick = { repository.voteForSupervisor(circle.id, candidate.id) },
-                                leadingIcon = {
-                                    Icon(Icons.Default.HowToVote, contentDescription = null, modifier = Modifier.size(16.dp))
-                                },
-                                label = { Text("${candidate.name} (★${candidate.rating})") }
-                            )
-                        }
-                    }
-                }
-            }
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+            SparcSegmentedPills(
+                options = listOf("স্টাডি সার্কেল হাব", "ভোটিং, Poke ও ডিবেট পোল"),
+                selectedIndex = subTab,
+                onSelect = { subTab = it }
+            )
         }
 
-        // Peer Motivation ('Poke' Button) Controls & Mute Settings (Section 4.3)
-        item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "পিয়ার মোটিভেশন ('Poke' বাটন) • আজ পাঠানো হয়েছে: $pokesSentByMeToday/৩",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        "নিয়ম: রাত ১০টা–সকাল ৭টা Quiet Hours। দিনে সর্বোচ্চ ৩টি নোটিফিকেশন তাৎক্ষণিক যাবে, বাকিগুলো ডেইলি সামারিতে। সুপারভাইজার শুধু Poke সংখ্যা দেখবেন, বার্তা নয়।",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            if (state.activeMuteScope == null) Icons.Default.NotificationsActive else Icons.Default.NotificationsOff,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        MuteScope.entries.forEach { scope ->
-                            FilterChip(
-                                selected = state.activeMuteScope == scope,
-                                onClick = {
-                                    repository.setPokeMuteScope(if (state.activeMuteScope == scope) null else scope)
-                                },
-                                label = { Text("মিউট: ${scope.labelBn}") }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Group Member Progress List (Public Status Only — No Private Scores! Sec 5.4)
-        item {
-            Text("সদস্যদের প্রগ্রেস ও উৎসাহ প্রদান (নম্বর গোপন রাখা হয়েছে)", style = MaterialTheme.typography.titleMedium)
-        }
-
-        items(circleMembers, key = { it.id }) { member ->
-            val stg = state.memberStageByUserId[member.id] ?: ProgressStage.NOT_STARTED
-            val canBePoked = member.id != state.currentUser.id &&
-                stg.step < ProgressStage.EXERCISES_SUBMITTED.step
-
-            OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(member.name, fontWeight = FontWeight.SemiBold)
+        if (subTab == 0) {
+            // SCREEN 5: Hero Cohort Hub, 83% Readiness Ring, 6-Stage Stepper & Daily Target
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                item {
+                    SparcScholarlyCard {
                         Text(
-                            "ধাপ ${stg.step}/৬: ${stg.labelBn}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
+                            text = buildAnnotatedString {
+                                withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = SparcInk)) {
+                                    append("CPAR Cohort-01 ")
+                                }
+                                withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = SparcEmerald)) {
+                                    append("(${circle.status.name.lowercase().replaceFirstChar { it.uppercase() }})")
+                                }
+                            },
+                            fontSize = 19.sp
+                        )
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        ) {
+                            SparcCircularGauge(
+                                percentage = 83f,
+                                centerTopText = "83%",
+                                size = 84.dp,
+                                strokeWidth = 8.dp
+                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Group Session Ready", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "সদস্য: ${circle.memberIds.size} জন (ন্যূনতম ${circle.minMembersRequired})",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = SparcMutedInk
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = buildAnnotatedString {
+                                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                                    append("Next Live Session: ")
+                                }
+                                append("Fri 8:30 PM (Jitsi Live)")
+                            },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+
+                        SparcSixStageStepper(currentStep = myProgress.stage.step)
+
+                        Text(
+                            text = "Stage ${myProgress.stage.step} of 6: ${myProgress.stage.labelBn}",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = SparcInk,
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
                         )
                     }
-                    if (canBePoked) {
-                        FilledTonalButton(
-                            onClick = { pokeReceiver = member },
-                            enabled = pokesSentByMeToday < 3
-                        ) {
-                            Text("👋 Poke")
-                        }
+                }
+
+                // Daily Reading Target Card
+                item {
+                    SparcScholarlyCard {
+                        Text("Daily Reading Target", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            "${myProgress.dailyTargetPages} Pages Today – Chapter 1: Practice Architectures – 18 of ${chapter.totalPages} pages read",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = SparcInk
+                        )
+                        SparcPrimaryButton(
+                            text = "Continue Reading (পড়া চালিয়ে যান)",
+                            onClick = onContinueReading
+                        )
                     }
                 }
-            }
-        }
 
-        // Received Pokes with 1-Tap Quick Reply ("ধন্যবাদ!" / "করছি!")
-        val receivedPokes = state.pokesToday.filter { it.receiverId == state.currentUser.id }
-        if (receivedPokes.isNotEmpty()) {
-            item {
-                Text("আপনার প্রাপ্ত উৎসাহ বার্তা (১-ট্যাপ রিপ্লাই)", style = MaterialTheme.typography.titleMedium)
-            }
-            items(receivedPokes, key = { it.id }) { pk ->
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("${pk.senderName}: \"${pk.presetMessage}\"", fontWeight = FontWeight.Medium)
-                        if (pk.quickReply != null) {
-                            Text("আপনার রিপ্লাই: ${pk.quickReply}", color = MaterialTheme.colorScheme.primary)
-                        } else {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                SparcDomainEngine.QUICK_POKE_REPLIES.forEach { reply ->
-                                    OutlinedButton(onClick = { repository.replyToPoke(pk.id, reply) }) {
-                                        Text(reply)
+                // Peer Motivation (Poke) Horizontal Avatar Strip
+                item {
+                    SparcScholarlyCard {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Peer Motivation (Poke)", style = MaterialTheme.typography.titleMedium)
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = SparcSubtleBg,
+                                border = BorderStroke(1.dp, SparcCardBorder),
+                                modifier = Modifier.clickable {
+                                    pokeTarget = circlePeers.lastOrNull()
+                                }
+                            ) {
+                                Text(
+                                    text = "Send Encouragement",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            items(circlePeers, key = { it.id }) { peer ->
+                                val stg = state.memberStageByUserId[peer.id] ?: ProgressStage.READING_STARTED
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.clickable {
+                                        if (stg.step < ProgressStage.EXERCISES_SUBMITTED.step) {
+                                            pokeTarget = peer
+                                        }
                                     }
+                                ) {
+                                    SparcAvatarCircle(
+                                        name = peer.name,
+                                        size = 52.dp,
+                                        bgColor = if (stg.step < ProgressStage.EXERCISES_SUBMITTED.step)
+                                            SparcAmber else SparcEmerald
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = peer.name.split(" ").first(),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
                                 }
                             }
                         }
                     }
                 }
             }
-        }
+        } else {
+            // SCREEN 6: Supervisor Election Seal, Poke Mute/1-Tap Reply & Debate Poll Bars
+            val pokesSentToday = state.pokesToday.count { it.senderId == state.currentUser.id }
+            var debateComment by remember { mutableStateOf("") }
+            var selectedStance by remember { mutableStateOf("Support") }
 
-        // Quick Poll & Debate Corner (Section 4.3)
-        item {
-            Spacer(Modifier.height(4.dp))
-            Text("কুইক পোল ও ডিবেট কর্নার", style = MaterialTheme.typography.titleMedium)
-        }
-
-        items(state.polls, key = { it.id }) { poll ->
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(poll.question, fontWeight = FontWeight.SemiBold)
-                    val myChoice = poll.votesByUser[state.currentUser.id]
-                    poll.options.forEachIndexed { idx, opt ->
-                        val count = poll.votesByUser.values.count { it == idx }
-                        OutlinedCard(
-                            onClick = { repository.voteInPoll(poll.id, idx) },
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Supervisor Election Card
+                item {
+                    SparcScholarlyCard {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = SparcEmeraldContainer.copy(alpha = 0.55f),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(
-                                modifier = Modifier.padding(10.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            Text(
+                                text = "Supervisor Election • CPAR Cohort-01",
+                                fontWeight = FontWeight.Bold,
+                                color = SparcEmeraldDark,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .clip(CircleShape)
+                                    .background(SparcEmerald),
+                                contentAlignment = Alignment.Center
                             ) {
-                                RadioButton(selected = myChoice == idx, onClick = { repository.voteInPoll(poll.id, idx) })
-                                Text(opt, modifier = Modifier.weight(1f))
-                                Text("$count ভোট", style = MaterialTheme.typography.labelMedium)
+                                Text(
+                                    text = "★\nELECTED",
+                                    color = Color(0xFFFDE68A),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    lineHeight = 11.sp
+                                )
+                            }
+                            Column {
+                                Text("ড. নুসরাত জাহান", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "(Member Voted • ${circle.supervisorVotes.size}/${circle.memberIds.size} Votes)",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = SparcMutedInk
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Peer Motivation & Quiet Hours + Mute Segmented Bar + 1-Tap Quick Reply
+                item {
+                    SparcScholarlyCard {
+                        Text("Peer Motivation & Quiet Hours", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            "Pokes Left Today: ${(3 - pokesSentToday).coerceAtLeast(0)}/3 • Quiet Hours 10 PM - 7 AM",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = SparcMutedInk
+                        )
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Mute", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            MuteScope.entries.forEach { scope ->
+                                val active = state.activeMuteScope == scope
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = if (active) SparcEmerald else SparcSurface,
+                                    border = BorderStroke(1.dp, SparcEmerald),
+                                    modifier = Modifier.clickable {
+                                        repository.setPokeMuteScope(if (active) null else scope)
+                                    }
+                                ) {
+                                    Text(
+                                        text = scope.labelBn,
+                                        color = if (active) Color.White else SparcInk,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        state.pokesToday.filter { it.receiverId == state.currentUser.id }.forEach { pk ->
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = SparcSubtleBg,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text("Incoming encouragement", fontSize = 11.sp, color = SparcMutedInk)
+                                    Text(
+                                        "${pk.senderName}: \"${pk.presetMessage}\"",
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text("1-tap quick reply:", fontSize = 12.sp, color = SparcMutedInk)
+                                SparcDomainEngine.QUICK_POKE_REPLIES.forEach { rep ->
+                                    val chosen = pk.quickReply == rep
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = if (chosen) SparcEmerald else SparcSubtleBg,
+                                        border = BorderStroke(1.dp, SparcCardBorder),
+                                        modifier = Modifier.clickable { repository.replyToPoke(pk.id, rep) }
+                                    ) {
+                                        Text(
+                                            text = rep,
+                                            color = if (chosen) Color.White else SparcInk,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Quick Poll & Debate Corner with Horizontal Percentage Bars
+                item {
+                    val poll = state.polls.first()
+                    val totalVotes = poll.votesByUser.size.coerceAtLeast(1)
+                    SparcScholarlyCard {
+                        Text("Chapter 1 Quick Poll & Debate Corner", style = MaterialTheme.typography.titleLarge)
+                        Text(poll.question, style = MaterialTheme.typography.bodyMedium)
+
+                        poll.options.forEachIndexed { idx, opt ->
+                            val count = poll.votesByUser.values.count { it == idx }
+                            val pct = ((count.toFloat() / totalVotes.toFloat()) * 100).toInt()
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { repository.voteInPoll(poll.id, idx) },
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text("$opt – $pct%", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                LinearProgressIndicator(
+                                    progress = { (pct / 100f).coerceIn(0.08f, 1f) },
+                                    color = if (idx % 2 == 0) SparcEmerald else SparcAmber,
+                                    trackColor = SparcSubtleBg,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(10.dp)
+                                        .clip(RoundedCornerShape(50))
+                                )
+                            }
+                        }
+
+                        HorizontalDivider(color = SparcCardBorder)
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Stance:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            listOf("Support", "Counter").forEach { st ->
+                                val active = selectedStance == st
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = if (active) SparcEmeraldContainer else SparcAmberContainer,
+                                    modifier = Modifier.clickable { selectedStance = st }
+                                ) {
+                                    Text(
+                                        text = st,
+                                        color = if (active) SparcEmeraldDark else SparcAmberDark,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = debateComment,
+                                onValueChange = { debateComment = it },
+                                placeholder = { Text("যুক্তি লিখুন...") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            )
+                            Button(
+                                onClick = {
+                                    repository.postDebateComment(selectedStance, debateComment)
+                                    debateComment = ""
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = SparcEmerald)
+                            ) {
+                                Text("পোস্ট")
                             }
                         }
                     }
                 }
             }
         }
-
-        item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("বিতর্ক ও মতামত যোগ করুন:", fontWeight = FontWeight.SemiBold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("পক্ষে (Support)", "বিপক্ষে (Counter)", "সমন্বয় (Synthesis)").forEach { st ->
-                            FilterChip(
-                                selected = debateStance == st,
-                                onClick = { debateStance = st },
-                                label = { Text(st) }
-                            )
-                        }
-                    }
-                    OutlinedTextField(
-                        value = debateInput,
-                        onValueChange = { debateInput = it },
-                        label = { Text("অধ্যায়ভিত্তিক যুক্তি লিখুন") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Button(onClick = {
-                        repository.postDebateComment(debateStance, debateInput)
-                        debateInput = ""
-                    }) {
-                        Text("মতামত প্রকাশ করুন")
-                    }
-                    state.debateComments.forEach { c ->
-                        HorizontalDivider()
-                        Text("${c.authorName} • [${c.stance}]", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                        Text(c.body, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
-        }
     }
 
-    pokeReceiver?.let { receiver ->
+    pokeTarget?.let { receiver ->
         AlertDialog(
-            onDismissRequest = { pokeReceiver = null },
-            title = { Text("${receiver.name}-কে উৎসাহ দিন") },
+            onDismissRequest = { pokeTarget = null },
+            title = { Text("${receiver.name}-কে উৎসাহ পাঠান") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SparcDomainEngine.PRESET_POKE_MESSAGES.forEach { msg ->
-                        OutlinedCard(
-                            onClick = {
-                                repository.sendPokeToMember(circle.id, receiver, msg)
-                                pokeReceiver = null
-                            },
-                            modifier = Modifier.fillMaxWidth()
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = SparcSubtleBg,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    repository.sendPokeToMember(circle.id, receiver, msg)
+                                    pokeTarget = null
+                                }
                         ) {
-                            Text(msg, modifier = Modifier.padding(12.dp))
+                            Text(msg, modifier = Modifier.padding(12.dp), fontWeight = FontWeight.Medium)
                         }
                     }
                 }
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { pokeReceiver = null }) { Text("বন্ধ করুন") }
+                TextButton(onClick = { pokeTarget = null }) { Text("বন্ধ করুন") }
             }
         )
     }
