@@ -1,11 +1,11 @@
 // Supabase Edge Function: ai-writing-assistant
-// Provides lightweight grammar, academic tone, and CPAR structural feedback via Google Gemini API
+// Supports Gemini API key from EITHER In-App Settings (request payload/header) OR Supabase Edge Secrets
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-gemini-api-key",
 };
 
 interface WritingAssistantRequest {
@@ -15,6 +15,7 @@ interface WritingAssistantRequest {
   language?: "bn" | "en";
   min_words?: number;
   max_words?: number;
+  gemini_api_key?: string;
 }
 
 serve(async (req: Request) => {
@@ -29,10 +30,12 @@ serve(async (req: Request) => {
     const minWords = body.min_words ?? 500;
     const maxWords = body.max_words ?? 700;
 
-    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+    const geminiApiKey =
+      body.gemini_api_key?.trim() ||
+      req.headers.get("x-gemini-api-key")?.trim() ||
+      Deno.env.get("GEMINI_API_KEY")?.trim();
 
     if (!geminiApiKey) {
-      // Deterministic offline fallback when GEMINI_API_KEY is not yet configured
       const lengthAdvice = wordCount < minWords
         ? `শব্দসংখ্যা বর্তমানে ${wordCount}; লক্ষ্যমাত্রা পূরণে আরও অন্তত ${minWords - wordCount} শব্দ যোগ করুন।`
         : wordCount > maxWords
@@ -48,7 +51,7 @@ serve(async (req: Request) => {
           ],
           academic_tone_score: 82,
           tone_feedback:
-            "একাডেমিক টোন ভালো আছে; ব্যক্তিগত মতামতের বদলে মাঠপর্যায়ের পর্যবেক্ষণ ও প্রমাণ উল্লেখ করুন।",
+            "একাডেমিক টোন ভালো আছে; অ্যাপের Settings → API Keys থেকে Gemini API Key যুক্ত করলে লাইভ AI বিশ্লেষণ পাবেন।",
           structure_feedback: [
             lengthAdvice,
             "প্রথম অনুচ্ছেদে প্রেক্ষাপট (Research Site), মাঝের অংশে মূল সমস্যা (Felt-concern) এবং শেষে অংশগ্রহণকারীদের ভূমিকা স্পষ্ট করুন।",

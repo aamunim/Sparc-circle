@@ -410,14 +410,17 @@ fun SparcAudioWaveformBar(
 fun SparcSettingsBottomSheet(
     currentTheme: SparcVisualTheme,
     currentLanguage: String = "bn",
+    apiVault: org.sparc.studycircle.core.model.ApiKeyVaultConfig = org.sparc.studycircle.core.model.ApiKeyVaultConfig(),
+    isSupabaseConnected: Boolean = false,
     onSelectTheme: (SparcVisualTheme) -> Unit,
     onChangeLanguage: (String) -> Unit = {},
+    onUpdateApiVault: (org.sparc.studycircle.core.model.ApiKeyVaultConfig, String) -> Unit = { _, _ -> },
     onLogout: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val p = LocalSparcPalette.current
+    var settingsTab by remember { mutableIntStateOf(0) } // 0 = Theme & General, 1 = API Keys Vault
     var streakNotifications by remember { mutableStateOf(true) }
-    var quietHoursAuto by remember { mutableStateOf(true) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -428,128 +431,393 @@ fun SparcSettingsBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(max = 620.dp)
                 .padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = "অ্যাপ সেটিংস ও UI থিম পরিবর্তন",
+                text = "অ্যাপ সেটিংস ও API কনফিগারেশন",
                 style = MaterialTheme.typography.titleLarge,
                 color = p.text
             )
 
-            // Language Switcher (বাংলা ⇄ English)
             SparcSegmentedPills(
-                options = listOf("বাংলা (Bengali)", "English"),
-                selectedIndex = if (currentLanguage == "en") 1 else 0,
-                onSelect = { idx -> onChangeLanguage(if (idx == 1) "en" else "bn") }
+                options = listOf("🎨 থিম ও ভাষা", "🔑 API Keys ম্যানেজার"),
+                selectedIndex = settingsTab,
+                onSelect = { settingsTab = it }
             )
 
-            // 3 Visual Theme Cards
-            listOf(
-                Triple(
-                    SparcVisualTheme.COBALT_SAAS,
-                    listOf(Color(0xFF2563EB), Color(0xFF1D4ED8)),
-                    "A"
-                ),
-                Triple(
-                    SparcVisualTheme.MIDNIGHT_GLASS,
-                    listOf(Color(0xFF0F172A), Color(0xFF10B981)),
-                    "B"
-                ),
-                Triple(
-                    SparcVisualTheme.OCEAN_HERO,
-                    listOf(Color(0xFF0D9488), Color(0xFF0284C7)),
-                    "C"
-                )
-            ).forEach { (themeItem, gradColors, badge) ->
-                val active = currentTheme == themeItem
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = if (active) p.primarySoft else p.cardAlt,
-                    border = BorderStroke(
-                        width = if (active) 2.dp else 1.dp,
-                        color = if (active) p.primary else p.border
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSelectTheme(themeItem) }
+            if (settingsTab == 0) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Box(
+                    SparcSegmentedPills(
+                        options = listOf("বাংলা (Bengali)", "English"),
+                        selectedIndex = if (currentLanguage == "en") 1 else 0,
+                        onSelect = { idx -> onChangeLanguage(if (idx == 1) "en" else "bn") }
+                    )
+
+                    listOf(
+                        Triple(
+                            SparcVisualTheme.COBALT_SAAS,
+                            listOf(Color(0xFF2563EB), Color(0xFF1D4ED8)),
+                            "A"
+                        ),
+                        Triple(
+                            SparcVisualTheme.MIDNIGHT_GLASS,
+                            listOf(Color(0xFF0F172A), Color(0xFF10B981)),
+                            "B"
+                        ),
+                        Triple(
+                            SparcVisualTheme.OCEAN_HERO,
+                            listOf(Color(0xFF0D9488), Color(0xFF0284C7)),
+                            "C"
+                        )
+                    ).forEach { (themeItem, gradColors, badge) ->
+                        val active = currentTheme == themeItem
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (active) p.primarySoft else p.cardAlt,
+                            border = BorderStroke(
+                                width = if (active) 2.dp else 1.dp,
+                                color = if (active) p.primary else p.border
+                            ),
                             modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Brush.linearGradient(gradColors)),
-                            contentAlignment = Alignment.Center
+                                .fillMaxWidth()
+                                .clickable { onSelectTheme(themeItem) }
                         ) {
-                            Text(
-                                text = badge,
-                                color = Color.White,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 14.sp
-                            )
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(Brush.linearGradient(gradColors)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(badge, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        themeItem.titleBn,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = if (active) p.primarySoftText else p.text
+                                    )
+                                    Text(themeItem.subtitleBn, fontSize = 11.sp, color = p.muted)
+                                }
+                                if (active) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = p.primary)
+                                }
+                            }
                         }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = themeItem.titleBn,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.5.sp,
-                                color = if (active) p.primarySoftText else p.text
-                            )
-                            Text(
-                                text = themeItem.subtitleBn,
-                                fontSize = 11.sp,
-                                color = p.muted
-                            )
+                            Text("রিডিং স্ট্রিক ও Quiet Hours (১০ PM–৭ AM)", fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp)
+                            Text("অটো স্ট্রিক রিমাইন্ডার ও নাইট কিউ", fontSize = 11.sp, color = p.muted)
                         }
-                        if (active) {
-                            Icon(
-                                Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = p.primary
-                            )
-                        }
+                        Switch(checked = streakNotifications, onCheckedChange = { streakNotifications = it })
                     }
-                }
-            }
 
-            HorizontalDivider(color = p.border)
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("রিডিং স্ট্রিক ও Quiet Hours (১০ PM–৭ AM)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Text("অটোমেটিক স্ট্রিক রিমাইন্ডার ও নাইট কিউ", fontSize = 11.sp, color = p.muted)
-                }
-                Switch(
-                    checked = streakNotifications && quietHoursAuto,
-                    onCheckedChange = {
-                        streakNotifications = it
-                        quietHoursAuto = it
+                    OutlinedButton(
+                        onClick = {
+                            onDismiss()
+                            onLogout()
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.2.dp, SparcCrimson),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("লগআউট করুন (Sign Out)", color = SparcCrimson, fontWeight = FontWeight.Bold)
                     }
+                    Spacer(Modifier.height(10.dp))
+                }
+            } else {
+                // TAB 2: Dynamic API Keys Vault Manager (Add / Update / Remove any API Key!)
+                ApiKeysVaultPanel(
+                    apiVault = apiVault,
+                    isSupabaseConnected = isSupabaseConnected,
+                    onUpdateVault = onUpdateApiVault
                 )
             }
+        }
+    }
+}
 
-            OutlinedButton(
-                onClick = {
-                    onDismiss()
-                    onLogout()
-                },
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.2.dp, SparcCrimson),
+@Composable
+private fun ApiKeysVaultPanel(
+    apiVault: org.sparc.studycircle.core.model.ApiKeyVaultConfig,
+    isSupabaseConnected: Boolean,
+    onUpdateVault: (org.sparc.studycircle.core.model.ApiKeyVaultConfig, String) -> Unit
+) {
+    val p = LocalSparcPalette.current
+    var geminiInput by remember(apiVault.geminiApiKey) { mutableStateOf(apiVault.geminiApiKey) }
+    var bkashInput by remember(apiVault.bkashMerchantKey) { mutableStateOf(apiVault.bkashMerchantKey) }
+    var sslInput by remember(apiVault.sslCommerzStoreId) { mutableStateOf(apiVault.sslCommerzStoreId) }
+    var jitsiInput by remember(apiVault.customJitsiServerUrl) { mutableStateOf(apiVault.customJitsiServerUrl) }
+    var supaUrlInput by remember(apiVault.customSupabaseUrl) { mutableStateOf(apiVault.customSupabaseUrl) }
+    var supaAnonInput by remember(apiVault.customSupabaseAnonKey) { mutableStateOf(apiVault.customSupabaseAnonKey) }
+
+    androidx.compose.foundation.lazy.LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(bottom = 20.dp)
+    ) {
+        item {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = if (isSupabaseConnected) p.primarySoft else p.accentSoft,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("লগআউট করুন (Sign Out)", color = SparcCrimson, fontWeight = FontWeight.Bold)
+                Text(
+                    text = if (isSupabaseConnected)
+                        "✓ লাইভ Supabase ডাটাবেস সংযুক্ত আছে"
+                    else
+                        "ℹ বর্তমানে অফলাইন ডেমো মোড চালু আছে",
+                    color = if (isSupabaseConnected) p.primarySoftText else p.accentText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(10.dp)
+                )
+            }
+        }
+
+        item {
+            ApiKeySlotEditor(
+                title = "Google Gemini API Key (AI Writing Coach)",
+                placeholder = "AIzaSy...",
+                currentSaved = apiVault.geminiApiKey,
+                draftValue = geminiInput,
+                onDraftChange = { geminiInput = it },
+                onSave = {
+                    onUpdateVault(
+                        apiVault.copy(geminiApiKey = geminiInput.trim()),
+                        "Gemini API Key সফলভাবে যুক্ত হয়েছে!"
+                    )
+                },
+                onRemove = {
+                    geminiInput = ""
+                    onUpdateVault(
+                        apiVault.copy(geminiApiKey = ""),
+                        "Gemini API Key মুছে ফেলা হয়েছে।"
+                    )
+                }
+            )
+        }
+
+        item {
+            ApiKeySlotEditor(
+                title = "bKash PGW App / Merchant Key",
+                placeholder = "bkash_app_key_...",
+                currentSaved = apiVault.bkashMerchantKey,
+                draftValue = bkashInput,
+                onDraftChange = { bkashInput = it },
+                onSave = {
+                    onUpdateVault(
+                        apiVault.copy(bkashMerchantKey = bkashInput.trim()),
+                        "bKash Merchant Key সংরক্ষিত হয়েছে!"
+                    )
+                },
+                onRemove = {
+                    bkashInput = ""
+                    onUpdateVault(
+                        apiVault.copy(bkashMerchantKey = ""),
+                        "bKash Merchant Key মুছে ফেলা হয়েছে।"
+                    )
+                }
+            )
+        }
+
+        item {
+            ApiKeySlotEditor(
+                title = "SSLCommerz Store ID / API Key",
+                placeholder = "sparc_live_store...",
+                currentSaved = apiVault.sslCommerzStoreId,
+                draftValue = sslInput,
+                onDraftChange = { sslInput = it },
+                onSave = {
+                    onUpdateVault(
+                        apiVault.copy(sslCommerzStoreId = sslInput.trim()),
+                        "SSLCommerz Key সংরক্ষিত হয়েছে!"
+                    )
+                },
+                onRemove = {
+                    sslInput = ""
+                    onUpdateVault(
+                        apiVault.copy(sslCommerzStoreId = ""),
+                        "SSLCommerz Key মুছে ফেলা হয়েছে।"
+                    )
+                }
+            )
+        }
+
+        item {
+            ApiKeySlotEditor(
+                title = "Custom Jitsi Video Server URL",
+                placeholder = "https://meet.jit.si",
+                currentSaved = apiVault.customJitsiServerUrl,
+                draftValue = jitsiInput,
+                onDraftChange = { jitsiInput = it },
+                onSave = {
+                    onUpdateVault(
+                        apiVault.copy(customJitsiServerUrl = jitsiInput.trim()),
+                        "কাস্টম ভিডিও সার্ভার URL সংরক্ষিত হয়েছে!"
+                    )
+                },
+                onRemove = {
+                    jitsiInput = ""
+                    onUpdateVault(
+                        apiVault.copy(customJitsiServerUrl = ""),
+                        "কাস্টম ভিডিও সার্ভার URL রিসেট করা হয়েছে।"
+                    )
+                }
+            )
+        }
+
+        item {
+            ApiKeySlotEditor(
+                title = "Custom Supabase URL (ঐচ্ছিক ওভাররাইড)",
+                placeholder = "https://xxxx.supabase.co",
+                currentSaved = apiVault.customSupabaseUrl,
+                draftValue = supaUrlInput,
+                onDraftChange = { supaUrlInput = it },
+                onSave = {
+                    onUpdateVault(
+                        apiVault.copy(customSupabaseUrl = supaUrlInput.trim(), customSupabaseAnonKey = supaAnonInput.trim()),
+                        "কাস্টম Supabase সংযোগ সংরক্ষিত হয়েছে!"
+                    )
+                },
+                onRemove = {
+                    supaUrlInput = ""
+                    supaAnonInput = ""
+                    onUpdateVault(
+                        apiVault.copy(customSupabaseUrl = "", customSupabaseAnonKey = ""),
+                        "কাস্টম Supabase ওভাররাইড মুছে ফেলা হয়েছে।"
+                    )
+                }
+            )
+        }
+
+        item {
+            OutlinedTextField(
+                value = supaAnonInput,
+                onValueChange = { supaAnonInput = it },
+                label = { Text("Custom Supabase Anon Key (ঐচ্ছিক)") },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        item {
+            OutlinedButton(
+                onClick = {
+                    geminiInput = ""
+                    bkashInput = ""
+                    sslInput = ""
+                    jitsiInput = ""
+                    supaUrlInput = ""
+                    supaAnonInput = ""
+                    onUpdateVault(
+                        org.sparc.studycircle.core.model.ApiKeyVaultConfig(),
+                        "সব কাস্টম API Key মুছে ফেলা হয়েছে।"
+                    )
+                },
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, SparcCrimson),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("সব কাস্টম API Key মুছে ফেলুন (Clear All)", color = SparcCrimson, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ApiKeySlotEditor(
+    title: String,
+    placeholder: String,
+    currentSaved: String,
+    draftValue: String,
+    onDraftChange: (String) -> Unit,
+    onSave: () -> Unit,
+    onRemove: () -> Unit
+) {
+    val p = LocalSparcPalette.current
+    val hasKey = currentSaved.isNotBlank()
+    val maskedPreview = if (currentSaved.length > 8) {
+        "${currentSaved.take(5)}•••••${currentSaved.takeLast(3)}"
+    } else if (hasKey) "••••••" else "যুক্ত নেই"
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = p.cardAlt,
+        border = BorderStroke(1.dp, p.border),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(title, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = p.text, modifier = Modifier.weight(1f))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (hasKey) p.primarySoft else p.card
+                ) {
+                    Text(
+                        text = if (hasKey) "✓ $maskedPreview" else "যুক্ত নেই",
+                        color = if (hasKey) p.primarySoftText else p.muted,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
             }
 
-            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = draftValue,
+                onValueChange = onDraftChange,
+                placeholder = { Text(placeholder, fontSize = 12.sp) },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onSave,
+                    enabled = draftValue.isNotBlank(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = p.primary),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (hasKey) "আপডেট করুন" else "যুক্ত করুন (Save)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                if (hasKey) {
+                    OutlinedButton(
+                        onClick = onRemove,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, SparcCrimson),
+                        modifier = Modifier.weight(0.8f)
+                    ) {
+                        Text("মুছুন (Remove)", color = SparcCrimson, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
     }
 }

@@ -12,6 +12,8 @@ data class SparcAppState(
     val isAuthenticated: Boolean = false,
     val appLanguage: String = "bn", // "bn" or "en"
     val visualTheme: SparcVisualTheme = SparcVisualTheme.COBALT_SAAS,
+    val apiVault: ApiKeyVaultConfig = ApiKeyVaultConfig(),
+    val isSupabaseConnected: Boolean = false,
     val currentUser: UserProfile,
     val directoryMembers: List<UserProfile>,
     val messages: List<MemberMessage>,
@@ -39,10 +41,16 @@ class SparcRepository(
     initialUserName: String? = null,
     initialUserDept: String? = null,
     initialLanguage: String = "bn",
+    initialApiVault: ApiKeyVaultConfig = ApiKeyVaultConfig(),
     private val onPersistTheme: (SparcVisualTheme) -> Unit = {},
     private val onPersistAuth: (Boolean, String, String) -> Unit = { _, _, _ -> },
-    private val onPersistLanguage: (String) -> Unit = {}
+    private val onPersistLanguage: (String) -> Unit = {},
+    private val onPersistApiVault: (ApiKeyVaultConfig) -> Unit = {}
 ) {
+    init {
+        supabaseClient.vaultConfig = initialApiVault
+    }
+
     private val _state = MutableStateFlow(
         createInitialSeededState().let { seeded ->
             val updatedUser = seeded.currentUser.copy(
@@ -53,11 +61,25 @@ class SparcRepository(
                 isAuthenticated = initialAuthenticated,
                 appLanguage = initialLanguage,
                 visualTheme = initialTheme,
+                apiVault = initialApiVault,
+                isSupabaseConnected = supabaseClient.isConfigured,
                 currentUser = updatedUser
             )
         }
     )
     val state: StateFlow<SparcAppState> = _state.asStateFlow()
+
+    fun updateApiVault(newVault: ApiKeyVaultConfig, bannerMsg: String = "API Key সংরক্ষিত হয়েছে!") {
+        supabaseClient.vaultConfig = newVault
+        onPersistApiVault(newVault)
+        _state.update {
+            it.copy(
+                apiVault = newVault,
+                isSupabaseConnected = supabaseClient.isConfigured,
+                statusBannerMessage = bannerMsg
+            )
+        }
+    }
 
     fun setVisualTheme(theme: SparcVisualTheme) {
         onPersistTheme(theme)

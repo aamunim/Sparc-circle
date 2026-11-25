@@ -9,6 +9,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.sparc.studycircle.BuildConfig
 import org.sparc.studycircle.core.model.AiWritingFeedback
+import org.sparc.studycircle.core.model.ApiKeyVaultConfig
 import org.sparc.studycircle.core.model.UserProfile
 import org.sparc.studycircle.core.model.UserRole
 import java.util.concurrent.TimeUnit
@@ -20,8 +21,8 @@ data class SupabaseAuthSession(
 )
 
 class SupabaseRestClient(
-    private val baseUrl: String = BuildConfig.SUPABASE_URL,
-    private val anonKey: String = BuildConfig.SUPABASE_ANON_KEY
+    private val defaultBaseUrl: String = BuildConfig.SUPABASE_URL,
+    private val defaultAnonKey: String = BuildConfig.SUPABASE_ANON_KEY
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val http = OkHttpClient.Builder()
@@ -30,14 +31,23 @@ class SupabaseRestClient(
         .build()
 
     @Volatile
+    var vaultConfig: ApiKeyVaultConfig = ApiKeyVaultConfig()
+
+    @Volatile
     var currentSession: SupabaseAuthSession? = null
         private set
 
+    val activeSupabaseUrl: String
+        get() = vaultConfig.customSupabaseUrl.trim().ifBlank { defaultBaseUrl.trim() }
+
+    val activeAnonKey: String
+        get() = vaultConfig.customSupabaseAnonKey.trim().ifBlank { defaultAnonKey.trim() }
+
     val isConfigured: Boolean
-        get() = baseUrl.isNotBlank() && anonKey.isNotBlank()
+        get() = activeSupabaseUrl.isNotBlank() && activeAnonKey.isNotBlank()
 
     private fun bearerToken(): String =
-        currentSession?.accessToken?.takeIf { it.isNotBlank() } ?: anonKey
+        currentSession?.accessToken?.takeIf { it.isNotBlank() } ?: activeAnonKey
 
     fun clearSession() {
         currentSession = null
@@ -55,8 +65,8 @@ class SupabaseRestClient(
             }.toString()
 
             val req = Request.Builder()
-                .url("${baseUrl.trimEnd('/')}/auth/v1/token?grant_type=password")
-                .addHeader("apikey", anonKey)
+                .url("${activeSupabaseUrl.trimEnd('/')}/auth/v1/token?grant_type=password")
+                .addHeader("apikey", activeAnonKey)
                 .post(body.toRequestBody("application/json".toMediaType()))
                 .build()
 
@@ -93,8 +103,8 @@ class SupabaseRestClient(
             }.toString()
 
             val req = Request.Builder()
-                .url("${baseUrl.trimEnd('/')}/auth/v1/signup")
-                .addHeader("apikey", anonKey)
+                .url("${activeSupabaseUrl.trimEnd('/')}/auth/v1/signup")
+                .addHeader("apikey", activeAnonKey)
                 .post(body.toRequestBody("application/json".toMediaType()))
                 .build()
 
@@ -110,7 +120,6 @@ class SupabaseRestClient(
             }
             currentSession = session
 
-            // Update skills & optional referral bonus if access token was issued immediately
             if (session.accessToken.isNotBlank() && session.userId.isNotBlank()) {
                 runCatching {
                     val patchJson = buildJsonObject {
@@ -118,8 +127,8 @@ class SupabaseRestClient(
                         put("department", department)
                     }.toString()
                     val patchReq = Request.Builder()
-                        .url("${baseUrl.trimEnd('/')}/rest/v1/profiles?id=eq.${session.userId}")
-                        .addHeader("apikey", anonKey)
+                        .url("${activeSupabaseUrl.trimEnd('/')}/rest/v1/profiles?id=eq.${session.userId}")
+                        .addHeader("apikey", activeAnonKey)
                         .addHeader("Authorization", "Bearer ${session.accessToken}")
                         .patch(patchJson.toRequestBody("application/json".toMediaType()))
                         .build()
@@ -131,8 +140,8 @@ class SupabaseRestClient(
                             put("p_referral_code", referralCode.trim())
                         }.toString()
                         val rpcReq = Request.Builder()
-                            .url("${baseUrl.trimEnd('/')}/rest/v1/rpc/apply_referral_bonus")
-                            .addHeader("apikey", anonKey)
+                            .url("${activeSupabaseUrl.trimEnd('/')}/rest/v1/rpc/apply_referral_bonus")
+                            .addHeader("apikey", activeAnonKey)
                             .addHeader("Authorization", "Bearer ${session.accessToken}")
                             .post(rpcBody.toRequestBody("application/json".toMediaType()))
                             .build()
@@ -148,8 +157,8 @@ class SupabaseRestClient(
         runCatching {
             check(isConfigured) { "Supabase URL not configured" }
             val req = Request.Builder()
-                .url("${baseUrl.trimEnd('/')}/rest/v1/profiles?select=*&order=gamification_points.desc&limit=200")
-                .addHeader("apikey", anonKey)
+                .url("${activeSupabaseUrl.trimEnd('/')}/rest/v1/profiles?select=*&order=gamification_points.desc&limit=200")
+                .addHeader("apikey", activeAnonKey)
                 .addHeader("Authorization", "Bearer ${bearerToken()}")
                 .get()
                 .build()
@@ -179,25 +188,6 @@ class SupabaseRestClient(
         }
     }
 
-    suspend fun sendDirectMessage(receiverId: String, bodyText: String) = withContext(Dispatchers.IO) {
-        val senderId = currentSession?.userId ?: return@withContext
-        if (!isConfigured) return@withContext
-        runCatching {
-            val payload = buildJsonObject {
-                put("sender_id", senderId)
-                put("receiver_id", receiverId)
-                put("body", bodyText)
-            }.toString()
-            val req = Request.Builder()
-                .url("${baseUrl.trimEnd('/')}/rest/v1/member_messages")
-                .addHeader("apikey", anonKey)
-                .addHeader("Authorization", "Bearer ${bearerToken()}")
-                .post(payload.toRequestBody("application/json".toMediaType()))
-                .build()
-            http.newCall(req).execute().close()
-        }
-    }
-
     suspend fun requestAiWritingFeedback(
         chapterNo: Int,
         prompt: String,
@@ -206,7 +196,60 @@ class SupabaseRestClient(
         maxWords: Int
     ): Result<AiWritingFeedback> = withContext(Dispatchers.IO) {
         runCatching {
-            check(isConfigured) { "Supabase URL not configured" }
+            val words = content.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+            val wordCount = words.size
+            val userGeminiKey = vaultConfig.geminiApiKey.trim()
+
+            // 1. If Gemini API Key is added in App Settings, call Gemini 2.5 Flash directly!
+            if (userGeminiKey.isNotBlank()) {
+                val sysText = """You are SPARC Study Circle's Academic Writing Coach.
+Do NOT rewrite the student's paper. Give constructive feedback in Bengali strictly as JSON with keys:
+- grammar_feedback (string[])
+- academic_tone_score (number 0-100)
+- tone_feedback (string)
+- structure_feedback (string[])
+Chapter $chapterNo Task: $prompt
+Target Word Range: $minWords-$maxWords words (Current: $wordCount words)."""
+
+                val geminiPayload = buildJsonObject {
+                    put("contents", buildJsonArray {
+                        add(buildJsonObject {
+                            put("role", "user")
+                            put("parts", buildJsonArray {
+                                add(buildJsonObject { put("text", "$sysText\n\nStudent Draft:\n$content") })
+                            })
+                        })
+                    })
+                    put("generationConfig", buildJsonObject {
+                        put("responseMimeType", "application/json")
+                        put("temperature", 0.3)
+                    })
+                }.toString()
+
+                val directReq = Request.Builder()
+                    .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$userGeminiKey")
+                    .post(geminiPayload.toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                http.newCall(directReq).execute().use { resp ->
+                    if (!resp.isSuccessful) error("Gemini API error (${resp.code})")
+                    val root = json.parseToJsonElement(resp.body?.string() ?: "{}").jsonObject
+                    val rawJson = root["candidates"]?.jsonArray?.firstOrNull()
+                        ?.jsonObject?.get("content")?.jsonObject?.get("parts")?.jsonArray?.firstOrNull()
+                        ?.jsonObject?.get("text")?.jsonPrimitive?.content ?: "{}"
+                    val parsed = json.parseToJsonElement(rawJson).jsonObject
+                    return@runCatching AiWritingFeedback(
+                        wordCount = wordCount,
+                        academicToneScore = parsed["academic_tone_score"]?.jsonPrimitive?.intOrNull ?: 85,
+                        toneFeedback = parsed["tone_feedback"]?.jsonPrimitive?.contentOrNull ?: "",
+                        grammarSuggestions = parsed["grammar_feedback"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),
+                        structureSuggestions = parsed["structure_feedback"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+                    )
+                }
+            }
+
+            // 2. Otherwise call Supabase Edge Function ai-writing-assistant
+            check(isConfigured) { "No Gemini key or Supabase URL configured" }
             val payload = buildJsonObject {
                 put("chapter_no", chapterNo)
                 put("prompt", prompt)
@@ -217,8 +260,8 @@ class SupabaseRestClient(
             }.toString()
 
             val req = Request.Builder()
-                .url("${baseUrl.trimEnd('/')}/functions/v1/ai-writing-assistant")
-                .addHeader("apikey", anonKey)
+                .url("${activeSupabaseUrl.trimEnd('/')}/functions/v1/ai-writing-assistant")
+                .addHeader("apikey", activeAnonKey)
                 .addHeader("Authorization", "Bearer ${bearerToken()}")
                 .post(payload.toRequestBody("application/json".toMediaType()))
                 .build()
@@ -227,8 +270,8 @@ class SupabaseRestClient(
                 if (!resp.isSuccessful) error("Edge function HTTP ${resp.code}")
                 val obj: JsonObject = json.parseToJsonElement(resp.body?.string() ?: "{}").jsonObject
                 AiWritingFeedback(
-                    wordCount = obj["word_count"]?.jsonPrimitive?.intOrNull ?: 0,
-                    academicToneScore = obj["academic_tone_score"]?.jsonPrimitive?.intOrNull ?: 80,
+                    wordCount = obj["word_count"]?.jsonPrimitive?.intOrNull ?: wordCount,
+                    academicToneScore = obj["academic_tone_score"]?.jsonPrimitive?.intOrNull ?: 82,
                     toneFeedback = obj["tone_feedback"]?.jsonPrimitive?.contentOrNull ?: "",
                     grammarSuggestions = obj["grammar_feedback"]?.jsonArray
                         ?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),

@@ -22,6 +22,16 @@ enum class SparcVisualTheme(
 }
 
 @Serializable
+data class ApiKeyVaultConfig(
+    val geminiApiKey: String = "",
+    val sslCommerzStoreId: String = "",
+    val bkashMerchantKey: String = "",
+    val customJitsiServerUrl: String = "",
+    val customSupabaseUrl: String = "",
+    val customSupabaseAnonKey: String = ""
+)
+
+@Serializable
 enum class UserRole { MEMBER, SUPERVISOR, SPARC_REP, ADMIN }
 
 @Serializable

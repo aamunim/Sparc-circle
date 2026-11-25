@@ -324,8 +324,11 @@ fun SparcMainScaffold(repository: SparcRepository) {
         SparcSettingsBottomSheet(
             currentTheme = state.visualTheme,
             currentLanguage = state.appLanguage,
+            apiVault = state.apiVault,
+            isSupabaseConnected = state.isSupabaseConnected,
             onSelectTheme = { chosen -> repository.setVisualTheme(chosen) },
             onChangeLanguage = { lang -> repository.setAppLanguage(lang) },
+            onUpdateApiVault = { vault, msg -> repository.updateApiVault(vault, msg) },
             onLogout = { repository.logout() },
             onDismiss = { showSettingsSheet = false }
         )

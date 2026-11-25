@@ -77,8 +77,10 @@ fun AssessmentAndSessionScreen(
     }
 
     activeJitsiSession?.let { sess ->
+        val jitsiBase = state.apiVault.customJitsiServerUrl.trim().trimEnd('/').ifBlank { "https://meet.jit.si" }
         InAppJitsiVideoDialog(
             session = sess,
+            jitsiBaseUrl = jitsiBase,
             displayName = state.currentUser.name,
             onDismiss = { activeJitsiSession = null }
         )
@@ -441,6 +443,7 @@ private fun SupervisorMobileGradingView() {
 @Composable
 private fun InAppJitsiVideoDialog(
     session: OnlineSessionItem,
+    jitsiBaseUrl: String = "https://meet.jit.si",
     displayName: String,
     onDismiss: () -> Unit
 ) {
@@ -479,7 +482,7 @@ private fun InAppJitsiVideoDialog(
                                 }
                             }
                             val encodedName = Uri.encode(displayName)
-                            loadUrl("https://meet.jit.si/${session.jitsiRoomName}#userInfo.displayName=\"$encodedName\"")
+                            loadUrl("$jitsiBaseUrl/${session.jitsiRoomName}#userInfo.displayName=\"$encodedName\"")
                         }
                     }
                 )

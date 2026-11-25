@@ -271,4 +271,27 @@ class SparcDomainEngineTest {
         assertFalse(repo.state.value.isAuthenticated)
         assertFalse(authFlag)
     }
+
+    @Test
+    fun `api key vault supports adding, persisting, and removing dynamic api keys`() {
+        var savedVault = ApiKeyVaultConfig()
+        val repo = org.sparc.studycircle.core.data.SparcRepository(
+            onPersistApiVault = { savedVault = it }
+        )
+        assertEquals("", repo.state.value.apiVault.geminiApiKey)
+
+        repo.updateApiVault(
+            ApiKeyVaultConfig(
+                geminiApiKey = "AIzaSyTestKey12345",
+                bkashMerchantKey = "bkash_test_99"
+            )
+        )
+        assertEquals("AIzaSyTestKey12345", repo.state.value.apiVault.geminiApiKey)
+        assertEquals("bkash_test_99", savedVault.bkashMerchantKey)
+
+        // Remove Gemini key while keeping bKash key
+        repo.updateApiVault(repo.state.value.apiVault.copy(geminiApiKey = ""))
+        assertEquals("", repo.state.value.apiVault.geminiApiKey)
+        assertEquals("bkash_test_99", savedVault.bkashMerchantKey)
+    }
 }
