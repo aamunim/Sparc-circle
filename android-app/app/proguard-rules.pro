@@ -1,0 +1,6 @@
+-keepattributes *Annotation*,InnerClasses
+-dontnote kotlinx.serialization.AnnotationsKt
+-keepclassmembers class kotlinx.serialization.json.** { *; }
+-keepclasseswithmembers class org.sparc.studycircle.** {
+    kotlinx.serialization.KSerializer serializer(...);
+}
