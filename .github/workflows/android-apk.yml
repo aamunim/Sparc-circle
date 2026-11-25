@@ -37,25 +37,25 @@ jobs:
           ./gradlew testDebugUnitTest assembleDebug --no-daemon \
             -PSUPABASE_URL="$SUPABASE_URL_SECRET" \
             -PSUPABASE_ANON_KEY="$SUPABASE_ANON_SECRET"
-          cp app/build/outputs/apk/debug/app-debug.apk ../SPARC-Study-Circle-v3.4.${{ github.run_number }}.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../SPARC-Study-Circle-v3.5.${{ github.run_number }}.apk
 
       - name: Upload APK Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SPARC-Study-Circle-v3.4.${{ github.run_number }}-apk
-          path: SPARC-Study-Circle-v3.4.${{ github.run_number }}.apk
+          name: SPARC-Study-Circle-v3.5.${{ github.run_number }}-apk
+          path: SPARC-Study-Circle-v3.5.${{ github.run_number }}.apk
 
       - name: Publish Fresh Latest GitHub Release with APK
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v3.4.${{ github.run_number }}"
-          APK_FILE="SPARC-Study-Circle-v3.4.${{ github.run_number }}.apk"
+          TAG="v3.5.${{ github.run_number }}"
+          APK_FILE="SPARC-Study-Circle-v3.5.${{ github.run_number }}.apk"
           gh release create "$TAG" "$APK_FILE" \
             --latest \
-            --title "SPARC Study Circle $TAG — 100% Live Multi-User Two-Way Supabase Sync" \
-            --notes "নতুন মাল্টি-ইউজার লাইভ সিঙ্ক রিলিজ ($TAG):
-          - 🔄 **১০০% Live Two-Way Supabase Sync (Multi-User):** সার্কেল তৈরি/জয়েন, সুপারভাইজার ভোট, পিয়ার Poke ও ১-ট্যাপ রিপ্লাই, কুইক পোল ও ডিবেট কমেন্ট, ডিরেক্টরি ইনভাইট, কুইজ সাবমিশন (RLS-লকড Answer Key আনলক), রাইটিং টাস্ক, ওয়ালেট TrxID টপ-আপ এবং হার্ডকপি বুক অর্ডার—সবকিছু এখন লাইভ Supabase PostgreSQL ডাটাবেসের সাথে রিয়েল-টাইমে টু-ওয়ে সিঙ্ক হয়!
-          - 🔐 **স্থায়ী JWT সেশন ও Auto-Refresh:** অ্যাপ বন্ধ করে পুনরায় চালু করলেও লগইন সেশন অক্ষুণ্ণ থাকে এবং প্রতি ১২ সেকেন্ডে অটো-সিঙ্ক + উপরের `↻` বাটনে ১-ট্যাপ লাইভ রিফ্রেশ সুবিধা যুক্ত।
-          - 🌐 **১০০% পূর্ণাঙ্গ English ⇄ বাংলা ভাষা সুইচ** এবং **Instant Sign-Up (`HTTP 429` ফিক্সড)**।"
+            --title "SPARC Study Circle $TAG — Supabase Storage Cloud PDF & MP3 Audio Upload/Stream" \
+            --notes "নতুন ক্লাউড স্টোরেজ মিডিয়া আপডেট ($TAG):
+          - ☁️ **Supabase Storage (`sparc-books` ও `sparc-audio`) আপলোড স্টুডিও:** অ্যাপের **`লাইব্রেরি → ☁️ ক্লাউড বুক ও অডিও স্টুডিও`** (এবং `admin-web` পোর্টাল) থেকে সরাসরি ফোনের যেকোনো **বইয়ের PDF** এবং **বাংলা অডিও সামারি (MP3/M4A/WAV)** Supabase Storage বাকেটে আপলোড করা যাবে!
+          - 📄 **অটো-ডাউনলোড ও অফলাইন ক্যাশড PDF রিডার:** ক্লাউডে PDF আপলোড করলেই সব ইউজারের নেটিভ `PdfRenderer` ভিউয়ারে স্বয়ংক্রিয়ভাবে ডাউনলোড ও ক্যাশ হয়ে ওপেন হবে।
+          - 🎧 **লাইভ MP3 অডিও সামারি স্ট্রিমিং:** `sparc-audio` বাকেটের বাংলা অডিও সামারি সরাসরি Media3 `ExoPlayer`-এ স্ট্রিম হবে (`1x`–`2x` স্পিড কন্ট্রোলসহ)।"

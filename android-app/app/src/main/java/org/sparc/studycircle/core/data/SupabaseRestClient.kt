@@ -49,8 +49,9 @@ class SupabaseRestClient(
     private val json = Json { ignoreUnknownKeys = true }
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
     private val http = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
+        .writeTimeout(90, TimeUnit.SECONDS)
         .build()
 
     @Volatile
@@ -444,6 +445,7 @@ class SupabaseRestClient(
                     totalPages = o["total_pages"]?.jsonPrimitive?.intOrNull ?: 28,
                     defaultReadingMinutes = o["default_reading_minutes"]?.jsonPrimitive?.intOrNull ?: 120,
                     audioSummaryTitle = "বাংলা অডিও সামারি (অধ্যায় $chNo)",
+                    audioSummaryUrl = o["audio_summary_url"]?.jsonPrimitive?.contentOrNull ?: "",
                     audioDurationMinutes = ((o["audio_duration_seconds"]?.jsonPrimitive?.intOrNull ?: 360) / 60).coerceAtLeast(1),
                     flashNotes = fallbackCh1Flash,
                     sections = parsedSections,
@@ -469,6 +471,7 @@ class SupabaseRestClient(
                     subtitle = o["subtitle"]?.jsonPrimitive?.contentOrNull ?: "",
                     author = o["author"]?.jsonPrimitive?.contentOrNull ?: "",
                     category = o["category"]?.jsonPrimitive?.contentOrNull ?: "",
+                    pdfUrl = o["pdf_url"]?.jsonPrimitive?.contentOrNull ?: "",
                     physicalPriceBdt = o["physical_price_bdt"]?.jsonPrimitive?.doubleOrNull ?: 450.0,
                     totalChapters = o["total_chapters"]?.jsonPrimitive?.intOrNull ?: chList.size,
                     isFirstChapterFree = o["is_first_chapter_free"]?.jsonPrimitive?.booleanOrNull ?: true,
@@ -1249,6 +1252,109 @@ class SupabaseRestClient(
                 "pay_supervision_rpc",
                 buildJsonObject { put("p_group_id", groupId) }
             ).jsonObject
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Supabase Storage Binary Upload & Cloud PDF / Audio Media RPCs
+    // ------------------------------------------------------------------------
+    suspend fun uploadBytesToSupabaseStorage(
+        bucket: String,
+        objectPath: String,
+        bytes: ByteArray,
+        contentType: String
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser) { "Please sign in first to upload to Supabase Storage" }
+            val cleanBase = activeSupabaseUrl.trimEnd('/')
+            val uploadUrl = "$cleanBase/storage/v1/object/$bucket/$objectPath"
+            val body = bytes.toRequestBody(contentType.toMediaType())
+
+            val (code, raw) = executeAuthed { token ->
+                Request.Builder()
+                    .url(uploadUrl)
+                    .addHeader("apikey", activeAnonKey)
+                    .addHeader("Authorization", "Bearer $token")
+                    .addHeader("x-upsert", "true")
+                    .post(body)
+                    .build()
+            }
+            if (code !in 200..299) {
+                val errMsg = runCatching {
+                    json.parseToJsonElement(raw).jsonObject["message"]?.jsonPrimitive?.contentOrNull
+                }.getOrNull() ?: "Storage upload HTTP $code"
+                error(errMsg)
+            }
+            "$cleanBase/storage/v1/object/public/$bucket/$objectPath"
+        }
+    }
+
+    suspend fun attachMediaToBookRemote(
+        bookId: String,
+        chapterNo: Int,
+        pdfUrl: String?,
+        audioUrl: String?
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser && isUuid(bookId))
+            postRpc(
+                "attach_book_and_audio_media_rpc",
+                buildJsonObject {
+                    put("p_book_id", bookId)
+                    put("p_chapter_no", chapterNo)
+                    if (!pdfUrl.isNullOrBlank()) put("p_pdf_url", pdfUrl)
+                    if (!audioUrl.isNullOrBlank()) put("p_audio_url", audioUrl)
+                }
+            )
+            Unit
+        }
+    }
+
+    suspend fun publishNewBookWithMediaRemote(
+        title: String,
+        author: String,
+        priceBdt: Double,
+        pdfUrl: String,
+        audioUrl: String?
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser)
+            val res = postRpc(
+                "publish_new_book_with_media_rpc",
+                buildJsonObject {
+                    put("p_title", title.trim())
+                    put("p_author", author.trim())
+                    put("p_price_bdt", priceBdt)
+                    put("p_pdf_url", pdfUrl)
+                    if (!audioUrl.isNullOrBlank()) put("p_audio_url", audioUrl)
+                }
+            ).jsonObject
+            res["book_id"]?.jsonPrimitive?.content ?: ""
+        }
+    }
+
+    suspend fun downloadCloudFileToCache(
+        remoteUrl: String,
+        targetFile: java.io.File
+    ): Result<java.io.File> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (targetFile.exists() && targetFile.length() > 1024L) {
+                return@runCatching targetFile
+            }
+            targetFile.parentFile?.mkdirs()
+            val req = Request.Builder().url(remoteUrl).get().build()
+            http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) error("Download HTTP ${resp.code}")
+                val stream = resp.body?.byteStream() ?: error("Empty response stream")
+                val tmpFile = java.io.File(targetFile.parentFile, "${targetFile.name}.part")
+                stream.use { input ->
+                    java.io.FileOutputStream(tmpFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                tmpFile.renameTo(targetFile)
+                targetFile
+            }
         }
     }
 

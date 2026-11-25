@@ -27,6 +27,8 @@ class SparcAudioController(private val context: Context) {
         private set
     var speed by mutableFloatStateOf(1.0f)
         private set
+    var isStreamingCloudAudio by mutableStateOf(false)
+        private set
 
     private val fallbackFile: File by lazy {
         ensureLocalPreviewWav(context)
@@ -53,7 +55,11 @@ class SparcAudioController(private val context: Context) {
     }
 
     fun loadUrlOrFallback(remoteUrl: String?) {
-        if (!remoteUrl.isNullOrBlank() && remoteUrl.startsWith("http")) {
+        val validCloud = !remoteUrl.isNullOrBlank() &&
+            remoteUrl.startsWith("http") &&
+            !remoteUrl.contains("storage.sparc.org.bd")
+        if (validCloud) {
+            isStreamingCloudAudio = true
             player.setMediaItem(MediaItem.fromUri(Uri.parse(remoteUrl)))
             player.prepare()
         } else {
@@ -62,6 +68,7 @@ class SparcAudioController(private val context: Context) {
     }
 
     private fun loadLocalFallback() {
+        isStreamingCloudAudio = false
         player.setMediaItem(MediaItem.fromUri(Uri.fromFile(fallbackFile)))
         player.prepare()
     }

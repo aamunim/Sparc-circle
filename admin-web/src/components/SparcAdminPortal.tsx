@@ -476,15 +476,15 @@ export default function SparcAdminPortal() {
           </div>
         )}
 
-        {/* TAB 4: DIGITAL LIBRARY & QUESTION BANK */}
+        {/* TAB 4: DIGITAL LIBRARY & SUPABASE STORAGE CLOUD UPLOAD */}
         {activeTab === "library" && (
           <div className="space-y-6">
             {role === "admin" && (
-              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-3">
+              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                 <h3 className="text-base font-bold">
-                  নতুন কপিরাইট-অনুমোদিত বই যুক্ত করুন (১ম অধ্যায় অটো ফ্রি ট্রায়াল)
+                  ☁️ নতুন কপিরাইট-অনুমোদিত বই, PDF (`sparc-books`) ও বাংলা অডিও সামারি (`sparc-audio`) আপলোড করুন
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <input
                     value={newBookTitle}
                     onChange={(e) => setNewBookTitle(e.target.value)}
@@ -497,9 +497,63 @@ export default function SparcAdminPortal() {
                     placeholder="লেখকের নাম"
                     className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
                   />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
+                  <label className="border border-dashed border-emerald-700 bg-emerald-50/50 rounded-lg px-3 py-2 text-xs font-semibold cursor-pointer block">
+                    📄 বইয়ের PDF ফাইল নির্বাচন করুন (`sparc-books`)
+                    <input
+                      id="sparc-admin-pdf"
+                      type="file"
+                      accept="application/pdf"
+                      className="mt-1 block w-full text-xs"
+                    />
+                  </label>
+                  <label className="border border-dashed border-amber-700 bg-amber-50/50 rounded-lg px-3 py-2 text-xs font-semibold cursor-pointer block">
+                    🎧 বাংলা অডিও সামারি MP3/M4A (`sparc-audio`)
+                    <input
+                      id="sparc-admin-audio"
+                      type="file"
+                      accept="audio/*"
+                      className="mt-1 block w-full text-xs"
+                    />
+                  </label>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       if (!newBookTitle.trim()) return;
+                      const pdfInput = document.getElementById("sparc-admin-pdf") as HTMLInputElement | null;
+                      const audioInput = document.getElementById("sparc-admin-audio") as HTMLInputElement | null;
+                      const pdfFile = pdfInput?.files?.[0] ?? null;
+                      const audioFile = audioInput?.files?.[0] ?? null;
+
+                      let uploadedPdfUrl = "";
+                      let uploadedAudioUrl = "";
+
+                      const { supabase: sb } = await import("@/lib/supabase");
+                      if (sb) {
+                        const ts = Date.now();
+                        if (pdfFile) {
+                          const pdfPath = `pdfs/${ts}_${pdfFile.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+                          const { error } = await sb.storage.from("sparc-books").upload(pdfPath, pdfFile, { upsert: true });
+                          if (!error) {
+                            uploadedPdfUrl = sb.storage.from("sparc-books").getPublicUrl(pdfPath).data.publicUrl;
+                          }
+                        }
+                        if (audioFile) {
+                          const audioPath = `summaries/${ts}_${audioFile.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+                          const { error } = await sb.storage.from("sparc-audio").upload(audioPath, audioFile, { upsert: true });
+                          if (!error) {
+                            uploadedAudioUrl = sb.storage.from("sparc-audio").getPublicUrl(audioPath).data.publicUrl;
+                          }
+                        }
+                        await sb.rpc("publish_new_book_with_media_rpc", {
+                          p_title: newBookTitle.trim(),
+                          p_author: newBookAuthor.trim() || "SPARC Academic Press",
+                          p_price_bdt: 450,
+                          p_pdf_url: uploadedPdfUrl,
+                          p_audio_url: uploadedAudioUrl || null,
+                        });
+                      }
+
                       setBooks((prev) => [
                         ...prev,
                         {
@@ -510,17 +564,31 @@ export default function SparcAdminPortal() {
                           totalChapters: 7,
                           isFirstChapterFree: true,
                           minMembersRequired: 10,
-                          physicalPriceBdt: 400,
-                          chapters: [],
+                          physicalPriceBdt: 450,
+                          chapters: [
+                            {
+                              chapterNo: 1,
+                              title: "অধ্যায় ১: সূচনা ও মূল ধারণা",
+                              type: "standard",
+                              totalPages: 28,
+                              totalMarks: 52,
+                              passMarks: 32,
+                              redFlagMarks: 26,
+                              sessionsCount: 1,
+                              audioSummaryUrl: uploadedAudioUrl,
+                            },
+                          ],
                         },
                       ]);
                       setNewBookTitle("");
                       setNewBookAuthor("");
-                      notify("নতুন বই ডিজিটাল লাইব্রেরিতে যুক্ত হয়েছে!");
+                      if (pdfInput) pdfInput.value = "";
+                      if (audioInput) audioInput.value = "";
+                      notify("নতুন বই ও ক্লাউড মিডিয়া সফলভাবে Supabase Storage-এ যুক্ত হয়েছে!");
                     }}
-                    className="bg-[#0F5132] text-white rounded-lg px-4 py-2 text-sm font-semibold"
+                    className="bg-[#0F5132] text-white rounded-lg px-4 py-3 text-sm font-semibold"
                   >
-                    + লাইব্রেরিতে বই যোগ করুন
+                    ☁️ Supabase-এ বই ও মিডিয়া প্রকাশ করুন
                   </button>
                 </div>
               </div>

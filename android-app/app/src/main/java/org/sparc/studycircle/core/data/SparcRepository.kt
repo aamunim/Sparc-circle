@@ -1139,6 +1139,113 @@ class SparcRepository(
         }
     }
 
+    // Section 3.1 - 3.4: Upload Real Book PDF & Bangla MP3 Audio Summary to Supabase Storage
+    suspend fun uploadBookPdfAndAudio(
+        targetBook: BookItem?,
+        isNewBook: Boolean,
+        newTitle: String,
+        newAuthor: String,
+        newPriceBdt: Double,
+        chapterNo: Int = 1,
+        pdfBytes: ByteArray?,
+        pdfFileName: String?,
+        audioBytes: ByteArray?,
+        audioFileName: String?
+    ): Result<Unit> {
+        if (pdfBytes == null && audioBytes == null) {
+            return Result.failure(
+                IllegalArgumentException(
+                    msg("অনুগ্রহ করে অন্তত একটি PDF বা অডিও ফাইল সিলেক্ট করুন।", "Please select at least a PDF or an audio file.")
+                )
+            )
+        }
+        if (isNewBook && newTitle.isBlank()) {
+            return Result.failure(
+                IllegalArgumentException(
+                    msg("নতুন বইয়ের নাম লিখুন।", "Please enter the new book title.")
+                )
+            )
+        }
+
+        if (!supabaseClient.hasAuthenticatedUser) {
+            return Result.failure(
+                IllegalStateException(
+                    msg(
+                        "ক্লাউড স্টোরেজে আপলোড করতে আগে নিজের ইমেইল দিয়ে লগইন/সাইন-আপ করুন।",
+                        "Please sign in with your email account to upload files to Supabase Storage."
+                    )
+                )
+            )
+        }
+
+        return runCatching {
+            val ts = System.currentTimeMillis()
+            var uploadedPdfUrl: String? = null
+            var uploadedAudioUrl: String? = null
+
+            if (pdfBytes != null && pdfBytes.isNotEmpty()) {
+                val safePdf = (pdfFileName ?: "book.pdf")
+                    .replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                    .let { if (it.endsWith(".pdf", true)) it else "$it.pdf" }
+                uploadedPdfUrl = supabaseClient.uploadBytesToSupabaseStorage(
+                    bucket = "sparc-books",
+                    objectPath = "pdfs/${ts}_$safePdf",
+                    bytes = pdfBytes,
+                    contentType = "application/pdf"
+                ).getOrThrow()
+            }
+
+            if (audioBytes != null && audioBytes.isNotEmpty()) {
+                val rawName = audioFileName ?: "summary.mp3"
+                val safeAudio = rawName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                val mime = when {
+                    safeAudio.endsWith(".wav", true) -> "audio/wav"
+                    safeAudio.endsWith(".ogg", true) -> "audio/ogg"
+                    safeAudio.endsWith(".m4a", true) -> "audio/mp4"
+                    else -> "audio/mpeg"
+                }
+                uploadedAudioUrl = supabaseClient.uploadBytesToSupabaseStorage(
+                    bucket = "sparc-audio",
+                    objectPath = "summaries/${ts}_$safeAudio",
+                    bytes = audioBytes,
+                    contentType = mime
+                ).getOrThrow()
+            }
+
+            if (isNewBook) {
+                supabaseClient.publishNewBookWithMediaRemote(
+                    title = newTitle.trim(),
+                    author = newAuthor.trim().ifBlank { "SPARC Author" },
+                    priceBdt = newPriceBdt,
+                    pdfUrl = uploadedPdfUrl ?: "",
+                    audioUrl = uploadedAudioUrl
+                ).getOrThrow()
+            } else {
+                val book = targetBook ?: _state.value.books.first()
+                supabaseClient.attachMediaToBookRemote(
+                    bookId = book.id,
+                    chapterNo = chapterNo.coerceAtLeast(1),
+                    pdfUrl = uploadedPdfUrl,
+                    audioUrl = uploadedAudioUrl
+                ).getOrThrow()
+            }
+
+            syncFromSupabaseNow(silent = true)
+            _state.update { s ->
+                s.copy(
+                    statusBannerMessage = if (s.appLanguage == "en") {
+                        "✓ Cloud PDF/Audio uploaded to Supabase Storage & synced!"
+                    } else {
+                        "✓ বইয়ের PDF / অডিও সামারি সফলভাবে Supabase Storage-এ আপলোড ও সিঙ্ক হয়েছে!"
+                    }
+                )
+            }
+        }
+    }
+
+    suspend fun downloadCloudPdf(pdfUrl: String, targetFile: java.io.File): Result<java.io.File> =
+        supabaseClient.downloadCloudFileToCache(pdfUrl, targetFile)
+
     companion object {
         fun createInitialSeededState(): SparcAppState {
             val me = UserProfile(

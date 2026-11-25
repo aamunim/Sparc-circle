@@ -48,15 +48,22 @@ import java.io.FileOutputStream
 @Composable
 fun NativePdfBookViewerCard(
     bookTitle: String,
+    cloudPdfUrl: String = "",
+    onDownloadCloudPdf: suspend (String, File) -> Result<File> = { _, f -> Result.success(f) },
     onPageChanged: (currentPage: Int, totalPages: Int) -> Unit = { _, _ -> },
     onQuickHighlightPage: (pageNo: Int) -> Unit = {}
 ) {
     val context = LocalContext.current
     val p = LocalSparcPalette.current
 
-    var customPdfUri by remember { mutableStateOf<Uri?>(null) }
-    var customPdfName by remember { mutableStateOf<String?>(null) }
-    var pageIndex by remember { mutableIntStateOf(0) }
+    val hasValidCloudUrl = cloudPdfUrl.startsWith("http") && !cloudPdfUrl.contains("storage.sparc.org.bd")
+
+    var customPdfUri by remember(bookTitle, cloudPdfUrl) { mutableStateOf<Uri?>(null) }
+    var customPdfName by remember(bookTitle, cloudPdfUrl) { mutableStateOf<String?>(null) }
+    var cachedCloudFile by remember(cloudPdfUrl) { mutableStateOf<File?>(null) }
+    var isDownloadingCloud by remember(cloudPdfUrl) { mutableStateOf(false) }
+
+    var pageIndex by remember(bookTitle, cloudPdfUrl) { mutableIntStateOf(0) }
     var totalPageCount by remember { mutableIntStateOf(6) }
     var renderedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var zoomScale by remember { mutableFloatStateOf(1f) }
@@ -76,9 +83,24 @@ fun NativePdfBookViewerCard(
         }
     }
 
-    LaunchedEffect(customPdfUri, pageIndex) {
+    LaunchedEffect(cloudPdfUrl) {
+        if (hasValidCloudUrl) {
+            isDownloadingCloud = true
+            val cacheTarget = File(
+                context.cacheDir,
+                "cloud_pdfs/sparc_${cloudPdfUrl.hashCode().toUInt()}.pdf"
+            )
+            val downloaded = onDownloadCloudPdf(cloudPdfUrl, cacheTarget).getOrNull()
+            cachedCloudFile = downloaded
+            isDownloadingCloud = false
+        } else {
+            cachedCloudFile = null
+        }
+    }
+
+    LaunchedEffect(customPdfUri, cachedCloudFile, pageIndex) {
         val result = withContext(Dispatchers.IO) {
-            renderPdfPageBitmap(context, customPdfUri, pageIndex)
+            renderPdfPageBitmap(context, customPdfUri, cachedCloudFile, pageIndex)
         }
         if (result != null) {
             renderedBitmap = result.first
@@ -95,18 +117,24 @@ fun NativePdfBookViewerCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = customPdfName ?: tr("নেটিভ PDF রিডার • $bookTitle", "Native PDF Reader • $bookTitle"),
+                    text = customPdfName
+                        ?: if (cachedCloudFile != null) "☁️ ${tr("ক্লাউড PDF", "Cloud PDF")} • $bookTitle"
+                        else tr("নেটিভ PDF রিডার • $bookTitle", "Native PDF Reader • $bookTitle"),
                     style = MaterialTheme.typography.titleMedium,
                     color = p.text,
                     maxLines = 1
                 )
                 Text(
-                    text = tr(
-                        "পৃষ্ঠা ${pageIndex + 1} / $totalPageCount • Pinch-to-Zoom সাপোর্টেড",
-                        "Page ${pageIndex + 1} / $totalPageCount • Pinch-to-Zoom enabled"
-                    ),
+                    text = if (isDownloadingCloud) {
+                        tr("ক্লাউড স্টোরেজ থেকে বই ডাউনলোড হচ্ছে...", "Downloading book from Supabase Storage...")
+                    } else {
+                        tr(
+                            "পৃষ্ঠা ${pageIndex + 1} / $totalPageCount • Pinch-to-Zoom সাপোর্টেড",
+                            "Page ${pageIndex + 1} / $totalPageCount • Pinch-to-Zoom enabled"
+                        )
+                    },
                     fontSize = 11.5.sp,
-                    color = p.muted
+                    color = if (cachedCloudFile != null) p.primary else p.muted
                 )
             }
 
@@ -162,7 +190,17 @@ fun NativePdfBookViewerCard(
             contentAlignment = Alignment.Center
         ) {
             val bmp = renderedBitmap
-            if (bmp != null) {
+            if (isDownloadingCloud) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CircularProgressIndicator(color = p.primary)
+                    Text(
+                        tr("ক্লাউড PDF লোড হচ্ছে...", "Loading Cloud PDF..."),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF0F172A)
+                    )
+                }
+            } else if (bmp != null) {
                 Image(
                     bitmap = bmp.asImageBitmap(),
                     contentDescription = "PDF Page ${pageIndex + 1}",
@@ -257,30 +295,37 @@ fun NativePdfBookViewerCard(
 private fun renderPdfPageBitmap(
     context: Context,
     customUri: Uri?,
+    cachedCloudFile: File?,
     requestedPage: Int
 ): Pair<Bitmap, Int>? {
-    val pfd: ParcelFileDescriptor = if (customUri != null) {
-        context.contentResolver.openFileDescriptor(customUri, "r") ?: return null
-    } else {
-        val samplePdf = ensureSampleAcademicPdf(context)
-        ParcelFileDescriptor.open(samplePdf, ParcelFileDescriptor.MODE_READ_ONLY)
-    }
-
-    pfd.use { descriptor ->
-        PdfRenderer(descriptor).use { renderer ->
-            val count = renderer.pageCount.coerceAtLeast(1)
-            val safeIndex = requestedPage.coerceIn(0, count - 1)
-            renderer.openPage(safeIndex).use { page ->
-                val bmpWidth = (page.width * 2).coerceAtLeast(800)
-                val bmpHeight = (page.height * 2).coerceAtLeast(1100)
-                val bmp = Bitmap.createBitmap(bmpWidth, bmpHeight, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(bmp)
-                canvas.drawColor(AndroidColor.WHITE)
-                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                return bmp to count
+    return runCatching {
+        val pfd: ParcelFileDescriptor = when {
+            customUri != null ->
+                context.contentResolver.openFileDescriptor(customUri, "r") ?: return null
+            cachedCloudFile != null && cachedCloudFile.exists() && cachedCloudFile.length() > 512L ->
+                ParcelFileDescriptor.open(cachedCloudFile, ParcelFileDescriptor.MODE_READ_ONLY)
+            else -> {
+                val samplePdf = ensureSampleAcademicPdf(context)
+                ParcelFileDescriptor.open(samplePdf, ParcelFileDescriptor.MODE_READ_ONLY)
             }
         }
-    }
+
+        pfd.use { descriptor ->
+            PdfRenderer(descriptor).use { renderer ->
+                val count = renderer.pageCount.coerceAtLeast(1)
+                val safeIndex = requestedPage.coerceIn(0, count - 1)
+                renderer.openPage(safeIndex).use { page ->
+                    val bmpWidth = (page.width * 2).coerceAtLeast(800)
+                    val bmpHeight = (page.height * 2).coerceAtLeast(1100)
+                    val bmp = Bitmap.createBitmap(bmpWidth, bmpHeight, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(bmp)
+                    canvas.drawColor(AndroidColor.WHITE)
+                    page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    bmp to count
+                }
+            }
+        }
+    }.getOrNull()
 }
 
 private fun ensureSampleAcademicPdf(context: Context): File {
