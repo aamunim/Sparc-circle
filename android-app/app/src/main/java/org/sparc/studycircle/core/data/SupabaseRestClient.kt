@@ -39,7 +39,8 @@ data class LiveWorkspaceSnapshot(
     val bookOrders: List<PhysicalBookOrder>,
     val walletHistory: List<WalletTransactionItem>,
     val sessions: List<OnlineSessionItem>,
-    val supervisionDeals: List<SupervisionDeal>
+    val supervisionDeals: List<SupervisionDeal>,
+    val appCustomization: AppCustomizationConfig? = null
 )
 
 class SupabaseRestClient(
@@ -435,6 +436,8 @@ class SupabaseRestClient(
                     )
                 } ?: emptyList()
                 val outcomes = o["learning_outcomes"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+                val liveFlashNotes = o["flash_notes"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                    ?.takeIf { it.isNotEmpty() } ?: fallbackCh1Flash
 
                 bId to ChapterItem(
                     id = chId,
@@ -447,7 +450,7 @@ class SupabaseRestClient(
                     audioSummaryTitle = "বাংলা অডিও সামারি (অধ্যায় $chNo)",
                     audioSummaryUrl = o["audio_summary_url"]?.jsonPrimitive?.contentOrNull ?: "",
                     audioDurationMinutes = ((o["audio_duration_seconds"]?.jsonPrimitive?.intOrNull ?: 360) / 60).coerceAtLeast(1),
-                    flashNotes = fallbackCh1Flash,
+                    flashNotes = liveFlashNotes,
                     sections = parsedSections,
                     learningOutcomes = outcomes,
                     questions = questionsByChapterId[chId]?.ifEmpty {
@@ -528,7 +531,13 @@ class SupabaseRestClient(
                     },
                     supervisorVotes = votesByCircle[cid] ?: emptyMap(),
                     currentGroupChapter = o["current_group_chapter"]?.jsonPrimitive?.intOrNull ?: 1,
-                    nextSessionAnnounced = o["next_session_announced_at"] != null && o["next_session_announced_at"] !is JsonNull
+                    nextSessionAnnounced = o["next_session_announced_at"] != null && o["next_session_announced_at"] !is JsonNull,
+                    maxMembers = o["max_members"]?.jsonPrimitive?.intOrNull ?: 25,
+                    isPrivate = o["is_private"]?.jsonPrimitive?.booleanOrNull ?: false,
+                    inviteCode = o["invite_code"]?.jsonPrimitive?.contentOrNull,
+                    sessionScheduleLabel = o["session_schedule_label"]?.jsonPrimitive?.contentOrNull ?: "শুক্রবার রাত ৮:৩০",
+                    defaultMeetingUrl = o["default_meeting_url"]?.jsonPrimitive?.contentOrNull ?: "https://meet.jit.si/SPARC_Circle_Live",
+                    circleRules = o["circle_rules"]?.jsonPrimitive?.contentOrNull ?: "নিয়মিত অধ্যায় পড়া ও সহপাঠীদের প্রতি শ্রদ্ধাশীল থেকে আলোচনায় অংশ নেওয়া।"
                 )
             }
 
@@ -796,6 +805,9 @@ class SupabaseRestClient(
                 )
             }
 
+            val customArr = getJsonArray("app_customization?id=eq.global&limit=1")
+            val liveAppCustom = customArr.firstOrNull()?.jsonObject?.let { parseAppCustomization(it) }
+
             LiveWorkspaceSnapshot(
                 me = meProfile,
                 peers = peerProfiles,
@@ -814,10 +826,37 @@ class SupabaseRestClient(
                 bookOrders = liveOrders,
                 walletHistory = liveWallet,
                 sessions = liveSessions,
-                supervisionDeals = liveDeals
+                supervisionDeals = liveDeals,
+                appCustomization = liveAppCustom
             )
         }
     }
+
+    suspend fun fetchPublicAppCustomization(): Result<AppCustomizationConfig> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(isConfigured) { "Supabase not configured" }
+            val arr = getJsonArray("app_customization?id=eq.global&limit=1")
+            val obj = arr.firstOrNull()?.jsonObject ?: error("No global customization row")
+            parseAppCustomization(obj)
+        }
+    }
+
+    private fun parseAppCustomization(o: JsonObject): AppCustomizationConfig = AppCustomizationConfig(
+        appTitle = o["app_title"]?.jsonPrimitive?.contentOrNull ?: "SPARC Study Circle",
+        appTaglineBn = o["app_tagline_bn"]?.jsonPrimitive?.contentOrNull ?: "বই পড়তে পড়তে লেখা শেখা",
+        appTaglineEn = o["app_tagline_en"]?.jsonPrimitive?.contentOrNull ?: "Learning Academic Writing While Reading",
+        splashQuoteBn = o["splash_quote_bn"]?.jsonPrimitive?.contentOrNull ?: "যৌথ পাঠ, গভীর চিন্তা ও একাডেমিক গবেষণার সমন্বিত প্ল্যাটফর্ম",
+        splashQuoteEn = o["splash_quote_en"]?.jsonPrimitive?.contentOrNull ?: "Collaborative reading, critical inquiry & scholarly writing",
+        announcementBannerBn = o["announcement_banner_bn"]?.jsonPrimitive?.contentOrNull ?: "",
+        announcementBannerEn = o["announcement_banner_en"]?.jsonPrimitive?.contentOrNull ?: "",
+        showAnnouncementBanner = o["show_announcement_banner"]?.jsonPrimitive?.booleanOrNull ?: true,
+        bkashMerchantNumber = o["bkash_merchant_number"]?.jsonPrimitive?.contentOrNull ?: "01700-000000",
+        nagadMerchantNumber = o["nagad_merchant_number"]?.jsonPrimitive?.contentOrNull ?: "01800-000000",
+        rocketMerchantNumber = o["rocket_merchant_number"]?.jsonPrimitive?.contentOrNull ?: "01900-000000",
+        defaultSupervisionFeeBdt = o["default_supervision_fee_bdt"]?.jsonPrimitive?.doubleOrNull ?: 300.0,
+        borrowDepositBdt = o["borrow_deposit_bdt"]?.jsonPrimitive?.doubleOrNull ?: 150.0,
+        minTopupBdt = o["min_topup_bdt"]?.jsonPrimitive?.doubleOrNull ?: 500.0
+    )
 
     private fun parseProfile(o: JsonObject): UserProfile {
         val roleStr = o["role"]?.jsonPrimitive?.contentOrNull ?: "member"
@@ -833,7 +872,11 @@ class SupabaseRestClient(
             readingStreakDays = o["reading_streak_days"]?.jsonPrimitive?.intOrNull ?: 0,
             referralCode = o["referral_code"]?.jsonPrimitive?.content ?: "",
             walletBalanceBdt = o["wallet_balance"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
-            earnedBadges = o["earned_badges"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+            earnedBadges = o["earned_badges"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),
+            avatarUrl = o["avatar_url"]?.jsonPrimitive?.contentOrNull ?: "",
+            institution = o["institution"]?.jsonPrimitive?.contentOrNull ?: "",
+            bio = o["bio"]?.jsonPrimitive?.contentOrNull ?: "",
+            dailyReadingGoalMinutes = o["daily_reading_goal_minutes"]?.jsonPrimitive?.intOrNull ?: 30
         )
     }
 
@@ -849,12 +892,42 @@ class SupabaseRestClient(
     // ------------------------------------------------------------------------
     // Live Write Operations & Atomic Server RPC Calls
     // ------------------------------------------------------------------------
+    suspend fun saveAppCustomizationRemote(config: AppCustomizationConfig): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser) { "Not authenticated" }
+            postRpc(
+                "upsert_app_customization_rpc",
+                buildJsonObject {
+                    put("p_app_title", config.appTitle.trim())
+                    put("p_app_tagline_bn", config.appTaglineBn.trim())
+                    put("p_app_tagline_en", config.appTaglineEn.trim())
+                    put("p_splash_quote_bn", config.splashQuoteBn.trim())
+                    put("p_splash_quote_en", config.splashQuoteEn.trim())
+                    put("p_announcement_bn", config.announcementBannerBn.trim())
+                    put("p_announcement_en", config.announcementBannerEn.trim())
+                    put("p_show_announcement", config.showAnnouncementBanner)
+                    put("p_bkash_number", config.bkashMerchantNumber.trim())
+                    put("p_nagad_number", config.nagadMerchantNumber.trim())
+                    put("p_rocket_number", config.rocketMerchantNumber.trim())
+                    put("p_supervision_fee_bdt", config.defaultSupervisionFeeBdt)
+                    put("p_borrow_deposit_bdt", config.borrowDepositBdt)
+                    put("p_min_topup_bdt", config.minTopupBdt)
+                }
+            )
+            Unit
+        }
+    }
+
     suspend fun updateMyProfileRemote(
         name: String,
         department: String,
         interests: List<String>,
         skills: List<String>,
-        referralCode: String
+        referralCode: String,
+        avatarUrl: String? = null,
+        institution: String? = null,
+        bio: String? = null,
+        dailyReadingGoalMinutes: Int? = null
     ): Result<Boolean> = withContext(Dispatchers.IO) {
         runCatching {
             check(hasAuthenticatedUser) { "Not authenticated" }
@@ -866,6 +939,10 @@ class SupabaseRestClient(
                     put("department", department.trim())
                     put("research_interests", JsonArray(interests.map { JsonPrimitive(it) }))
                     put("skills", JsonArray(skills.map { JsonPrimitive(it) }))
+                    if (avatarUrl != null) put("avatar_url", avatarUrl.trim())
+                    if (institution != null) put("institution", institution.trim())
+                    if (bio != null) put("bio", bio.trim())
+                    if (dailyReadingGoalMinutes != null) put("daily_reading_goal_minutes", dailyReadingGoalMinutes)
                 }
             )
             if (referralCode.isNotBlank()) {
@@ -878,6 +955,70 @@ class SupabaseRestClient(
                 )
                 (res as? JsonPrimitive)?.booleanOrNull ?: false
             } else false
+        }
+    }
+
+    suspend fun upsertChapterCurriculumRemote(
+        bookId: String,
+        chapterNo: Int,
+        title: String,
+        typeCode: String,
+        totalPages: Int,
+        flashNotes: List<String>,
+        learningOutcomes: List<String>,
+        writingPrompt: String,
+        minWords: Int,
+        maxWords: Int
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser && isUuid(bookId))
+            val res = postRpc(
+                "upsert_chapter_curriculum_rpc",
+                buildJsonObject {
+                    put("p_book_id", bookId)
+                    put("p_chapter_no", chapterNo)
+                    put("p_title", title.trim())
+                    put("p_type", typeCode.lowercase())
+                    put("p_total_pages", totalPages)
+                    put("p_flash_notes", JsonArray(flashNotes.map { JsonPrimitive(it) }))
+                    put("p_learning_outcomes", JsonArray(learningOutcomes.map { JsonPrimitive(it) }))
+                    put("p_writing_prompt", writingPrompt.trim())
+                    put("p_min_words", minWords)
+                    put("p_max_words", maxWords)
+                }
+            ).jsonObject
+            res["chapter_id"]?.jsonPrimitive?.content ?: ""
+        }
+    }
+
+    suspend fun upsertChapterQuestionRemote(
+        bookId: String,
+        chapterNo: Int,
+        isAutoScored: Boolean,
+        sectionCode: String,
+        promptBn: String,
+        options: List<String>,
+        correctAnswer: String,
+        explanationBn: String,
+        modelPoints: List<String>
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser && isUuid(bookId))
+            val res = postRpc(
+                "upsert_chapter_question_rpc",
+                buildJsonObject {
+                    put("p_book_id", bookId)
+                    put("p_chapter_no", chapterNo)
+                    put("p_is_auto_scored", isAutoScored)
+                    put("p_section_code", sectionCode)
+                    put("p_prompt_bn", promptBn.trim())
+                    put("p_options", JsonArray(options.map { JsonPrimitive(it) }))
+                    put("p_correct_answer", correctAnswer.trim())
+                    put("p_explanation_bn", explanationBn.trim())
+                    put("p_model_points", JsonArray(modelPoints.map { JsonPrimitive(it) }))
+                }
+            ).jsonObject
+            res["question_id"]?.jsonPrimitive?.content ?: ""
         }
     }
 
@@ -896,25 +1037,80 @@ class SupabaseRestClient(
         }
     }
 
-    suspend fun createCircleRemote(name: String, bookId: String, minMembers: Int): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun createCircleRemote(
+        name: String,
+        bookId: String,
+        minMembers: Int,
+        maxMembers: Int = 25,
+        isPrivate: Boolean = false,
+        inviteCode: String? = null,
+        scheduleLabel: String = "শুক্রবার রাত ৮:৩০",
+        meetingUrl: String = "https://meet.jit.si/SPARC_Circle_Live",
+        rules: String = ""
+    ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             check(hasAuthenticatedUser && isUuid(bookId))
             val res = postRpc(
-                "create_or_join_circle_rpc",
+                "create_custom_circle_rpc",
                 buildJsonObject {
                     put("p_name", name.trim())
                     put("p_book_id", bookId)
                     put("p_min_members", minMembers)
+                    put("p_max_members", maxMembers)
+                    put("p_is_private", isPrivate)
+                    if (!inviteCode.isNullOrBlank()) put("p_invite_code", inviteCode.trim())
+                    put("p_schedule_label", scheduleLabel.trim())
+                    put("p_meeting_url", meetingUrl.trim())
+                    put("p_rules", rules.trim())
                 }
             ).jsonObject
             res["circle_id"]?.jsonPrimitive?.content ?: ""
         }
     }
 
-    suspend fun joinCircleRemote(circleId: String): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun updateCircleCustomizationRemote(
+        circleId: String,
+        name: String,
+        minMembers: Int,
+        maxMembers: Int,
+        isPrivate: Boolean,
+        inviteCode: String?,
+        scheduleLabel: String,
+        meetingUrl: String,
+        rules: String,
+        currentChapter: Int
+    ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             check(hasAuthenticatedUser && isUuid(circleId))
-            postRpc("join_existing_circle_rpc", buildJsonObject { put("p_circle_id", circleId) })
+            postRpc(
+                "update_circle_customization_rpc",
+                buildJsonObject {
+                    put("p_circle_id", circleId)
+                    put("p_name", name.trim())
+                    put("p_min_members", minMembers)
+                    put("p_max_members", maxMembers)
+                    put("p_is_private", isPrivate)
+                    if (!inviteCode.isNullOrBlank()) put("p_invite_code", inviteCode.trim())
+                    put("p_schedule_label", scheduleLabel.trim())
+                    put("p_meeting_url", meetingUrl.trim())
+                    put("p_rules", rules.trim())
+                    put("p_current_chapter", currentChapter)
+                }
+            )
+            Unit
+        }
+    }
+
+    suspend fun joinCircleRemote(circleId: String, inviteCode: String? = null): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser && isUuid(circleId))
+            postRpc(
+                "join_circle_with_code_rpc",
+                buildJsonObject {
+                    put("p_circle_id", circleId)
+                    if (!inviteCode.isNullOrBlank()) put("p_invite_code", inviteCode.trim())
+                }
+            )
             Unit
         }
     }

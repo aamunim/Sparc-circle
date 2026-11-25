@@ -115,10 +115,22 @@ val OceanHeroPalette = SparcPalette(
     dockInactive = Color(0xFF94A3B8)
 )
 
-fun paletteFor(theme: SparcVisualTheme): SparcPalette = when (theme) {
-    SparcVisualTheme.COBALT_SAAS -> CobaltSaasPalette
-    SparcVisualTheme.MIDNIGHT_GLASS -> MidnightGlassPalette
-    SparcVisualTheme.OCEAN_HERO -> OceanHeroPalette
+fun paletteFor(
+    theme: SparcVisualTheme,
+    accentPreset: org.sparc.studycircle.core.model.SparcAccentPreset? = null
+): SparcPalette {
+    val base = when (theme) {
+        SparcVisualTheme.COBALT_SAAS -> CobaltSaasPalette
+        SparcVisualTheme.MIDNIGHT_GLASS -> MidnightGlassPalette
+        SparcVisualTheme.OCEAN_HERO -> OceanHeroPalette
+    }
+    if (accentPreset == null) return base
+    return base.copy(
+        primary = Color(accentPreset.primaryHex),
+        primaryEnd = Color(accentPreset.primaryEndHex),
+        primarySoft = Color(if (base.isDark) accentPreset.darkSoftHex else accentPreset.lightSoftHex),
+        primarySoftText = Color(if (base.isDark) accentPreset.darkSoftTextHex else accentPreset.lightSoftTextHex)
+    )
 }
 
 val LocalSparcPalette = staticCompositionLocalOf { CobaltSaasPalette }
@@ -246,10 +258,11 @@ private val SparcTypography = Typography(
 @Composable
 fun SparcTheme(
     visualTheme: SparcVisualTheme = SparcVisualTheme.COBALT_SAAS,
+    accentPreset: org.sparc.studycircle.core.model.SparcAccentPreset? = null,
     appLanguage: String = "bn",
     content: @Composable () -> Unit
 ) {
-    val palette = paletteFor(visualTheme)
+    val palette = paletteFor(visualTheme, accentPreset)
     val colorScheme = if (palette.isDark) {
         darkColorScheme(
             primary = palette.primary,

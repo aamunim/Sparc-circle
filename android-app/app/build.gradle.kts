@@ -13,8 +13,8 @@ android {
         applicationId = "org.sparc.studycircle"
         minSdk = 26
         targetSdk = 35
-        versionCode = 350
-        versionName = "3.5.0"
+        versionCode = 360
+        versionName = "3.6.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

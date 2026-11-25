@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FactCheck
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Science
@@ -55,10 +56,15 @@ fun SparcMainScaffold(repository: SparcRepository) {
     val scope = rememberCoroutineScope()
     val displayUserName = trContent(state.currentUser.name)
 
-    var currentTab by remember { mutableStateOf(MainTab.CIRCLE) }
+    val initialTab = remember(state.uiCustomization.defaultLandingTab) {
+        runCatching { MainTab.valueOf(state.uiCustomization.defaultLandingTab) }.getOrDefault(MainTab.CIRCLE)
+    }
+    var currentTab by remember { mutableStateOf(initialTab) }
     var researchInitialSubTab by remember { mutableIntStateOf(0) }
     var libraryInitialSubTab by remember { mutableIntStateOf(0) }
+    var directoryInitialSubTab by remember { mutableIntStateOf(0) }
     var showSettingsSheet by remember { mutableStateOf(false) }
+    var announcementDismissedLocally by remember { mutableStateOf(false) }
 
     // Continuous Live Multi-User Supabase Sync (every 12s while authenticated)
     LaunchedEffect(state.isAuthenticated, state.isSupabaseConnected) {
@@ -76,7 +82,7 @@ fun SparcMainScaffold(repository: SparcRepository) {
             .background(p.bg)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Dynamic Top Header: Curved Gradient Hero Header for Concept C (Ocean Hero), Sleek Minimal Bar for Concept A & B
+            // Dynamic Top Header
             if (p.useHeroHeader) {
                 Box(
                     modifier = Modifier
@@ -92,15 +98,28 @@ fun SparcMainScaffold(repository: SparcRepository) {
                     ) {
                         SparcAvatarCircle(
                             name = displayUserName,
+                            avatarUrl = state.currentUser.avatarUrl,
                             size = 42.dp,
-                            bgColor = Color.White.copy(alpha = 0.22f)
+                            bgColor = Color.White.copy(alpha = 0.22f),
+                            modifier = Modifier.clickable {
+                                directoryInitialSubTab = 1
+                                currentTab = MainTab.DIRECTORY
+                            }
                         )
                         Spacer(Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    directoryInitialSubTab = 1
+                                    currentTab = MainTab.DIRECTORY
+                                }
+                        ) {
                             Text(
-                                text = tr("স্বাগতম গবেষক", "Welcome Researcher"),
+                                text = state.appCustomization.appTitle,
                                 fontSize = 11.sp,
-                                color = Color.White.copy(alpha = 0.82f)
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontWeight = FontWeight.SemiBold
                             )
                             Text(
                                 text = displayUserName,
@@ -143,18 +162,10 @@ fun SparcMainScaffold(repository: SparcRepository) {
                             )
                         }
                         IconButton(onClick = { scope.launch { repository.syncFromSupabaseNow(silent = false) } }) {
-                            Icon(
-                                Icons.Default.Sync,
-                                contentDescription = "Live Sync",
-                                tint = Color.White
-                            )
+                            Icon(Icons.Default.Sync, contentDescription = "Live Sync", tint = Color.White)
                         }
                         IconButton(onClick = { showSettingsSheet = true }) {
-                            Icon(
-                                Icons.Default.Settings,
-                                contentDescription = "Settings & Theme",
-                                tint = Color.White
-                            )
+                            Icon(Icons.Default.Settings, contentDescription = "Settings & Customization", tint = Color.White)
                         }
                     }
                 }
@@ -170,18 +181,39 @@ fun SparcMainScaffold(repository: SparcRepository) {
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        SparcAvatarCircle(name = displayUserName, size = 40.dp)
+                        SparcAvatarCircle(
+                            name = displayUserName,
+                            avatarUrl = state.currentUser.avatarUrl,
+                            size = 40.dp,
+                            modifier = Modifier.clickable {
+                                directoryInitialSubTab = 1
+                                currentTab = MainTab.DIRECTORY
+                            }
+                        )
                         Spacer(Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    directoryInitialSubTab = 1
+                                    currentTab = MainTab.DIRECTORY
+                                }
+                        ) {
                             Text(
                                 text = displayUserName,
                                 style = MaterialTheme.typography.titleMedium,
                                 color = p.text
                             )
+                            val subInfo = if (state.currentUser.institution.isNotBlank()) {
+                                "${state.currentUser.department} • ${state.currentUser.institution}"
+                            } else {
+                                "${state.currentUser.department} • ★ ${state.currentUser.rating}"
+                            }
                             Text(
-                                text = "${state.currentUser.department} • ★ ${state.currentUser.rating}",
+                                text = subInfo,
                                 style = MaterialTheme.typography.labelMedium,
-                                color = p.muted
+                                color = p.muted,
+                                maxLines = 1
                             )
                         }
 
@@ -219,18 +251,41 @@ fun SparcMainScaffold(repository: SparcRepository) {
                             )
                         }
                         IconButton(onClick = { scope.launch { repository.syncFromSupabaseNow(silent = false) } }) {
-                            Icon(
-                                Icons.Default.Sync,
-                                contentDescription = "Live Sync",
-                                tint = p.primary
-                            )
+                            Icon(Icons.Default.Sync, contentDescription = "Live Sync", tint = p.primary)
                         }
                         IconButton(onClick = { showSettingsSheet = true }) {
-                            Icon(
-                                Icons.Default.Settings,
-                                contentDescription = "Settings & Theme",
-                                tint = p.text
-                            )
+                            Icon(Icons.Default.Settings, contentDescription = "Settings & Customization", tint = p.text)
+                        }
+                    }
+                }
+            }
+
+            // Pack 1: Live Dynamic Organization Notice / Announcement Banner
+            val noticeText = tr(state.appCustomization.announcementBannerBn, state.appCustomization.announcementBannerEn)
+            if (state.appCustomization.showAnnouncementBanner && noticeText.isNotBlank() && !announcementDismissedLocally) {
+                Surface(
+                    color = p.accentSoft,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = noticeText,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = p.accentText,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = { announcementDismissedLocally = true },
+                            modifier = Modifier.size(22.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Dismiss Notice", tint = p.accentText, modifier = Modifier.size(15.dp))
                         }
                     }
                 }
@@ -242,10 +297,10 @@ fun SparcMainScaffold(repository: SparcRepository) {
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .padding(horizontal = 16.dp, vertical = 5.dp)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
@@ -268,7 +323,11 @@ fun SparcMainScaffold(repository: SparcRepository) {
                     .padding(bottom = 82.dp)
             ) {
                 when (currentTab) {
-                    MainTab.DIRECTORY -> OnboardingAndDirectoryScreen(state = state, repository = repository)
+                    MainTab.DIRECTORY -> OnboardingAndDirectoryScreen(
+                        state = state,
+                        repository = repository,
+                        initialSubTab = directoryInitialSubTab
+                    )
                     MainTab.LIBRARY -> LibraryAndReaderScreen(
                         state = state,
                         repository = repository,
@@ -356,10 +415,19 @@ fun SparcMainScaffold(repository: SparcRepository) {
         SparcSettingsBottomSheet(
             currentTheme = state.visualTheme,
             currentLanguage = state.appLanguage,
+            appCustomization = state.appCustomization,
+            uiCustomization = state.uiCustomization,
             apiVault = state.apiVault,
             isSupabaseConnected = state.isSupabaseConnected,
             onSelectTheme = { chosen -> repository.setVisualTheme(chosen) },
             onChangeLanguage = { lang -> repository.setAppLanguage(lang) },
+            onUpdateUiCustomization = { newUi, bnMsg, enMsg ->
+                repository.updateUiCustomization(newUi, bnMsg, enMsg)
+            },
+            onSaveAppCustomization = { newAppCfg ->
+                announcementDismissedLocally = false
+                repository.saveAppCustomization(newAppCfg)
+            },
             onUpdateApiVault = { vault, msg -> repository.updateApiVault(vault, msg) },
             onLogout = { repository.logout() },
             onDismiss = { showSettingsSheet = false }

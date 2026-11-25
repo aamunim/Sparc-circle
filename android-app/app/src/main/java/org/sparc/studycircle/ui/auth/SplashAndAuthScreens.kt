@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.sparc.studycircle.core.data.SparcRepository
+import org.sparc.studycircle.core.model.AppCustomizationConfig
 import org.sparc.studycircle.core.model.SparcVisualTheme
 import org.sparc.studycircle.core.theme.LocalSparcPalette
 import org.sparc.studycircle.core.theme.tr
@@ -41,6 +42,7 @@ import org.sparc.studycircle.ui.components.SparcSegmentedPills
 
 @Composable
 fun SparcAnimatedSplashScreen(
+    appCustomization: AppCustomizationConfig = AppCustomizationConfig(),
     onFinished: () -> Unit
 ) {
     val p = LocalSparcPalette.current
@@ -70,7 +72,7 @@ fun SparcAnimatedSplashScreen(
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier
                 .scale(scale)
                 .alpha(alpha)
@@ -91,19 +93,26 @@ fun SparcAnimatedSplashScreen(
                 )
             }
             Text(
-                text = "SPARC Study Circle",
+                text = appCustomization.appTitle,
                 color = Color.White,
                 fontSize = 26.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
-            Text(
-                text = tr("বই পড়তে পড়তে লেখা শেখা", "Learning Academic Writing While Reading"),
-                color = Color.White.copy(alpha = 0.9f),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.ExtraBold,
                 textAlign = TextAlign.Center
             )
-            Spacer(Modifier.height(8.dp))
+            Text(
+                text = tr(appCustomization.appTaglineBn, appCustomization.appTaglineEn),
+                color = Color.White.copy(alpha = 0.92f),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = tr(appCustomization.splashQuoteBn, appCustomization.splashQuoteEn),
+                color = Color.White.copy(alpha = 0.78f),
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(6.dp))
             CircularProgressIndicator(
                 color = Color.White,
                 strokeWidth = 2.5.dp,
@@ -167,9 +176,9 @@ fun SparcAuthScreen(
                     Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, tint = Color.White)
                 }
                 Column {
-                    Text("SPARC Study Circle", style = MaterialTheme.typography.titleLarge, color = p.text)
+                    Text(state.appCustomization.appTitle, style = MaterialTheme.typography.titleLarge, color = p.text)
                     Text(
-                        tr("বই পড়তে পড়তে লেখা শেখা", "Learn Writing While Reading"),
+                        tr(state.appCustomization.appTaglineBn, state.appCustomization.appTaglineEn),
                         fontSize = 12.sp,
                         color = p.muted
                     )

@@ -325,4 +325,125 @@ class SparcDomainEngineTest {
         repo.placePhysicalBookOrder(book, "Purchase", "Nilkhet, Dhaka", "01711000000")
         assertEquals(1, repo.state.value.bookOrders.size)
     }
+
+    @Test
+    fun `customization suite supports brand config, accent and reader prefs, rich profile, curriculum quiz builder, and private circle codes`() {
+        var persistedBrand: AppCustomizationConfig? = null
+        var persistedUi: UserUiCustomization? = null
+        val repo = org.sparc.studycircle.core.data.SparcRepository(
+            supabaseClient = org.sparc.studycircle.core.data.SupabaseRestClient("", ""),
+            onPersistAppCustomization = { persistedBrand = it },
+            onPersistUiCustomization = { persistedUi = it }
+        )
+
+        // Pack 1: Brand & Payment Config + Dynamic Min Topup
+        repo.saveAppCustomization(
+            AppCustomizationConfig(
+                appTitle = "DU Research Circle",
+                bkashMerchantNumber = "01799-888777",
+                minTopupBdt = 300.0
+            )
+        )
+        assertEquals("DU Research Circle", repo.state.value.appCustomization.appTitle)
+        assertEquals("01799-888777", persistedBrand?.bkashMerchantNumber)
+        val walletBefore = repo.state.value.currentUser.walletBalanceBdt
+        repo.topUpWallet(300.0, PaymentMethod.BKASH_PGW)
+        assertEquals(walletBefore + 300.0, repo.state.value.currentUser.walletBalanceBdt, 0.01)
+
+        // Pack 1, 2 & 5: Accent Preset, Reader Comfort & Launcher Icon
+        repo.updateUiCustomization(
+            UserUiCustomization(
+                accentPreset = SparcAccentPreset.PURPLE,
+                readerFontSizeSp = 20,
+                readerPaperTheme = ReaderPaperTheme.AMOLED_NIGHT,
+                defaultLandingTab = "LIBRARY",
+                launcherIconPreset = LauncherIconPreset.GOLD
+            )
+        )
+        assertEquals(SparcAccentPreset.PURPLE, repo.state.value.uiCustomization.accentPreset)
+        assertEquals(20, persistedUi?.readerFontSizeSp)
+        assertEquals(LauncherIconPreset.GOLD, persistedUi?.launcherIconPreset)
+
+        // Pack 2: Rich Profile Bio, Institution & Daily Goal
+        repo.updateProfileAndReferral(
+            name = "তানভীর আহমেদ",
+            department = "Sociology",
+            interests = listOf("Action Research"),
+            skills = listOf("Academic Writing", "NVivo"),
+            appliedReferralCode = "",
+            institution = "University of Dhaka",
+            bio = "Qualitative Action Researcher",
+            dailyReadingGoalMinutes = 45
+        )
+        assertEquals("University of Dhaka", repo.state.value.currentUser.institution)
+        assertEquals(45, repo.state.value.currentUser.dailyReadingGoalMinutes)
+        assertTrue("NVivo" in repo.state.value.currentUser.skills)
+
+        // Pack 3: In-App Chapter Curriculum & Custom Quiz Question Builder
+        val book = repo.state.value.books.first()
+        repo.saveChapterCurriculum(
+            bookId = book.id,
+            chapterNo = 3,
+            title = "অধ্যায় ৩: ডেটা সংগ্রহ ও ফিল্ড ডায়েরি",
+            chapterType = ChapterType.LONG,
+            totalPages = 34,
+            flashNotes = listOf("ফিল্ড নোট প্রতিদিন লিখতে হবে"),
+            learningOutcomes = listOf("ফিল্ড ডায়েরি বিশ্লেষণ"),
+            writingPrompt = "৪০০–৬০০ শব্দে আপনার ফিল্ড ডায়েরি প্ল্যান লিখুন।",
+            minWords = 400,
+            maxWords = 600
+        )
+        val updatedBook = repo.state.value.books.first { it.id == book.id }
+        val ch3 = updatedBook.chapters.find { it.chapterNo == 3 }
+        assertNotNull(ch3)
+        assertEquals(ChapterType.LONG, ch3!!.type)
+        assertEquals(600, ch3.maxWords)
+
+        val qCountBefore = ch3.questions.size
+        repo.addCustomChapterQuestion(
+            bookId = book.id,
+            chapterNo = 3,
+            isAutoScored = true,
+            sectionCode = "C",
+            promptBn = "ফিল্ড নোট কখন লেখা সবচেয়ে কার্যকর?",
+            options = listOf("মাঠপর্যায়ের কাজ শেষ হওয়ার সাথে সাথেই", "১ মাস পরে"),
+            correctAnswer = "মাঠপর্যায়ের কাজ শেষ হওয়ার সাথে সাথেই",
+            explanationBn = "তাৎক্ষণিক নোটে পর্যবেক্ষণের সূক্ষ্মতা বজায় থাকে।",
+            modelPoints = emptyList()
+        )
+        val ch3After = repo.state.value.books.first { it.id == book.id }.chapters.first { it.chapterNo == 3 }
+        assertEquals(qCountBefore + 1, ch3After.questions.size)
+
+        // Pack 4: Private Circle Invite Code Enforcement & Rules Customization
+        repo.createNewStudyCircle(
+            name = "Private PhD Lab",
+            book = book,
+            minMembers = 4,
+            maxMembers = 12,
+            isPrivate = true,
+            inviteCode = "PHD-2026",
+            scheduleLabel = "শনিবার রাত ৯:০০"
+        )
+        val privCircle = repo.state.value.circles.last()
+        assertTrue(privCircle.isPrivate)
+        assertEquals("PHD-2026", privCircle.inviteCode)
+
+        // Simulate peercreated private circle that currentUser has not joined yet
+        repo.updateStudyCircleCustomization(
+            circleId = privCircle.id,
+            name = "Private PhD Lab Updated",
+            minMembers = 4,
+            maxMembers = 15,
+            isPrivate = true,
+            inviteCode = "SECRET-77",
+            scheduleLabel = "রবিবার রাত ৯:৩০",
+            meetingUrl = "https://meet.google.com/phd-lab",
+            rules = "সপ্তাহে অন্তত ১টি ড্রাফট রিভিউ করতে হবে।",
+            currentGroupChapter = 2
+        )
+        val updatedCircle = repo.state.value.circles.first { it.id == privCircle.id }
+        assertEquals("SECRET-77", updatedCircle.inviteCode)
+        assertEquals(2, updatedCircle.currentGroupChapter)
+    }
 }
+

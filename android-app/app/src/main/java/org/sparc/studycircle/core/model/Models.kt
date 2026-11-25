@@ -28,6 +28,77 @@ enum class SparcVisualTheme(
 }
 
 @Serializable
+enum class SparcAccentPreset(
+    val labelBn: String,
+    val labelEn: String,
+    val primaryHex: Long,
+    val primaryEndHex: Long,
+    val lightSoftHex: Long,
+    val lightSoftTextHex: Long,
+    val darkSoftHex: Long,
+    val darkSoftTextHex: Long
+) {
+    COBALT("রয়্যাল কোবাল্ট", "Royal Cobalt", 0xFF2563EB, 0xFF1D4ED8, 0xFFDBEAFE, 0xFF1E40AF, 0xFF1E3A8A, 0xFF93C5FD),
+    EMERALD("এমেরাল্ড স্কলার", "Emerald Scholar", 0xFF10B981, 0xFF059669, 0xFFD1FAE5, 0xFF065F46, 0xFF064E3B, 0xFF34D399),
+    PURPLE("রয়্যাল পার্পল", "Royal Purple", 0xFF7C3AED, 0xFF6D28D9, 0xFFEDE9FE, 0xFF5B21B6, 0xFF4C1D95, 0xFFC4B5FD),
+    AMBER("অ্যাম্বার গোল্ড", "Amber Gold", 0xFFD97706, 0xFFB45309, 0xFFFEF3C7, 0xFF92400E, 0xFF78350F, 0xFFFCD34D),
+    CRIMSON("রোজ ক্রিমসন", "Rose Academic", 0xFFE11D48, 0xFFBE123C, 0xFFFFE4E6, 0xFF9F1239, 0xFF881337, 0xFFFDA4AF),
+    TEAL("ওশান টিল", "Ocean Teal", 0xFF0D9488, 0xFF0284C7, 0xFFCCFBF1, 0xFF115E59, 0xFF134E4A, 0xFF5EEAD4);
+
+    fun label(lang: String): String = if (lang == "en") labelEn else labelBn
+}
+
+@Serializable
+enum class ReaderPaperTheme(val labelBn: String, val labelEn: String, val bgHex: Long, val textHex: Long, val mutedHex: Long) {
+    PURE_WHITE("সাদা কাগজ", "Pure White", 0xFFFFFFFF, 0xFF0F172A, 0xFF475569),
+    WARM_SEPIA("উষ্ণ সেপিয়া", "Warm Sepia", 0xFFF8F1E3, 0xFF2C221E, 0xFF6B5A4E),
+    SOFT_MINT("সফট মিন্ট", "Soft Mint", 0xFFECFDF5, 0xFF064E3B, 0xFF047857),
+    AMOLED_NIGHT("নাইট রিডিং", "Night Reading", 0xFF0B1120, 0xFFE2E8F0, 0xFF94A3B8);
+
+    fun label(lang: String): String = if (lang == "en") labelEn else labelBn
+}
+
+@Serializable
+enum class LauncherIconPreset(val labelBn: String, val labelEn: String, val aliasClassSuffix: String) {
+    CLASSIC("ক্লাসিক কোবাল্ট", "Classic Cobalt", ".LauncherClassic"),
+    EMERALD("এমেরাল্ড স্কলার", "Emerald Scholar", ".LauncherEmerald"),
+    GOLD("রয়্যাল গোল্ড", "Royal Gold", ".LauncherGold");
+
+    fun label(lang: String): String = if (lang == "en") labelEn else labelBn
+}
+
+@Serializable
+data class AppCustomizationConfig(
+    val appTitle: String = "SPARC Study Circle",
+    val appTaglineBn: String = "বই পড়তে পড়তে লেখা শেখা",
+    val appTaglineEn: String = "Learning Academic Writing While Reading",
+    val splashQuoteBn: String = "যৌথ পাঠ, গভীর চিন্তা ও একাডেমিক গবেষণার সমন্বিত প্ল্যাটফর্ম",
+    val splashQuoteEn: String = "Collaborative reading, critical inquiry & scholarly writing",
+    val announcementBannerBn: String = "📢 নতুন কোহর্টে ভর্তি ও ১ম অধ্যায়ের ফ্রি রিডিং চলছে!",
+    val announcementBannerEn: String = "📢 New cohort enrollment & free Chapter 1 reading are open!",
+    val showAnnouncementBanner: Boolean = true,
+    val bkashMerchantNumber: String = "01700-000000",
+    val nagadMerchantNumber: String = "01800-000000",
+    val rocketMerchantNumber: String = "01900-000000",
+    val defaultSupervisionFeeBdt: Double = 300.0,
+    val borrowDepositBdt: Double = 150.0,
+    val minTopupBdt: Double = 500.0
+)
+
+@Serializable
+data class UserUiCustomization(
+    val accentPreset: SparcAccentPreset? = null,
+    val readerFontSizeSp: Int = 16,
+    val readerLineSpacingMultiplier: Float = 1.55f,
+    val readerPaperTheme: ReaderPaperTheme = ReaderPaperTheme.WARM_SEPIA,
+    val defaultLandingTab: String = "CIRCLE",
+    val compactHomeCards: Boolean = false,
+    val showHomeStatsRow: Boolean = true,
+    val showHomePokeCard: Boolean = true,
+    val launcherIconPreset: LauncherIconPreset = LauncherIconPreset.CLASSIC
+)
+
+@Serializable
 data class ApiKeyVaultConfig(
     val geminiApiKey: String = "",
     val sslCommerzStoreId: String = "",
@@ -132,7 +203,11 @@ data class UserProfile(
     val readingStreakDays: Int = 0,
     val referralCode: String,
     val walletBalanceBdt: Double = 0.0,
-    val earnedBadges: List<String> = emptyList()
+    val earnedBadges: List<String> = emptyList(),
+    val avatarUrl: String = "",
+    val institution: String = "",
+    val bio: String = "",
+    val dailyReadingGoalMinutes: Int = 30
 )
 
 @Serializable
@@ -246,7 +321,13 @@ data class StudyCircleGroup(
     val supervisorVotes: Map<String, String> = emptyMap(), // voterId -> candidateId
     val currentGroupChapter: Int = 1,
     val daysSinceLastSession: Int = 4,
-    val nextSessionAnnounced: Boolean = false
+    val nextSessionAnnounced: Boolean = false,
+    val maxMembers: Int = 25,
+    val isPrivate: Boolean = false,
+    val inviteCode: String? = null,
+    val sessionScheduleLabel: String = "শুক্রবার রাত ৮:৩০",
+    val defaultMeetingUrl: String = "https://meet.jit.si/SPARC_Circle_Live",
+    val circleRules: String = "নিয়মিত অধ্যায় পড়া ও সহপাঠীদের প্রতি শ্রদ্ধাশীল থেকে আলোচনায় অংশ নেওয়া।"
 )
 
 @Serializable

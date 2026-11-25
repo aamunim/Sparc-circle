@@ -105,13 +105,16 @@ private fun AiWritingAndCoAuthorView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text("CPAR PROPOSAL • STEP 1/7", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = p.muted)
                         Text("Felt-Concern Statement", style = MaterialTheme.typography.titleLarge, color = p.text)
+                        if (chapter.writingTaskPrompt.isNotBlank()) {
+                            Text(trContent(chapter.writingTaskPrompt), fontSize = 11.5.sp, color = p.muted)
+                        }
                     }
                     Surface(shape = RoundedCornerShape(10.dp), color = p.primarySoft) {
                         Text(
-                            "$displayWords / 700w",
+                            "$displayWords / ${chapter.maxWords}w",
                             color = p.primarySoftText,
                             fontSize = 11.5.sp,
                             fontWeight = FontWeight.Bold,
@@ -224,7 +227,10 @@ private fun CreditWalletAndSupervisionView(
 ) {
     val p = LocalSparcPalette.current
     val lang = LocalAppLanguage.current
-    var selectedAmt by remember { mutableIntStateOf(1000) }
+    val cfg = state.appCustomization
+    val minTop = cfg.minTopupBdt.toInt().coerceAtLeast(100)
+    val presetAmts = remember(minTop) { listOf(minTop, minTop * 2, minTop * 4) }
+    var selectedAmt by remember(minTop) { mutableIntStateOf(presetAmts[1]) }
     var selectedMethod by remember { mutableStateOf(PaymentMethod.BKASH_PGW) }
     var trxIdInput by remember { mutableStateOf("") }
 
@@ -240,7 +246,7 @@ private fun CreditWalletAndSupervisionView(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("SPARC RESEARCH WALLET", color = Color.White.copy(alpha = 0.85f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(cfg.appTitle.uppercase(), color = Color.White.copy(alpha = 0.85f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Text("BDT PASS", color = Color.White.copy(alpha = 0.85f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
                 Text(
@@ -269,9 +275,13 @@ private fun CreditWalletAndSupervisionView(
 
         item {
             SparcScholarlyCard {
-                Text(tr("ক্রেডিট টপ-আপ করুন (ন্যূনতম ৳৫০০)", "Top Up Wallet Credits (Min ৳500)"), style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(
+                    tr("ক্রেডিট টপ-আপ করুন (ন্যূনতম ৳$minTop)", "Top Up Wallet Credits (Min ৳$minTop)"),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = p.text
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(500, 1000, 2000).forEach { amt ->
+                    presetAmts.forEach { amt ->
                         val active = selectedAmt == amt
                         Surface(
                             shape = RoundedCornerShape(12.dp),
@@ -314,10 +324,25 @@ private fun CreditWalletAndSupervisionView(
                 }
 
                 if (selectedMethod == PaymentMethod.MANUAL_TRX) {
+                    Surface(shape = RoundedCornerShape(12.dp), color = p.accentSoft) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(
+                                tr("অফিশিয়াল সেন্ড-মানি / মার্চেন্ট নম্বর:", "Official Merchant / Send-Money Numbers:"),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = p.accentText
+                            )
+                            Text(
+                                "bKash: ${cfg.bkashMerchantNumber} • Nagad: ${cfg.nagadMerchantNumber} • Rocket: ${cfg.rocketMerchantNumber}",
+                                fontSize = 11.5.sp,
+                                color = p.accentText
+                            )
+                        }
+                    }
                     OutlinedTextField(
                         value = trxIdInput,
                         onValueChange = { trxIdInput = it },
-                        label = { Text("bKash / Nagad TrxID") },
+                        label = { Text("bKash / Nagad / Rocket TrxID") },
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -344,8 +369,8 @@ private fun CreditWalletAndSupervisionView(
                 )
                 Text(
                     tr(
-                        "${deal.agreedSessions} সেশন চূড়ান্ত • ফি: ৳${deal.agreedFeeBdt.toInt()}",
-                        "${deal.agreedSessions} sessions finalized • Fee: ৳${deal.agreedFeeBdt.toInt()}"
+                        "${deal.agreedSessions} সেশন চূড়ান্ত • চুক্তি ফি: ৳${deal.agreedFeeBdt.toInt()} (স্ট্যান্ডার্ড হার: ৳${cfg.defaultSupervisionFeeBdt.toInt()}/সেশন)",
+                        "${deal.agreedSessions} sessions • Fee: ৳${deal.agreedFeeBdt.toInt()} (Base rate: ৳${cfg.defaultSupervisionFeeBdt.toInt()}/session)"
                     ),
                     fontWeight = FontWeight.Bold,
                     color = p.text

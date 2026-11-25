@@ -1,5 +1,7 @@
 package org.sparc.studycircle.ui.circle
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -8,12 +10,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -27,6 +34,7 @@ import org.sparc.studycircle.core.theme.tr
 import org.sparc.studycircle.core.theme.trContent
 import org.sparc.studycircle.ui.components.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StudyCircleScreen(
     state: SparcAppState,
@@ -36,9 +44,13 @@ fun StudyCircleScreen(
 ) {
     val p = LocalSparcPalette.current
     val lang = LocalAppLanguage.current
+    val context = LocalContext.current
+    val compact = state.uiCustomization.compactHomeCards
+
     var subTab by remember { mutableIntStateOf(0) }
     val circle = state.circles.find { it.id == state.activeCircleId } ?: state.circles.first()
-    val chapter = (state.books.find { it.id == circle.bookId } ?: state.books.first()).chapters.first()
+    val circleBook = state.books.find { it.id == circle.bookId } ?: state.books.first()
+    val chapter = circleBook.chapters.find { it.chapterNo == circle.currentGroupChapter } ?: circleBook.chapters.first()
     val myProgress = state.myChapterProgress[chapter.chapterNo]
         ?: ChapterProgressState("p-init", circle.id, state.currentUser.id, chapter.chapterNo)
 
@@ -54,7 +66,9 @@ fun StudyCircleScreen(
         ?: tr("ড. নুসরাত জাহান", "Dr. Nusrat Jahan")
 
     var pokeTarget by remember { mutableStateOf<UserProfile?>(null) }
-    var showCreateCircleDialog by remember { mutableStateOf(false) }
+    var showCreateCircleSheet by remember { mutableStateOf(false) }
+    var showCustomizeCircleSheet by remember { mutableStateOf(false) }
+    var privateCircleToJoin by remember { mutableStateOf<StudyCircleGroup?>(null) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
@@ -72,9 +86,9 @@ fun StudyCircleScreen(
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 14.dp)
             ) {
-                // Live Circle Switcher + Create / Join Any Circle Row
+                // Live Circle Switcher + Private/Public Join + Create Circle Row
                 item {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(state.circles, key = { it.id }) { c ->
@@ -85,31 +99,44 @@ fun StudyCircleScreen(
                                 color = if (isSelected) p.primary else p.card,
                                 border = BorderStroke(1.dp, if (isSelected) p.primary else p.border),
                                 modifier = Modifier.clickable {
-                                    if (isJoined) {
-                                        repository.selectActiveCircle(c.id)
-                                    } else {
-                                        repository.joinStudyCircle(c.id)
+                                    when {
+                                        isJoined -> repository.selectActiveCircle(c.id)
+                                        c.isPrivate -> privateCircleToJoin = c
+                                        else -> repository.joinStudyCircle(c.id)
                                     }
                                 }
                             ) {
-                                Text(
-                                    text = if (isJoined) {
-                                        "${trContent(c.name).take(22)} (${c.memberIds.size})"
-                                    } else {
-                                        "${tr("জয়েন +", "Join +")} ${trContent(c.name).take(18)}"
-                                    },
-                                    color = if (isSelected) Color.White else p.text,
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    if (c.isPrivate) {
+                                        Icon(
+                                            Icons.Default.Lock,
+                                            contentDescription = null,
+                                            tint = if (isSelected) Color.White else p.muted,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                    }
+                                    Text(
+                                        text = if (isJoined) {
+                                            "${trContent(c.name).take(20)} (${c.memberIds.size}/${c.maxMembers})"
+                                        } else {
+                                            "${tr("জয়েন +", "Join +")} ${trContent(c.name).take(16)}"
+                                        },
+                                        color = if (isSelected) Color.White else p.text,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
                         item {
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = p.primarySoft,
-                                modifier = Modifier.clickable { showCreateCircleDialog = true }
+                                modifier = Modifier.clickable { showCreateCircleSheet = true }
                             ) {
                                 Text(
                                     text = tr("+ নতুন সার্কেল", "+ New Circle"),
@@ -123,7 +150,7 @@ fun StudyCircleScreen(
                     }
                 }
 
-                // Sleek v3.0 Gradient Hero Cohort Card with 6-Segment Capsule Track
+                // Sleek Gradient Hero Cohort Card with Privacy Badge, Schedule & Customize Trigger
                 item {
                     SparcGradientHeroCard {
                         Row(
@@ -132,17 +159,31 @@ fun StudyCircleScreen(
                             verticalAlignment = Alignment.Top
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Surface(
-                                    shape = RoundedCornerShape(50),
-                                    color = Color.White.copy(alpha = 0.20f)
-                                ) {
-                                    Text(
-                                        text = "${circle.status.label(lang).uppercase()} • ${circle.memberIds.size}/${circle.minMembersRequired}",
-                                        color = Color.White,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                    )
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = Color.White.copy(alpha = 0.20f)
+                                    ) {
+                                        Text(
+                                            text = "${circle.status.label(lang).uppercase()} • ${circle.memberIds.size}/${circle.maxMembers}",
+                                            color = Color.White,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = Color.White.copy(alpha = 0.20f)
+                                    ) {
+                                        Text(
+                                            text = if (circle.isPrivate) "🔒 ${circle.inviteCode ?: "PRIVATE"}" else "🌐 PUBLIC",
+                                            color = Color.White,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                                        )
+                                    }
                                 }
                                 Spacer(Modifier.height(8.dp))
                                 Text(
@@ -152,22 +193,24 @@ fun StudyCircleScreen(
                                     fontWeight = FontWeight.ExtraBold
                                 )
                                 Text(
-                                    text = "${tr("সুপারভাইজার", "Supervisor")}: $electedSupervisorName",
-                                    color = Color.White.copy(alpha = 0.85f),
+                                    text = "${tr("সুপারভাইজার", "Supervisor")}: $electedSupervisorName • ${tr("অধ্যায়", "Ch")} ${circle.currentGroupChapter}",
+                                    color = Color.White.copy(alpha = 0.88f),
                                     fontSize = 12.sp
                                 )
                             }
-                            Spacer(Modifier.width(12.dp))
-                            Box(
-                                modifier = Modifier
-                                    .size(58.dp)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(Color.White.copy(alpha = 0.18f)),
-                                contentAlignment = Alignment.Center
+                            Spacer(Modifier.width(10.dp))
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = Color.White.copy(alpha = 0.20f),
+                                modifier = Modifier.clickable { showCustomizeCircleSheet = true }
                             ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("${((myProgress.stage.step * 100) / 6)}%", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
-                                    Text("Stage", color = Color.White.copy(alpha = 0.85f), fontSize = 9.sp)
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(Icons.Default.Tune, contentDescription = "Customize Circle", tint = Color.White, modifier = Modifier.size(16.dp))
+                                    Text(tr("সেটআপ", "Rules"), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -188,111 +231,148 @@ fun StudyCircleScreen(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
-                        }
-                    }
-                }
-
-                // 2-Column Bento Quick Action Cards
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        SparcScholarlyCard(modifier = Modifier.weight(1f)) {
-                            Text(tr("আজকের লক্ষ্যমাত্রা", "Daily Target"), fontSize = 11.sp, color = p.muted)
                             Text(
-                                tr("${myProgress.dailyTargetPages} পৃষ্ঠা / দিন", "${myProgress.dailyTargetPages} pages / day"),
-                                fontSize = 19.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = p.primary
-                            )
-                            Text(
-                                tr("অধ্যায় ১ • ${chapter.totalPages} পৃষ্ঠা", "Ch 1 • ${chapter.totalPages} pages"),
-                                fontSize = 11.sp,
-                                color = p.muted
-                            )
-                            SparcPrimaryButton(
-                                text = tr("পড়া শুরু", "Start Reading"),
-                                onClick = onContinueReading
+                                text = "${((myProgress.stage.step * 100) / 6)}%",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.ExtraBold
                             )
                         }
 
-                        SparcScholarlyCard(modifier = Modifier.weight(1f)) {
-                            Text(tr("পরবর্তী লাইভ সেশন", "Next Live Session"), fontSize = 11.sp, color = p.muted)
-                            Text(
-                                tr("শুক্রবার ৮:৩০", "Fri 8:30 PM"),
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = p.text
-                            )
-                            Text(tr("Jitsi In-App • ৪০ মি.", "Jitsi In-App • 40m"), fontSize = 11.sp, color = p.muted)
+                        if (circle.circleRules.isNotBlank()) {
                             Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = p.primarySoft,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onOpenLiveSession() }
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color.White.copy(alpha = 0.14f),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    text = tr("সেশন রুম ›", "Session Room ›"),
-                                    color = p.primarySoftText,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    modifier = Modifier
-                                        .padding(vertical = 12.dp)
-                                        .wrapContentWidth(Alignment.CenterHorizontally)
+                                    text = "📌 ${circle.circleRules}",
+                                    color = Color.White.copy(alpha = 0.92f),
+                                    fontSize = 11.5.sp,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
                                 )
                             }
                         }
                     }
                 }
 
-                // Peer Motivation (Poke) Card
-                item {
-                    val sentToday = state.pokesToday.count { it.senderId == state.currentUser.id }
-                    val leftToday = (3 - sentToday).coerceAtLeast(0)
-                    SparcScholarlyCard {
+                // Optional 2-Column Bento Quick Action Cards (Controlled via Pack 5 Home Widget Toggle!)
+                if (state.uiCustomization.showHomeStatsRow) {
+                    item {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Column {
-                                Text(tr("পিয়ার মোটিভেশন (Poke)", "Peer Motivation (Poke)"), style = MaterialTheme.typography.titleMedium, color = p.text)
+                            SparcScholarlyCard(modifier = Modifier.weight(1f), compact = compact) {
+                                Text(tr("আজকের লক্ষ্যমাত্রা", "Daily Target"), fontSize = 11.sp, color = p.muted)
                                 Text(
-                                    tr("আজ বাকি $leftToday/৩ • Quiet Hours ১০ PM–৭ AM", "$leftToday/3 left today • Quiet Hours 10 PM–7 AM"),
-                                    fontSize = 11.5.sp,
+                                    tr("${myProgress.dailyTargetPages} পৃষ্ঠা / দিন", "${myProgress.dailyTargetPages} pages / day"),
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = p.primary
+                                )
+                                Text(
+                                    tr("অধ্যায় ${chapter.chapterNo} • গোল ${state.currentUser.dailyReadingGoalMinutes} মি.", "Ch ${chapter.chapterNo} • Goal ${state.currentUser.dailyReadingGoalMinutes}m"),
+                                    fontSize = 11.sp,
                                     color = p.muted
                                 )
+                                SparcPrimaryButton(
+                                    text = tr("পড়া শুরু", "Start Reading"),
+                                    onClick = onContinueReading
+                                )
                             }
-                            Text(
-                                text = tr("সব দেখুন ›", "View All ›"),
-                                color = p.primary,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.clickable { subTab = 1 }
-                            )
-                        }
 
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(circlePeers, key = { it.id }) { peer ->
-                                val peerDisplayName = trContent(peer.name)
-                                val stg = state.memberStageByUserId[peer.id] ?: ProgressStage.READING_STARTED
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
+                            SparcScholarlyCard(modifier = Modifier.weight(1f), compact = compact) {
+                                Text(tr("সাপ্তাহিক সেশন রুটিন", "Session Schedule"), fontSize = 11.sp, color = p.muted)
+                                Text(
+                                    circle.sessionScheduleLabel,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = p.text,
+                                    maxLines = 2
+                                )
+                                Text(
+                                    text = circle.defaultMeetingUrl.removePrefix("https://").take(22),
+                                    fontSize = 11.sp,
+                                    color = p.muted,
+                                    maxLines = 1,
                                     modifier = Modifier.clickable {
-                                        if (stg.step < ProgressStage.EXERCISES_SUBMITTED.step) {
-                                            pokeTarget = peer
+                                        runCatching {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(circle.defaultMeetingUrl)))
                                         }
                                     }
+                                )
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = p.primarySoft,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onOpenLiveSession() }
                                 ) {
-                                    SparcAvatarCircle(
-                                        name = peerDisplayName,
-                                        size = 46.dp,
-                                        bgColor = if (stg.step < ProgressStage.EXERCISES_SUBMITTED.step) p.accent else p.primary
+                                    Text(
+                                        text = tr("সেশন রুম ›", "Session Room ›"),
+                                        color = p.primarySoftText,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        modifier = Modifier
+                                            .padding(vertical = 12.dp)
+                                            .wrapContentWidth(Alignment.CenterHorizontally)
                                     )
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(peerDisplayName.split(" ").first(), fontSize = 11.sp, color = p.text, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Optional Peer Motivation (Poke) Card (Controlled via Pack 5 Home Widget Toggle!)
+                if (state.uiCustomization.showHomePokeCard) {
+                    item {
+                        val sentToday = state.pokesToday.count { it.senderId == state.currentUser.id }
+                        val leftToday = (3 - sentToday).coerceAtLeast(0)
+                        SparcScholarlyCard(compact = compact) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(tr("পিয়ার মোটিভেশন (Poke)", "Peer Motivation (Poke)"), style = MaterialTheme.typography.titleMedium, color = p.text)
+                                    Text(
+                                        tr("আজ বাকি $leftToday/৩ • Quiet Hours ১০ PM–৭ AM", "$leftToday/3 left today • Quiet Hours 10 PM–7 AM"),
+                                        fontSize = 11.5.sp,
+                                        color = p.muted
+                                    )
+                                }
+                                Text(
+                                    text = tr("সব দেখুন ›", "View All ›"),
+                                    color = p.primary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.clickable { subTab = 1 }
+                                )
+                            }
+
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                items(circlePeers, key = { it.id }) { peer ->
+                                    val peerDisplayName = trContent(peer.name)
+                                    val stg = state.memberStageByUserId[peer.id] ?: ProgressStage.READING_STARTED
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.clickable {
+                                            if (stg.step < ProgressStage.EXERCISES_SUBMITTED.step) {
+                                                pokeTarget = peer
+                                            }
+                                        }
+                                    ) {
+                                        SparcAvatarCircle(
+                                            name = peerDisplayName,
+                                            avatarUrl = peer.avatarUrl,
+                                            size = 46.dp,
+                                            bgColor = if (stg.step < ProgressStage.EXERCISES_SUBMITTED.step) p.accent else p.primary
+                                        )
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(peerDisplayName.split(" ").first(), fontSize = 11.sp, color = p.text, fontWeight = FontWeight.SemiBold)
+                                    }
                                 }
                             }
                         }
@@ -524,48 +604,96 @@ fun StudyCircleScreen(
         }
     }
 
-    if (showCreateCircleDialog) {
-        var newCircleName by remember { mutableStateOf("") }
-        var selectedBookIdx by remember { mutableIntStateOf(0) }
+    if (showCreateCircleSheet) {
+        CircleCustomizationBottomSheet(
+            isCreateMode = true,
+            books = state.books,
+            existingCircle = null,
+            onDismiss = { showCreateCircleSheet = false },
+            onSaveCreate = { name, bk, minM, maxM, isPriv, code, sched, url, rules ->
+                repository.createNewStudyCircle(
+                    name = name,
+                    book = bk,
+                    minMembers = minM,
+                    maxMembers = maxM,
+                    isPrivate = isPriv,
+                    inviteCode = code,
+                    scheduleLabel = sched,
+                    meetingUrl = url,
+                    rules = rules
+                )
+                showCreateCircleSheet = false
+            },
+            onSaveUpdate = { _, _, _, _, _, _, _, _, _ -> }
+        )
+    }
+
+    if (showCustomizeCircleSheet) {
+        CircleCustomizationBottomSheet(
+            isCreateMode = false,
+            books = state.books,
+            existingCircle = circle,
+            onDismiss = { showCustomizeCircleSheet = false },
+            onSaveCreate = { _, _, _, _, _, _, _, _, _ -> },
+            onSaveUpdate = { name, minM, maxM, isPriv, code, sched, url, rules, activeCh ->
+                repository.updateStudyCircleCustomization(
+                    circleId = circle.id,
+                    name = name,
+                    minMembers = minM,
+                    maxMembers = maxM,
+                    isPrivate = isPriv,
+                    inviteCode = code,
+                    scheduleLabel = sched,
+                    meetingUrl = url,
+                    rules = rules,
+                    currentGroupChapter = activeCh
+                )
+                showCustomizeCircleSheet = false
+            }
+        )
+    }
+
+    privateCircleToJoin?.let { targetCircle ->
+        var enteredCode by remember { mutableStateOf("") }
         AlertDialog(
-            onDismissRequest = { showCreateCircleDialog = false },
+            onDismissRequest = { privateCircleToJoin = null },
             containerColor = p.card,
             titleContentColor = p.text,
             textContentColor = p.text,
-            title = { Text(tr("নতুন স্টাডি সার্কেল তৈরি করুন", "Create New Study Circle")) },
+            title = { Text(tr("🔒 প্রাইভেট সার্কেলে জয়েন করুন", "🔒 Join Private Study Circle")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        tr(
+                            "\"${targetCircle.name}\"-এ যুক্ত হতে সার্কেলের Invite Code লিখুন:",
+                            "Enter the Invite Code to join \"${targetCircle.name}\":"
+                        ),
+                        fontSize = 12.5.sp,
+                        color = p.muted
+                    )
                     OutlinedTextField(
-                        value = newCircleName,
-                        onValueChange = { newCircleName = it },
-                        label = { Text(tr("সার্কেলের নাম", "Circle Name")) },
+                        value = enteredCode,
+                        onValueChange = { enteredCode = it.uppercase() },
+                        label = { Text("Invite Code (e.g. SPARC-XXXXX)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    state.books.forEachIndexed { idx, bk ->
-                        FilterChip(
-                            selected = selectedBookIdx == idx,
-                            onClick = { selectedBookIdx = idx },
-                            label = { Text(bk.title.take(32)) }
-                        )
-                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        if (newCircleName.isNotBlank()) {
-                            repository.createNewStudyCircle(newCircleName, state.books[selectedBookIdx], 5)
-                            showCreateCircleDialog = false
+                        if (repository.joinStudyCircle(targetCircle.id, enteredCode)) {
+                            privateCircleToJoin = null
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = p.primary)
                 ) {
-                    Text(tr("তৈরি করুন", "Create"))
+                    Text(tr("জয়েন করুন", "Join Circle"))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showCreateCircleDialog = false }) {
+                TextButton(onClick = { privateCircleToJoin = null }) {
                     Text(tr("বাতিল", "Cancel"), color = p.muted)
                 }
             }
@@ -602,5 +730,223 @@ fun StudyCircleScreen(
                 TextButton(onClick = { pokeTarget = null }) { Text(tr("বন্ধ করুন", "Close"), color = p.primary) }
             }
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CircleCustomizationBottomSheet(
+    isCreateMode: Boolean,
+    books: List<BookItem>,
+    existingCircle: StudyCircleGroup?,
+    onDismiss: () -> Unit,
+    onSaveCreate: (String, BookItem, Int, Int, Boolean, String?, String, String, String) -> Unit,
+    onSaveUpdate: (String, Int, Int, Boolean, String?, String, String, String, Int) -> Unit
+) {
+    val p = LocalSparcPalette.current
+    var name by remember { mutableStateOf(existingCircle?.name ?: "") }
+    var selectedBookIdx by remember { mutableIntStateOf(0) }
+    var minMembers by remember { mutableIntStateOf(existingCircle?.minMembersRequired ?: 5) }
+    var maxMembers by remember { mutableIntStateOf(existingCircle?.maxMembers ?: 25) }
+    var isPrivate by remember { mutableStateOf(existingCircle?.isPrivate ?: false) }
+    var inviteCode by remember { mutableStateOf(existingCircle?.inviteCode ?: "") }
+    var scheduleLabel by remember { mutableStateOf(existingCircle?.sessionScheduleLabel ?: "শুক্রবার রাত ৮:৩০") }
+    var meetingUrl by remember { mutableStateOf(existingCircle?.defaultMeetingUrl ?: "https://meet.jit.si/SPARC_Circle_Live") }
+    var rules by remember {
+        mutableStateOf(
+            existingCircle?.circleRules
+                ?: "নিয়মিত অধ্যায় পড়া ও সহপাঠীদের প্রতি শ্রদ্ধাশীল থেকে আলোচনায় অংশ নেওয়া।"
+        )
+    }
+    var activeChapter by remember { mutableIntStateOf(existingCircle?.currentGroupChapter ?: 1) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = p.card,
+        contentColor = p.text,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 640.dp)
+                .padding(horizontal = 18.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(bottom = 24.dp)
+        ) {
+            item {
+                Text(
+                    text = if (isCreateMode) tr("⭕ নতুন কাস্টম স্টাডি সার্কেল তৈরি করুন", "⭕ Create Custom Study Circle")
+                    else tr("⚙️ স্টাডি সার্কেল রুলস ও শিডিউল কাস্টমাইজ করুন", "⚙️ Customize Circle Rules & Schedule"),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = p.text
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(tr("সার্কেলের নাম", "Circle Name")) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            if (isCreateMode) {
+                item {
+                    Text(tr("বই নির্বাচন করুন:", "Select Book:"), fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                    Spacer(Modifier.height(6.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(books.size) { idx ->
+                            val bk = books[idx]
+                            val sel = selectedBookIdx == idx
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (sel) p.primary else p.cardAlt,
+                                modifier = Modifier.clickable { selectedBookIdx = idx }
+                            ) {
+                                Text(
+                                    bk.title.take(28),
+                                    color = if (sel) Color.White else p.text,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(tr("গ্রুপের বর্তমান অ্যাক্টিভ অধ্যায়:", "Current Active Chapter:"), fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedButton(onClick = { activeChapter = (activeChapter - 1).coerceAtLeast(1) }) { Text("-") }
+                            Text("$activeChapter", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = p.primary)
+                            OutlinedButton(onClick = { activeChapter += 1 }) { Text("+") }
+                        }
+                    }
+                }
+            }
+
+            item {
+                SparcSegmentedPills(
+                    options = listOf(
+                        tr("🌐 Public (সবার জন্য উন্মুক্ত)", "🌐 Public Open"),
+                        tr("🔒 Private (Invite Code)", "🔒 Private Code")
+                    ),
+                    selectedIndex = if (isPrivate) 1 else 0,
+                    onSelect = { isPrivate = (it == 1) }
+                )
+                if (isPrivate) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = inviteCode,
+                        onValueChange = { inviteCode = it.uppercase() },
+                        label = { Text(tr("গোপন Invite Code (ফাঁকা রাখলে অটো তৈরি হবে)", "Custom Invite Code (Leave blank to auto-generate)")) },
+                        placeholder = { Text("SPARC-2026") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            item {
+                Text(
+                    tr("সদস্য সীমা: ন্যূনতম $minMembers জন • সর্বোচ্চ $maxMembers জন", "Member Limits: Min $minMembers • Max $maxMembers"),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.5.sp
+                )
+                Slider(
+                    value = minMembers.toFloat(),
+                    onValueChange = {
+                        minMembers = it.toInt().coerceIn(2, 20)
+                        if (maxMembers < minMembers) maxMembers = minMembers
+                    },
+                    valueRange = 2f..20f
+                )
+                Slider(
+                    value = maxMembers.toFloat(),
+                    onValueChange = { maxMembers = it.toInt().coerceIn(minMembers, 30) },
+                    valueRange = 3f..30f
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = scheduleLabel,
+                    onValueChange = { scheduleLabel = it },
+                    label = { Text(tr("সাপ্তাহিক সেশনের দিন ও সময়", "Weekly Session Day & Time")) },
+                    placeholder = { Text("প্রতি শুক্রবার রাত ৯:০০") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = meetingUrl,
+                    onValueChange = { meetingUrl = it },
+                    label = { Text(tr("ডিফল্ট লাইভ মিটিং লিংক (Jitsi / Meet / Zoom)", "Default Meeting Link (Jitsi / Meet / Zoom)")) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = rules,
+                    onValueChange = { rules = it },
+                    label = { Text(tr("সার্কেলের নিয়মাবলি ও মটো", "Circle Rules & Motto")) },
+                    minLines = 2,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            item {
+                SparcPrimaryButton(
+                    text = if (isCreateMode) tr("কাস্টম সার্কেল তৈরি করুন", "Create Custom Circle")
+                    else tr("সার্কেল সেটিংস সংরক্ষণ করুন", "Save Circle Customization"),
+                    enabled = name.isNotBlank(),
+                    onClick = {
+                        if (isCreateMode) {
+                            onSaveCreate(
+                                name,
+                                books[selectedBookIdx],
+                                minMembers,
+                                maxMembers,
+                                isPrivate,
+                                inviteCode.ifBlank { null },
+                                scheduleLabel,
+                                meetingUrl,
+                                rules
+                            )
+                        } else {
+                            onSaveUpdate(
+                                name,
+                                minMembers,
+                                maxMembers,
+                                isPrivate,
+                                inviteCode.ifBlank { null },
+                                scheduleLabel,
+                                meetingUrl,
+                                rules,
+                                activeChapter
+                            )
+                        }
+                    }
+                )
+            }
+        }
     }
 }

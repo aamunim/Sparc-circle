@@ -37,25 +37,27 @@ jobs:
           ./gradlew testDebugUnitTest assembleDebug --no-daemon \
             -PSUPABASE_URL="$SUPABASE_URL_SECRET" \
             -PSUPABASE_ANON_KEY="$SUPABASE_ANON_SECRET"
-          cp app/build/outputs/apk/debug/app-debug.apk ../SPARC-Study-Circle-v3.5.${{ github.run_number }}.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../SPARC-Study-Circle-v3.6.${{ github.run_number }}.apk
 
       - name: Upload APK Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SPARC-Study-Circle-v3.5.${{ github.run_number }}-apk
-          path: SPARC-Study-Circle-v3.5.${{ github.run_number }}.apk
+          name: SPARC-Study-Circle-v3.6.${{ github.run_number }}-apk
+          path: SPARC-Study-Circle-v3.6.${{ github.run_number }}.apk
 
       - name: Publish Fresh Latest GitHub Release with APK
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v3.5.${{ github.run_number }}"
-          APK_FILE="SPARC-Study-Circle-v3.5.${{ github.run_number }}.apk"
+          TAG="v3.6.${{ github.run_number }}"
+          APK_FILE="SPARC-Study-Circle-v3.6.${{ github.run_number }}.apk"
           gh release create "$TAG" "$APK_FILE" \
             --latest \
-            --title "SPARC Study Circle $TAG — Supabase Storage Cloud PDF & MP3 Audio Upload/Stream" \
-            --notes "নতুন ক্লাউড স্টোরেজ মিডিয়া আপডেট ($TAG):
-          - ☁️ **Supabase Storage (`sparc-books` ও `sparc-audio`) আপলোড স্টুডিও:** অ্যাপের **`লাইব্রেরি → ☁️ ক্লাউড বুক ও অডিও স্টুডিও`** (এবং `admin-web` পোর্টাল) থেকে সরাসরি ফোনের যেকোনো **বইয়ের PDF** এবং **বাংলা অডিও সামারি (MP3/M4A/WAV)** Supabase Storage বাকেটে আপলোড করা যাবে!
-          - 📄 **অটো-ডাউনলোড ও অফলাইন ক্যাশড PDF রিডার:** ক্লাউডে PDF আপলোড করলেই সব ইউজারের নেটিভ `PdfRenderer` ভিউয়ারে স্বয়ংক্রিয়ভাবে ডাউনলোড ও ক্যাশ হয়ে ওপেন হবে।
-          - 🎧 **লাইভ MP3 অডিও সামারি স্ট্রিমিং:** `sparc-audio` বাকেটের বাংলা অডিও সামারি সরাসরি Media3 `ExoPlayer`-এ স্ট্রিম হবে (`1x`–`2x` স্পিড কন্ট্রোলসহ)।"
+            --title "SPARC Study Circle $TAG — Complete Customization Suite (Packs 1–5)" \
+            --notes "নতুন ফুল কাস্টমাইজেশন স্যুট রিলিজ ($TAG):
+          - 🏛️ **প্যাক ১ — ব্র্যান্ড, অ্যাকসেন্ট কালার ও পেমেন্ট কাস্টমাইজার:** অ্যাপের শিরোনাম, ট্যাগলাইন, স্প্ল্যাশ কোট, টপ নোটিশ ব্যানার, অফিশিয়াল bKash/Nagad/Rocket নম্বর, সুপারভিশন ফি এবং **৬টি কাস্টম অ্যাকসেন্ট কালার পিকার** সেটিংস স্টুডিও থেকে সরাসরি পরিবর্তন ও লাইভ সিঙ্ক করা যাবে।
+          - 👤 **প্যাক ২ — প্রোফাইল ফটো, বায়ো ও স্মার্ট রিডার কমফোর্ট মোড:** গ্যালারি থেকে প্রোফাইল ছবি আপলোড (`sparc-avatars` বাকেটে), বিশ্ববিদ্যালয়, বায়ো, কাস্টম স্কিলস, ডেইলি রিডিং গোল এবং স্মার্ট রিডারে ফন্ট সাইজ স্লাইডার (`14sp`–`24sp`), ৪টি পেপার থিম (*White, Warm Sepia, Soft Mint, Night Reading*) ও বিল্ট-ইন **Pomodoro ফোকাস টাইমার**।
+          - 📚 **প্যাক ৩ — ইন-অ্যাপ অধ্যায়, ফ্ল্যাশ নোট ও কুইজ বিল্ডার:** ফোন থেকেই নতুন অধ্যায় যোগ/এডিট, ফ্ল্যাশ নোটস, রাইটিং প্রম্পট/শব্দসীমা এবং কাস্টম MCQ ও সৃজনশীল প্রশ্ন (`A–J`) তৈরি ও লাইভ ডাটাবেসে সিঙ্ক করার সুবিধা।
+          - ⭕ **প্যাক ৪ — কাস্টম স্টাডি সার্কেল রুলস ও প্রাইভেসি:** পাবলিক বনাম প্রাইভেট **Invite Code** সার্কেল, কাস্টম সদস্য সীমা (`২–৩০ জন`), সাপ্তাহিক ক্লাস শিডিউল ও ডিফল্ট মিটিং লিংক কাস্টমাইজেশন।
+          - 📱 **প্যাক ৫ — ডাইনামিক লঞ্চার আইকন ও ড্যাশবোর্ড কাস্টমাইজেশন:** ফোনের হোম-স্ক্রিন অ্যাপ আইকন পরিবর্তন (*Classic Cobalt / Emerald Scholar / Royal Gold*), ডিফল্ট ওপেনিং ট্যাব এবং হোম উইজেট অন/অফ কন্ট্রোল।"

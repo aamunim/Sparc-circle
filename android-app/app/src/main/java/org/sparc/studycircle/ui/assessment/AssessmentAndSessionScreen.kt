@@ -12,7 +12,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,9 +48,15 @@ fun AssessmentAndSessionScreen(
 ) {
     var subTab by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
-    val book = state.books.first()
-    val chapter = book.chapters.first()
-    val circle = state.circles.first()
+    val circle = state.circles.find { it.id == state.activeCircleId } ?: state.circles.first()
+    val book = state.books.find { it.id == circle.bookId } ?: state.books.first()
+    var selectedChIdx by remember(book.id) {
+        mutableIntStateOf(
+            book.chapters.indexOfFirst { it.chapterNo == circle.currentGroupChapter }.coerceAtLeast(0)
+        )
+    }
+    val safeChIdx = selectedChIdx.coerceIn(0, (book.chapters.size - 1).coerceAtLeast(0))
+    val chapter = book.chapters.getOrElse(safeChIdx) { book.chapters.first() }
     val progress = state.myChapterProgress[chapter.chapterNo] ?: ChapterProgressState(
         id = "init",
         circleId = circle.id,
@@ -54,6 +65,7 @@ fun AssessmentAndSessionScreen(
     )
 
     var activeJitsiSession by remember { mutableStateOf<OnlineSessionItem?>(null) }
+    var showAddQuestionSheet by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
@@ -69,7 +81,15 @@ fun AssessmentAndSessionScreen(
         }
 
         when (subTab) {
-            0 -> QuizAndCalibrationView(chapter = chapter, progress = progress, repository = repository)
+            0 -> QuizAndCalibrationView(
+                book = book,
+                selectedChIdx = safeChIdx,
+                onSelectChapter = { selectedChIdx = it },
+                chapter = chapter,
+                progress = progress,
+                repository = repository,
+                onOpenAddQuestion = { showAddQuestionSheet = true }
+            )
             1 -> LiveSessionAndClinicView(
                 sessions = state.sessions,
                 repository = repository,
@@ -80,6 +100,15 @@ fun AssessmentAndSessionScreen(
             )
             2 -> SupervisorMobileGradingView()
         }
+    }
+
+    if (showAddQuestionSheet) {
+        CustomQuizQuestionBuilderSheet(
+            book = book,
+            chapter = chapter,
+            repository = repository,
+            onDismiss = { showAddQuestionSheet = false }
+        )
     }
 
     activeJitsiSession?.let { sess ->
@@ -95,9 +124,13 @@ fun AssessmentAndSessionScreen(
 
 @Composable
 private fun QuizAndCalibrationView(
+    book: BookItem,
+    selectedChIdx: Int,
+    onSelectChapter: (Int) -> Unit,
     chapter: ChapterItem,
     progress: ChapterProgressState,
-    repository: SparcRepository
+    repository: SparcRepository,
+    onOpenAddQuestion: () -> Unit
 ) {
     val p = LocalSparcPalette.current
     val isLocked = progress.stage.step >= ProgressStage.EXERCISES_SUBMITTED.step
@@ -118,6 +151,53 @@ private fun QuizAndCalibrationView(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                LazyRow(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(book.chapters.size) { idx ->
+                        val ch = book.chapters[idx]
+                        val active = idx == selectedChIdx
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (active) p.primary else p.card,
+                            border = BorderStroke(1.dp, if (active) p.primary else p.border),
+                            modifier = Modifier.clickable { onSelectChapter(idx) }
+                        ) {
+                            Text(
+                                tr("অধ্যায় ${ch.chapterNo}", "Ch ${ch.chapterNo}"),
+                                color = if (active) Color.White else p.text,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = p.primarySoft,
+                    modifier = Modifier.clickable { onOpenAddQuestion() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(Icons.Default.AddCircleOutline, contentDescription = null, tint = p.primarySoftText, modifier = Modifier.size(15.dp))
+                        Text(tr("+ প্রশ্ন যোগ করুন", "+ Add Quiz"), color = p.primarySoftText, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
         item {
             Surface(
                 shape = RoundedCornerShape(16.dp),
@@ -525,3 +605,145 @@ private fun InAppJitsiVideoDialog(
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CustomQuizQuestionBuilderSheet(
+    book: BookItem,
+    chapter: ChapterItem,
+    repository: SparcRepository,
+    onDismiss: () -> Unit
+) {
+    val p = LocalSparcPalette.current
+    var isAutoScored by remember { mutableStateOf(true) }
+    var sectionCode by remember { mutableStateOf("C") }
+    var promptBn by remember { mutableStateOf("") }
+    var opt1 by remember { mutableStateOf("") }
+    var opt2 by remember { mutableStateOf("") }
+    var opt3 by remember { mutableStateOf("") }
+    var correctIdx by remember { mutableIntStateOf(0) }
+    var explanationBn by remember { mutableStateOf("") }
+    var modelPointsRaw by remember { mutableStateOf("১ পয়েন্ট: মূল তাত্ত্বিক ধারণা চিহ্নিত করা\n১ পয়েন্ট: বাস্তব উদাহরণ সংযোগ\n১ পয়েন্ট: সমালোচনামূলক মূল্যায়ন") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = p.card,
+        contentColor = p.text,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 640.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                tr("📝 কাস্টম কুইজ ও সৃজনশীল প্রশ্ন বিল্ডার", "📝 Custom Quiz & Creative Question Builder"),
+                style = MaterialTheme.typography.titleLarge,
+                color = p.text
+            )
+            Text(
+                "${book.title} • ${tr("অধ্যায়", "Chapter")} ${chapter.chapterNo}",
+                fontSize = 12.sp,
+                color = p.primary,
+                fontWeight = FontWeight.Bold
+            )
+
+            SparcSegmentedPills(
+                options = listOf(
+                    tr("MCQ (Auto ১ নম্বর)", "MCQ (Auto 1 pt)"),
+                    tr("সৃজনশীল (Supervisor ৩ নম্বর)", "Creative (3 pts)")
+                ),
+                selectedIndex = if (isAutoScored) 0 else 1,
+                onSelect = {
+                    isAutoScored = (it == 0)
+                    sectionCode = if (isAutoScored) "C" else "H"
+                }
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(tr("সেকশন কোড:", "Section:"), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                val secChoices = if (isAutoScored) listOf("A", "B", "C", "D", "E") else listOf("F", "G", "H", "I", "J")
+                secChoices.forEach { sc ->
+                    FilterChip(
+                        selected = sectionCode == sc,
+                        onClick = { sectionCode = sc },
+                        label = { Text(sc) }
+                    )
+                }
+            }
+
+            OutlinedTextField(
+                value = promptBn,
+                onValueChange = { promptBn = it },
+                label = { Text(tr("প্রশ্ন লিখুন (বাংলা বা ইংরেজি)", "Question Prompt")) },
+                minLines = 2,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (isAutoScored) {
+                listOf(
+                    Triple(0, opt1, { v: String -> opt1 = v }),
+                    Triple(1, opt2, { v: String -> opt2 = v }),
+                    Triple(2, opt3, { v: String -> opt3 = v })
+                ).forEach { (idx, value, setter) ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        RadioButton(selected = correctIdx == idx, onClick = { correctIdx = idx })
+                        OutlinedTextField(
+                            value = value,
+                            onValueChange = setter,
+                            label = { Text(tr("অপশন ${idx + 1} (সঠিক হলে গোল বাটন টিক দিন)", "Option ${idx + 1} (Select radio if correct)")) },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            } else {
+                OutlinedTextField(
+                    value = modelPointsRaw,
+                    onValueChange = { modelPointsRaw = it },
+                    label = { Text(tr("সুপারভাইজার মডেল পয়েন্টস (প্রতি লাইনে ১টি)", "Supervisor Model Points (1 per line)")) },
+                    minLines = 3,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            OutlinedTextField(
+                value = explanationBn,
+                onValueChange = { explanationBn = it },
+                label = { Text(tr("Answer Key ব্যাখ্যা (ঐচ্ছিক)", "Answer Key Explanation (Optional)")) },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            SparcPrimaryButton(
+                text = tr("প্রশ্ন যুক্ত ও লাইভ সিঙ্ক করুন", "Add Question & Sync Live"),
+                enabled = promptBn.isNotBlank() && (!isAutoScored || (opt1.isNotBlank() && opt2.isNotBlank())),
+                onClick = {
+                    val opts = listOf(opt1, opt2, opt3).filter { it.isNotBlank() }
+                    val chosenAns = opts.getOrElse(correctIdx) { opts.firstOrNull() ?: "" }
+                    repository.addCustomChapterQuestion(
+                        bookId = book.id,
+                        chapterNo = chapter.chapterNo,
+                        isAutoScored = isAutoScored,
+                        sectionCode = sectionCode,
+                        promptBn = promptBn,
+                        options = opts,
+                        correctAnswer = chosenAns,
+                        explanationBn = explanationBn,
+                        modelPoints = modelPointsRaw.lines()
+                    )
+                    onDismiss()
+                }
+            )
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+

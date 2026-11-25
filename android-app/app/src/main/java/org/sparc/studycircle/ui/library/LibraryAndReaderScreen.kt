@@ -18,7 +18,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,13 +32,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.sparc.studycircle.core.data.SparcAppState
 import org.sparc.studycircle.core.data.SparcRepository
 import org.sparc.studycircle.core.domain.SparcDomainEngine
 import org.sparc.studycircle.core.model.BookItem
+import org.sparc.studycircle.core.model.ChapterType
 import org.sparc.studycircle.core.model.HighlightVisibility
+import org.sparc.studycircle.core.model.ReaderPaperTheme
+import org.sparc.studycircle.core.theme.LocalAppLanguage
 import org.sparc.studycircle.core.theme.LocalSparcPalette
 import org.sparc.studycircle.core.theme.tr
 import org.sparc.studycircle.core.theme.trContent
@@ -54,13 +60,15 @@ fun LibraryAndReaderScreen(
     var orderDialogBook by remember { mutableStateOf<BookItem?>(null) }
     var uploadSheetInitialBook by remember { mutableStateOf<BookItem?>(null) }
     var showUploadSheet by remember { mutableStateOf(false) }
+    var curriculumSheetBook by remember { mutableStateOf<BookItem?>(null) }
+    var curriculumInitialChapterNo by remember { mutableIntStateOf(1) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
             SparcSegmentedPills(
                 options = listOf(
                     tr("ডিজিটাল লাইব্রেরি", "Digital Library"),
-                    tr("স্মার্ট রিডার ও অডিও", "Smart Reader & Audio")
+                    tr("স্মার্ট রিডার ও কমফোর্ট", "Smart Reader & Comfort")
                 ),
                 selectedIndex = subTab,
                 onSelect = { subTab = it }
@@ -78,15 +86,24 @@ fun LibraryAndReaderScreen(
                 onOpenCloudUpload = { targetBook ->
                     uploadSheetInitialBook = targetBook
                     showUploadSheet = true
+                },
+                onOpenCurriculumBuilder = { targetBook ->
+                    curriculumSheetBook = targetBook
+                    curriculumInitialChapterNo = 1
                 }
             )
         } else {
             SmartPaperReaderView(
+                state = state,
                 book = selectedBook,
                 repository = repository,
                 onOpenCloudUpload = {
                     uploadSheetInitialBook = selectedBook
                     showUploadSheet = true
+                },
+                onOpenCurriculumBuilder = { chNo ->
+                    curriculumSheetBook = selectedBook
+                    curriculumInitialChapterNo = chNo
                 }
             )
         }
@@ -95,6 +112,7 @@ fun LibraryAndReaderScreen(
     orderDialogBook?.let { book ->
         HardcopyOrderDialog(
             book = book,
+            borrowDepositBdt = state.appCustomization.borrowDepositBdt,
             onDismiss = { orderDialogBook = null },
             onConfirm = { mode, addr, phone ->
                 repository.placePhysicalBookOrder(book, mode, addr, phone)
@@ -111,6 +129,15 @@ fun LibraryAndReaderScreen(
             onDismiss = { showUploadSheet = false }
         )
     }
+
+    curriculumSheetBook?.let { targetBook ->
+        ChapterCurriculumBuilderSheet(
+            book = targetBook,
+            initialChapterNo = curriculumInitialChapterNo,
+            repository = repository,
+            onDismiss = { curriculumSheetBook = null }
+        )
+    }
 }
 
 @Composable
@@ -118,7 +145,8 @@ private fun AcademicLibraryCatalogView(
     books: List<BookItem>,
     onReadFreeChapter: (BookItem) -> Unit,
     onOrderHardcopy: (BookItem) -> Unit,
-    onOpenCloudUpload: (BookItem?) -> Unit
+    onOpenCloudUpload: (BookItem?) -> Unit,
+    onOpenCurriculumBuilder: (BookItem) -> Unit
 ) {
     val p = LocalSparcPalette.current
 
@@ -137,15 +165,15 @@ private fun AcademicLibraryCatalogView(
                 ) {
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            text = tr("☁️ ক্লাউড বুক ও অডিও স্টুডিও", "☁️ Cloud Book & Audio Studio"),
+                            text = tr("☁️ ক্লাউড বুক, অডিও ও কারিকুলাম স্টুডিও", "☁️ Cloud Book, Audio & Curriculum Studio"),
                             color = Color.White,
                             fontWeight = FontWeight.ExtraBold,
-                            fontSize = 16.sp
+                            fontSize = 15.5.sp
                         )
                         Text(
                             text = tr(
-                                "আসল বইয়ের PDF ও বাংলা অডিও সামারি (MP3) সরাসরি Supabase Storage-এ আপলোড করুন",
-                                "Upload real Book PDFs & Bangla MP3 Audio Summaries directly to Supabase Storage"
+                                "বইয়ের PDF, বাংলা MP3 আপলোড এবং অধ্যায়/ফ্ল্যাশ নোটস কাস্টমাইজ করুন",
+                                "Upload Book PDFs, Bangla MP3s & customize chapters/flash notes"
                             ),
                             color = Color.White.copy(alpha = 0.88f),
                             fontSize = 12.sp
@@ -266,7 +294,7 @@ private fun AcademicLibraryCatalogView(
                         onClick = { onReadFreeChapter(book) },
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = p.primary),
-                        modifier = Modifier.weight(1.2f)
+                        modifier = Modifier.weight(1.15f)
                     ) {
                         Text(tr("পড়ুন ও শুনুন", "Read & Listen"), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
@@ -274,7 +302,7 @@ private fun AcademicLibraryCatalogView(
                         shape = RoundedCornerShape(12.dp),
                         color = p.cardAlt,
                         modifier = Modifier
-                            .weight(0.95f)
+                            .weight(0.85f)
                             .clickable { onOrderHardcopy(book) }
                     ) {
                         Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 11.dp)) {
@@ -284,9 +312,18 @@ private fun AcademicLibraryCatalogView(
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = p.primarySoft,
+                        modifier = Modifier.clickable { onOpenCurriculumBuilder(book) }
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 11.dp, vertical = 11.dp)) {
+                            Icon(Icons.Default.EditNote, contentDescription = "Customize Chapters", tint = p.primarySoftText, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = p.primarySoft,
                         modifier = Modifier.clickable { onOpenCloudUpload(book) }
                     ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp)) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 11.dp, vertical = 11.dp)) {
                             Icon(Icons.Default.CloudUpload, contentDescription = "Upload PDF/Audio", tint = p.primarySoftText, modifier = Modifier.size(18.dp))
                         }
                     }
@@ -298,11 +335,16 @@ private fun AcademicLibraryCatalogView(
 
 @Composable
 private fun SmartPaperReaderView(
+    state: SparcAppState,
     book: BookItem,
     repository: SparcRepository,
-    onOpenCloudUpload: () -> Unit
+    onOpenCloudUpload: () -> Unit,
+    onOpenCurriculumBuilder: (Int) -> Unit
 ) {
     val p = LocalSparcPalette.current
+    val lang = LocalAppLanguage.current
+    val ui = state.uiCustomization
+
     var selectedChapterIdx by remember(book.id) { mutableIntStateOf(0) }
     val safeIdx = selectedChapterIdx.coerceIn(0, (book.chapters.size - 1).coerceAtLeast(0))
     val chapter = book.chapters.getOrElse(safeIdx) { book.chapters.first() }
@@ -316,12 +358,31 @@ private fun SmartPaperReaderView(
     )
     val activeQuote = "Sayings, doings and relatings hang together in the project of a practice."
 
+    // Pack 2 Built-in Pomodoro Focus Study Timer
+    var pomoPresetMin by remember { mutableIntStateOf(25) }
+    var pomoSecondsLeft by remember { mutableIntStateOf(25 * 60) }
+    var pomoRunning by remember { mutableStateOf(false) }
+
+    LaunchedEffect(pomoRunning) {
+        while (pomoRunning && pomoSecondsLeft > 0) {
+            delay(1000L)
+            pomoSecondsLeft -= 1
+            if (pomoSecondsLeft <= 0) {
+                pomoRunning = false
+            }
+        }
+    }
+
+    val paperBg = Color(ui.readerPaperTheme.bgHex)
+    val paperText = Color(ui.readerPaperTheme.textHex)
+    val paperMuted = Color(ui.readerPaperTheme.mutedHex)
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Chapter Selector + Quick Cloud Upload Trigger
+        // Chapter Selector + Curriculum Editor + Cloud Upload Triggers
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -351,19 +412,35 @@ private fun SmartPaperReaderView(
                         }
                     }
                 }
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(6.dp))
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = p.cardAlt,
+                    border = BorderStroke(1.dp, p.border),
+                    modifier = Modifier.clickable { onOpenCurriculumBuilder(chapter.chapterNo) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(Icons.Default.EditNote, contentDescription = null, tint = p.text, modifier = Modifier.size(15.dp))
+                        Text(tr("অধ্যায় এডিট", "Edit Ch"), color = p.text, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.width(6.dp))
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = p.primarySoft,
                     modifier = Modifier.clickable { onOpenCloudUpload() }
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Icon(Icons.Default.CloudUpload, contentDescription = null, tint = p.primarySoftText, modifier = Modifier.size(15.dp))
-                        Text(tr("PDF/MP3 আপলোড", "Upload PDF/MP3"), color = p.primarySoftText, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        Text("PDF/MP3", color = p.primarySoftText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -389,7 +466,7 @@ private fun SmartPaperReaderView(
             )
         }
 
-        // 2. Real Media3 ExoPlayer Audio Summary Player (Direct Supabase Storage MP3 Streaming!)
+        // 2. Real Media3 ExoPlayer Audio Summary Player
         item {
             val audioTitle = if (audioController.isStreamingCloudAudio) {
                 tr("☁️ ক্লাউড বাংলা অডিও সামারি (Live MP3)", "☁️ Cloud Audio Summary (Live MP3)")
@@ -409,7 +486,118 @@ private fun SmartPaperReaderView(
             )
         }
 
-        // 3. Smart Daily Page Estimator
+        // 3. Pack 2: Custom Reader Comfort Mode (Font Size, Paper Color & Pomodoro Study Timer)
+        item {
+            SparcScholarlyCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        tr("📖 রিডার কমফোর্ট ও ফোকাস টাইমার", "📖 Reader Comfort & Pomodoro Timer"),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = p.text
+                    )
+                    Text(
+                        "${ui.readerFontSizeSp}sp",
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 12.5.sp,
+                        color = p.primary
+                    )
+                }
+
+                // Paper Theme Pills
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ReaderPaperTheme.entries.forEach { pt ->
+                        val active = ui.readerPaperTheme == pt
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color(pt.bgHex),
+                            border = BorderStroke(if (active) 2.dp else 1.dp, if (active) p.primary else p.border),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    repository.updateUiCustomization(ui.copy(readerPaperTheme = pt))
+                                }
+                        ) {
+                            Text(
+                                text = pt.label(lang),
+                                color = Color(pt.textHex),
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .padding(vertical = 7.dp, horizontal = 4.dp)
+                                    .wrapContentWidth(Alignment.CenterHorizontally),
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+
+                // Font Size + Line Spacing Controls
+                Slider(
+                    value = ui.readerFontSizeSp.toFloat(),
+                    onValueChange = {
+                        repository.updateUiCustomization(ui.copy(readerFontSizeSp = it.toInt().coerceIn(14, 24)))
+                    },
+                    valueRange = 14f..24f,
+                    steps = 9
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Icons.Default.Timer, contentDescription = null, tint = p.primary, modifier = Modifier.size(18.dp))
+                        val mm = (pomoSecondsLeft / 60).toString().padStart(2, '0')
+                        val ss = (pomoSecondsLeft % 60).toString().padStart(2, '0')
+                        Text(
+                            "$mm:$ss",
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 16.sp,
+                            color = p.text
+                        )
+                        listOf(15, 25, 45).forEach { m ->
+                            val sel = pomoPresetMin == m
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (sel) p.primarySoft else p.cardAlt,
+                                modifier = Modifier.clickable {
+                                    pomoRunning = false
+                                    pomoPresetMin = m
+                                    pomoSecondsLeft = m * 60
+                                }
+                            ) {
+                                Text(
+                                    "${m}m",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (sel) p.primarySoftText else p.muted,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                    Button(
+                        onClick = { pomoRunning = !pomoRunning },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = if (pomoRunning) p.accent else p.primary),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            if (pomoRunning) tr("বিরতি", "Pause") else tr("শুরু", "Focus"),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
+        // 4. Smart Daily Page Estimator
         item {
             SparcScholarlyCard {
                 Row(
@@ -442,13 +630,20 @@ private fun SmartPaperReaderView(
             }
         }
 
-        // 4. Highlight Privacy Selector & Bite-Sized Flash Notes
+        // 5. Highlight Privacy Selector & Bite-Sized Flash Notes (Styled dynamically by Reader Paper Theme & Font Size!)
         item {
-            SparcScholarlyCard(containerColor = p.readerPaper) {
+            SparcScholarlyCard(containerColor = paperBg) {
+                Text(
+                    trContent(chapter.title),
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = (ui.readerFontSizeSp + 1).sp,
+                    color = paperText
+                )
                 Text(
                     tr("হাইলাইট প্রাইভেসি কন্ট্রোল ও ফ্ল্যাশ-নোটস", "Highlight Privacy Control & Flash Notes"),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = p.text
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = paperMuted
                 )
 
                 Surface(shape = RoundedCornerShape(12.dp), color = p.cardAlt) {
@@ -491,9 +686,184 @@ private fun SmartPaperReaderView(
                 }
 
                 chapter.flashNotes.forEach { fn ->
-                    Text("• ${trContent(fn)}", style = MaterialTheme.typography.bodyMedium, color = p.muted)
+                    Text(
+                        text = "• ${trContent(fn)}",
+                        fontSize = ui.readerFontSizeSp.sp,
+                        lineHeight = (ui.readerFontSizeSp * ui.readerLineSpacingMultiplier).sp,
+                        color = paperText
+                    )
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChapterCurriculumBuilderSheet(
+    book: BookItem,
+    initialChapterNo: Int,
+    repository: SparcRepository,
+    onDismiss: () -> Unit
+) {
+    val p = LocalSparcPalette.current
+    var chapterNo by remember { mutableIntStateOf(initialChapterNo.coerceAtLeast(1)) }
+    val existing = book.chapters.find { it.chapterNo == chapterNo }
+
+    var title by remember(chapterNo, existing) {
+        mutableStateOf(existing?.title ?: "অধ্যায় $chapterNo: নতুন শিরোনাম")
+    }
+    var isLong by remember(chapterNo, existing) {
+        mutableStateOf(existing?.type == ChapterType.LONG)
+    }
+    var totalPages by remember(chapterNo, existing) {
+        mutableStateOf((existing?.totalPages ?: 24).toString())
+    }
+    var flashNotesRaw by remember(chapterNo, existing) {
+        mutableStateOf((existing?.flashNotes ?: emptyList()).joinToString("\n"))
+    }
+    var outcomesRaw by remember(chapterNo, existing) {
+        mutableStateOf((existing?.learningOutcomes ?: emptyList()).joinToString("\n"))
+    }
+    var writingPrompt by remember(chapterNo, existing) {
+        mutableStateOf(existing?.writingTaskPrompt ?: "এই অধ্যায়ের আলোকে একাডেমিক প্রপোজালের অনুচ্ছেদ লিখুন।")
+    }
+    var minWords by remember(chapterNo, existing) {
+        mutableStateOf((existing?.minWords ?: 500).toString())
+    }
+    var maxWords by remember(chapterNo, existing) {
+        mutableStateOf((existing?.maxWords ?: 700).toString())
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = p.card,
+        contentColor = p.text,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 640.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                tr("📚 ইন-অ্যাপ অধ্যায় ও ফ্ল্যাশ নোটস কাস্টমাইজার", "📚 In-App Chapter & Flash Notes Builder"),
+                style = MaterialTheme.typography.titleLarge,
+                color = p.text
+            )
+            Text(book.title, fontSize = 12.sp, color = p.primary, fontWeight = FontWeight.Bold)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(tr("অধ্যায় নম্বর (নতুন বা বিদ্যমান):", "Chapter Number:"), fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = { chapterNo = (chapterNo - 1).coerceAtLeast(1) }) { Text("-") }
+                    Text("Ch $chapterNo", fontWeight = FontWeight.ExtraBold, color = p.primary)
+                    OutlinedButton(onClick = { chapterNo += 1 }) { Text("+") }
+                }
+            }
+
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it },
+                label = { Text(tr("অধ্যায়ের শিরোনাম", "Chapter Title")) },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = totalPages,
+                    onValueChange = { totalPages = it.filter { ch -> ch.isDigit() } },
+                    label = { Text(tr("মোট পৃষ্ঠা", "Total Pages")) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f)
+                )
+                FilterChip(
+                    selected = !isLong,
+                    onClick = { isLong = false },
+                    label = { Text("Standard (52m)") }
+                )
+                FilterChip(
+                    selected = isLong,
+                    onClick = { isLong = true },
+                    label = { Text("Long (61m)") }
+                )
+            }
+
+            OutlinedTextField(
+                value = flashNotesRaw,
+                onValueChange = { flashNotesRaw = it },
+                label = { Text(tr("ফ্ল্যাশ নোটস (প্রতি লাইনে ১টি নোট)", "Flash Notes (1 note per line)")) },
+                minLines = 3,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = outcomesRaw,
+                onValueChange = { outcomesRaw = it },
+                label = { Text(tr("লার্নিং আউটকাম (প্রতি লাইনে ১টি)", "Learning Outcomes (1 per line)")) },
+                minLines = 2,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = writingPrompt,
+                onValueChange = { writingPrompt = it },
+                label = { Text(tr("রাইটিং টাস্ক প্রম্পট", "Writing Task Prompt")) },
+                minLines = 2,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = minWords,
+                    onValueChange = { minWords = it.filter { ch -> ch.isDigit() } },
+                    label = { Text(tr("সর্বনিম্ন শব্দ", "Min Words")) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = maxWords,
+                    onValueChange = { maxWords = it.filter { ch -> ch.isDigit() } },
+                    label = { Text(tr("সর্বোচ্চ শব্দ", "Max Words")) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            SparcPrimaryButton(
+                text = tr("অধ্যায় ও কারিকুলাম সংরক্ষণ করুন", "Save Chapter & Curriculum"),
+                onClick = {
+                    repository.saveChapterCurriculum(
+                        bookId = book.id,
+                        chapterNo = chapterNo,
+                        title = title,
+                        chapterType = if (isLong) ChapterType.LONG else ChapterType.STANDARD,
+                        totalPages = totalPages.toIntOrNull() ?: 24,
+                        flashNotes = flashNotesRaw.lines(),
+                        learningOutcomes = outcomesRaw.lines(),
+                        writingPrompt = writingPrompt,
+                        minWords = minWords.toIntOrNull() ?: 500,
+                        maxWords = maxWords.toIntOrNull() ?: 700
+                    )
+                    onDismiss()
+                }
+            )
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
@@ -794,6 +1164,7 @@ private fun resolveDisplayName(context: Context, uri: Uri, fallback: String): St
 @Composable
 private fun HardcopyOrderDialog(
     book: BookItem,
+    borrowDepositBdt: Double = 150.0,
     onDismiss: () -> Unit,
     onConfirm: (String, String, String) -> Unit
 ) {
@@ -827,7 +1198,7 @@ private fun HardcopyOrderDialog(
                     FilterChip(
                         selected = mode == "Borrow",
                         onClick = { mode = "Borrow" },
-                        label = { Text(tr("সংগ্রহ (Borrow)", "Borrow")) }
+                        label = { Text(tr("ধার (জামানত ৳${borrowDepositBdt.toInt()})", "Borrow (৳${borrowDepositBdt.toInt()} dep.)")) }
                     )
                 }
                 OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text(tr("ঠিকানা", "Delivery Address")) })

@@ -16,6 +16,8 @@ data class SparcAppState(
     val isAuthenticated: Boolean = false,
     val appLanguage: String = "bn", // "bn" or "en"
     val visualTheme: SparcVisualTheme = SparcVisualTheme.COBALT_SAAS,
+    val appCustomization: AppCustomizationConfig = AppCustomizationConfig(),
+    val uiCustomization: UserUiCustomization = UserUiCustomization(),
     val apiVault: ApiKeyVaultConfig = ApiKeyVaultConfig(),
     val isSupabaseConnected: Boolean = false,
     val isSyncingLive: Boolean = false,
@@ -50,21 +52,17 @@ class SparcRepository(
     initialLanguage: String = "bn",
     initialApiVault: ApiKeyVaultConfig = ApiKeyVaultConfig(),
     initialSession: SupabaseAuthSession? = null,
+    initialAppCustomization: AppCustomizationConfig = AppCustomizationConfig(),
+    initialUiCustomization: UserUiCustomization = UserUiCustomization(),
     private val onPersistTheme: (SparcVisualTheme) -> Unit = {},
     private val onPersistAuth: (Boolean, String, String) -> Unit = { _, _, _ -> },
     private val onPersistLanguage: (String) -> Unit = {},
     private val onPersistApiVault: (ApiKeyVaultConfig) -> Unit = {},
-    private val onPersistSession: (SupabaseAuthSession?) -> Unit = {}
+    private val onPersistSession: (SupabaseAuthSession?) -> Unit = {},
+    private val onPersistAppCustomization: (AppCustomizationConfig) -> Unit = {},
+    private val onPersistUiCustomization: (UserUiCustomization) -> Unit = {}
 ) {
     private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    init {
-        supabaseClient.vaultConfig = initialApiVault
-        supabaseClient.onSessionUpdated = { sess -> onPersistSession(sess) }
-        if (initialSession != null) {
-            supabaseClient.restoreSession(initialSession)
-        }
-    }
 
     private val _state = MutableStateFlow(
         createInitialSeededState().let { seeded ->
@@ -77,6 +75,8 @@ class SparcRepository(
                 isAuthenticated = initialAuthenticated,
                 appLanguage = initialLanguage,
                 visualTheme = initialTheme,
+                appCustomization = initialAppCustomization,
+                uiCustomization = initialUiCustomization,
                 apiVault = initialApiVault,
                 isSupabaseConnected = supabaseClient.isConfigured,
                 activeCircleId = seeded.circles.firstOrNull()?.id,
@@ -85,6 +85,22 @@ class SparcRepository(
         }
     )
     val state: StateFlow<SparcAppState> = _state.asStateFlow()
+
+    init {
+        supabaseClient.vaultConfig = initialApiVault
+        supabaseClient.onSessionUpdated = { sess -> onPersistSession(sess) }
+        if (initialSession != null) {
+            supabaseClient.restoreSession(initialSession)
+        }
+        if (supabaseClient.isConfigured) {
+            repoScope.launch {
+                supabaseClient.fetchPublicAppCustomization().onSuccess { liveCustom ->
+                    onPersistAppCustomization(liveCustom)
+                    _state.update { it.copy(appCustomization = liveCustom) }
+                }
+            }
+        }
+    }
 
     private fun msg(bn: String, en: String): String =
         if (_state.value.appLanguage == "en") en else bn
@@ -112,6 +128,7 @@ class SparcRepository(
             _state.update { s ->
                 val liveMe = snap.me ?: s.currentUser
                 onPersistAuth(s.isAuthenticated, liveMe.name, liveMe.department)
+                snap.appCustomization?.let { onPersistAppCustomization(it) }
                 val mergedPeers = if (snap.peers.isNotEmpty()) {
                     snap.peers
                 } else {
@@ -124,6 +141,7 @@ class SparcRepository(
                 s.copy(
                     isSyncingLive = false,
                     isSupabaseConnected = supabaseClient.isConfigured,
+                    appCustomization = snap.appCustomization ?: s.appCustomization,
                     currentUser = liveMe,
                     directoryMembers = mergedPeers,
                     books = snap.books.ifEmpty { s.books },
@@ -321,13 +339,52 @@ class SparcRepository(
         _state.update { it.copy(statusBannerMessage = null) }
     }
 
-    // Section 2.1: Update Onboarding Profile, Interests, Skills & Optional Referral Code
+    // Pack 1 & Pack 5: Save Organization Brand/Payment Config & Personal UI Preferences
+    fun saveAppCustomization(config: AppCustomizationConfig) {
+        onPersistAppCustomization(config)
+        _state.update { s ->
+            s.copy(
+                appCustomization = config,
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "✓ Brand, notice & payment customization saved!"
+                } else {
+                    "✓ অ্যাপ ব্র্যান্ডিং, নোটিশ ও পেমেন্ট কনফিগারেশন সংরক্ষিত হয়েছে!"
+                }
+            )
+        }
+        launchRemoteSync {
+            supabaseClient.saveAppCustomizationRemote(config).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
+    }
+
+    fun updateUiCustomization(
+        newUi: UserUiCustomization,
+        bannerBn: String? = null,
+        bannerEn: String? = null
+    ) {
+        onPersistUiCustomization(newUi)
+        _state.update { s ->
+            val msgText = when {
+                s.appLanguage == "en" && bannerEn != null -> bannerEn
+                s.appLanguage != "en" && bannerBn != null -> bannerBn
+                else -> s.statusBannerMessage
+            }
+            s.copy(uiCustomization = newUi, statusBannerMessage = msgText)
+        }
+    }
+
+    // Section 2.1 & Pack 2: Update Onboarding Profile, Bio, Institution, Goal, Interests, Skills & Referral
     fun updateProfileAndReferral(
         name: String,
         department: String,
         interests: List<String>,
         skills: List<String>,
-        appliedReferralCode: String
+        appliedReferralCode: String,
+        institution: String? = null,
+        bio: String? = null,
+        dailyReadingGoalMinutes: Int? = null,
+        avatarUrl: String? = null
     ) {
         _state.update { s ->
             val validReferral = appliedReferralCode.isNotBlank() &&
@@ -341,6 +398,10 @@ class SparcRepository(
                 department = department.ifBlank { s.currentUser.department },
                 researchInterests = interests.ifEmpty { s.currentUser.researchInterests },
                 skills = skills.ifEmpty { s.currentUser.skills },
+                institution = institution ?: s.currentUser.institution,
+                bio = bio ?: s.currentUser.bio,
+                dailyReadingGoalMinutes = dailyReadingGoalMinutes ?: s.currentUser.dailyReadingGoalMinutes,
+                avatarUrl = avatarUrl ?: s.currentUser.avatarUrl,
                 walletBalanceBdt = s.currentUser.walletBalanceBdt + bonusBdt,
                 gamificationPoints = s.currentUser.gamificationPoints + bonusPoints
             )
@@ -364,14 +425,79 @@ class SparcRepository(
                 statusBannerMessage = when {
                     validReferral && s.appLanguage == "en" -> "Profile updated & +৳50 referral bonus credited!"
                     validReferral -> "প্রোফাইল আপডেট হয়েছে এবং ৫০ টাকা রেফারেল বোনাস যোগ হয়েছে!"
-                    s.appLanguage == "en" -> "Profile & skill tags saved successfully."
-                    else -> "প্রোফাইল ও স্কিল ট্যাগ সফলভাবে সংরক্ষিত হয়েছে।"
+                    s.appLanguage == "en" -> "Profile, bio & preferences saved successfully."
+                    else -> "প্রোফাইল, বায়ো ও দক্ষতা সফলভাবে সংরক্ষিত হয়েছে।"
                 }
             )
         }
         launchRemoteSync {
-            supabaseClient.updateMyProfileRemote(name, department, interests, skills, appliedReferralCode).getOrThrow()
+            val u = _state.value.currentUser
+            supabaseClient.updateMyProfileRemote(
+                name = u.name,
+                department = u.department,
+                interests = u.researchInterests,
+                skills = u.skills,
+                referralCode = appliedReferralCode,
+                avatarUrl = u.avatarUrl,
+                institution = u.institution,
+                bio = u.bio,
+                dailyReadingGoalMinutes = u.dailyReadingGoalMinutes
+            ).getOrThrow()
             syncFromSupabaseNow(silent = true)
+        }
+    }
+
+    suspend fun uploadProfileAvatar(
+        imageBytes: ByteArray,
+        fileName: String,
+        localCacheFallbackPath: String = ""
+    ): Result<String> {
+        if (imageBytes.isEmpty()) {
+            return Result.failure(IllegalArgumentException(msg("ছবি পাওয়া যায়নি।", "Empty image selected.")))
+        }
+        return runCatching {
+            val finalUrl = if (supabaseClient.hasAuthenticatedUser) {
+                val safeName = fileName.replace(Regex("[^a-zA-Z0-9._-]"), "_").ifBlank { "avatar.jpg" }
+                val mime = when {
+                    safeName.endsWith(".png", true) -> "image/png"
+                    safeName.endsWith(".webp", true) -> "image/webp"
+                    else -> "image/jpeg"
+                }
+                val ts = System.currentTimeMillis()
+                val cloudUrl = supabaseClient.uploadBytesToSupabaseStorage(
+                    bucket = "sparc-avatars",
+                    objectPath = "profiles/${_state.value.currentUser.id}_${ts}_$safeName",
+                    bytes = imageBytes,
+                    contentType = mime
+                ).getOrThrow()
+                val u = _state.value.currentUser
+                supabaseClient.updateMyProfileRemote(
+                    name = u.name,
+                    department = u.department,
+                    interests = u.researchInterests,
+                    skills = u.skills,
+                    referralCode = "",
+                    avatarUrl = cloudUrl,
+                    institution = u.institution,
+                    bio = u.bio,
+                    dailyReadingGoalMinutes = u.dailyReadingGoalMinutes
+                ).getOrThrow()
+                cloudUrl
+            } else {
+                localCacheFallbackPath
+            }
+
+            _state.update { s ->
+                s.copy(
+                    currentUser = s.currentUser.copy(avatarUrl = finalUrl),
+                    statusBannerMessage = if (s.appLanguage == "en") {
+                        "✓ Profile photo updated!"
+                    } else {
+                        "✓ প্রোফাইল ছবি সফলভাবে আপডেট হয়েছে!"
+                    }
+                )
+            }
+            finalUrl
         }
     }
 
@@ -405,12 +531,17 @@ class SparcRepository(
         }
     }
 
-    // Section 2.3: Wallet Top-Up (SSLCommerz / bKash PGW / Manual TrxID >= 500 BDT)
+    // Section 2.3: Wallet Top-Up (Uses Dynamic Customized Min Top-Up)
     fun topUpWallet(amountBdt: Double, method: PaymentMethod, manualTrxId: String = "") {
-        if (amountBdt < 500.0) {
+        val minTopup = _state.value.appCustomization.minTopupBdt
+        if (amountBdt < minTopup) {
             _state.update {
                 it.copy(
-                    statusBannerMessage = if (it.appLanguage == "en") "Minimum top-up is ৳500." else "ন্যূনতম ৫০০ টাকা ক্রেডিট লোড করতে হবে।"
+                    statusBannerMessage = if (it.appLanguage == "en") {
+                        "Minimum top-up is ৳${minTopup.toInt()}."
+                    } else {
+                        "ন্যূনতম ৳${minTopup.toInt()} টাকা ক্রেডিট লোড করতে হবে।"
+                    }
                 )
             }
             return
@@ -570,32 +701,63 @@ class SparcRepository(
         }
     }
 
-    // Section 4.1 - 4.2: Create / Join Study Circle & Vote Supervisor
-    fun createNewStudyCircle(name: String, book: BookItem, minMembers: Int = 5) {
+    // Section 4.1 - 4.2 & Pack 4: Create / Customize / Join Study Circle & Vote Supervisor
+    fun createNewStudyCircle(
+        name: String,
+        book: BookItem,
+        minMembers: Int = 5,
+        maxMembers: Int = 25,
+        isPrivate: Boolean = false,
+        inviteCode: String? = null,
+        scheduleLabel: String = "শুক্রবার রাত ৮:৩০",
+        meetingUrl: String = "https://meet.jit.si/SPARC_Circle_Live",
+        rules: String = "নিয়মিত অধ্যায় পড়া ও সহপাঠীদের প্রতি শ্রদ্ধাশীল থেকে আলোচনায় অংশ নেওয়া।"
+    ) {
         if (name.isBlank()) return
         val localId = UUID.randomUUID().toString()
+        val resolvedCode = if (isPrivate) {
+            inviteCode?.trim()?.uppercase()?.ifBlank { null }
+                ?: ("SPARC-" + UUID.randomUUID().toString().take(5).uppercase())
+        } else null
+
         _state.update { s ->
             val newCircle = StudyCircleGroup(
                 id = localId,
                 name = name.trim(),
                 bookId = book.id,
                 bookTitle = book.title,
-                minMembersRequired = minMembers.coerceAtLeast(2),
+                minMembersRequired = minMembers.coerceIn(2, 30),
+                maxMembers = maxMembers.coerceAtLeast(minMembers.coerceAtLeast(2)),
                 status = CircleStatus.FORMING,
-                memberIds = listOf(s.currentUser.id)
+                memberIds = listOf(s.currentUser.id),
+                isPrivate = isPrivate,
+                inviteCode = resolvedCode,
+                sessionScheduleLabel = scheduleLabel.ifBlank { "শুক্রবার রাত ৮:৩০" },
+                defaultMeetingUrl = meetingUrl.ifBlank { "https://meet.jit.si/SPARC_Circle_Live" },
+                circleRules = rules.ifBlank { "নিয়মিত অধ্যায় পড়া ও সহপাঠীদের প্রতি শ্রদ্ধাশীল থেকে আলোচনায় অংশ নেওয়া।" }
             )
             s.copy(
                 circles = s.circles + newCircle,
                 activeCircleId = localId,
                 statusBannerMessage = if (s.appLanguage == "en") {
-                    "Created Study Circle: ${name.trim()}"
+                    "Created Study Circle: ${name.trim()}" + (if (resolvedCode != null) " (Code: $resolvedCode)" else "")
                 } else {
-                    "নতুন স্টাডি সার্কেল তৈরি হয়েছে: ${name.trim()}"
+                    "নতুন স্টাডি সার্কেল তৈরি হয়েছে: ${name.trim()}" + (if (resolvedCode != null) " (কোড: $resolvedCode)" else "")
                 }
             )
         }
         launchRemoteSync {
-            val remoteId = supabaseClient.createCircleRemote(name, book.id, minMembers).getOrThrow()
+            val remoteId = supabaseClient.createCircleRemote(
+                name = name,
+                bookId = book.id,
+                minMembers = minMembers,
+                maxMembers = maxMembers,
+                isPrivate = isPrivate,
+                inviteCode = resolvedCode,
+                scheduleLabel = scheduleLabel,
+                meetingUrl = meetingUrl,
+                rules = rules
+            ).getOrThrow()
             if (remoteId.isNotBlank()) {
                 _state.update { it.copy(activeCircleId = remoteId) }
             }
@@ -603,13 +765,100 @@ class SparcRepository(
         }
     }
 
-    fun joinStudyCircle(circleId: String) {
+    fun updateStudyCircleCustomization(
+        circleId: String,
+        name: String,
+        minMembers: Int,
+        maxMembers: Int,
+        isPrivate: Boolean,
+        inviteCode: String?,
+        scheduleLabel: String,
+        meetingUrl: String,
+        rules: String,
+        currentGroupChapter: Int
+    ) {
+        val resolvedCode = if (isPrivate) {
+            inviteCode?.trim()?.uppercase()?.ifBlank { null }
+                ?: ("SPARC-" + UUID.randomUUID().toString().take(5).uppercase())
+        } else null
+
+        _state.update { s ->
+            val updated = s.circles.map { c ->
+                if (c.id != circleId) c else c.copy(
+                    name = name.trim().ifBlank { c.name },
+                    minMembersRequired = minMembers.coerceIn(2, 30),
+                    maxMembers = maxMembers.coerceAtLeast(minMembers.coerceAtLeast(2)),
+                    isPrivate = isPrivate,
+                    inviteCode = resolvedCode,
+                    sessionScheduleLabel = scheduleLabel.trim().ifBlank { c.sessionScheduleLabel },
+                    defaultMeetingUrl = meetingUrl.trim().ifBlank { c.defaultMeetingUrl },
+                    circleRules = rules.trim().ifBlank { c.circleRules },
+                    currentGroupChapter = currentGroupChapter.coerceAtLeast(1)
+                )
+            }
+            s.copy(
+                circles = updated,
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "✓ Study circle rules & schedule updated!"
+                } else {
+                    "✓ স্টাডি সার্কেলের রুলস, শিডিউল ও প্রাইভেসি আপডেট হয়েছে!"
+                }
+            )
+        }
+        launchRemoteSync {
+            supabaseClient.updateCircleCustomizationRemote(
+                circleId = circleId,
+                name = name,
+                minMembers = minMembers,
+                maxMembers = maxMembers,
+                isPrivate = isPrivate,
+                inviteCode = resolvedCode,
+                scheduleLabel = scheduleLabel,
+                meetingUrl = meetingUrl,
+                rules = rules,
+                currentChapter = currentGroupChapter
+            ).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
+    }
+
+    fun joinStudyCircle(circleId: String, enteredInviteCode: String? = null): Boolean {
+        val target = _state.value.circles.find { it.id == circleId }
+        if (target != null && _state.value.currentUser.id !in target.memberIds) {
+            if (target.isPrivate && !target.inviteCode.isNullOrBlank() &&
+                !target.inviteCode.equals(enteredInviteCode?.trim(), ignoreCase = true)
+            ) {
+                _state.update { s ->
+                    s.copy(
+                        statusBannerMessage = if (s.appLanguage == "en") {
+                            "Invalid Invite Code for private circle."
+                        } else {
+                            "প্রাইভেট সার্কেলে জয়েন করার সঠিক Invite Code দিন।"
+                        }
+                    )
+                }
+                return false
+            }
+            if (target.memberIds.size >= target.maxMembers) {
+                _state.update { s ->
+                    s.copy(
+                        statusBannerMessage = if (s.appLanguage == "en") {
+                            "This circle has reached its maximum member limit."
+                        } else {
+                            "এই সার্কেলের সর্বোচ্চ সদস্য সীমা পূর্ণ হয়ে গেছে।"
+                        }
+                    )
+                }
+                return false
+            }
+        }
         addMemberToCircle(circleId, _state.value.currentUser.id)
         _state.update { it.copy(activeCircleId = circleId) }
         launchRemoteSync {
-            supabaseClient.joinCircleRemote(circleId).getOrThrow()
+            supabaseClient.joinCircleRemote(circleId, enteredInviteCode).getOrThrow()
             syncFromSupabaseNow(silent = true)
         }
+        return true
     }
 
     fun addMemberToCircle(circleId: String, userId: String) {
@@ -1245,6 +1494,168 @@ class SparcRepository(
 
     suspend fun downloadCloudPdf(pdfUrl: String, targetFile: java.io.File): Result<java.io.File> =
         supabaseClient.downloadCloudFileToCache(pdfUrl, targetFile)
+
+    // Pack 3: In-App Chapter, Flash Notes, Writing Prompt & Quiz Customizer
+    fun saveChapterCurriculum(
+        bookId: String,
+        chapterNo: Int,
+        title: String,
+        chapterType: ChapterType,
+        totalPages: Int,
+        flashNotes: List<String>,
+        learningOutcomes: List<String>,
+        writingPrompt: String,
+        minWords: Int,
+        maxWords: Int
+    ) {
+        val safeNo = chapterNo.coerceAtLeast(1)
+        val safePages = totalPages.coerceAtLeast(1)
+        val safeMin = minWords.coerceAtLeast(50)
+        val safeMax = maxWords.coerceAtLeast(safeMin + 50)
+        val cleanFlash = flashNotes.map { it.trim() }.filter { it.isNotBlank() }
+        val cleanOutcomes = learningOutcomes.map { it.trim() }.filter { it.isNotBlank() }
+
+        _state.update { s ->
+            val updatedBooks = s.books.map { b ->
+                if (b.id != bookId) b else {
+                    val existing = b.chapters.find { it.chapterNo == safeNo }
+                    val newChapter = if (existing != null) {
+                        existing.copy(
+                            title = title.trim().ifBlank { existing.title },
+                            type = chapterType,
+                            totalPages = safePages,
+                            flashNotes = cleanFlash.ifEmpty { existing.flashNotes },
+                            learningOutcomes = cleanOutcomes.ifEmpty { existing.learningOutcomes },
+                            writingTaskPrompt = writingPrompt.trim().ifBlank { existing.writingTaskPrompt },
+                            minWords = safeMin,
+                            maxWords = safeMax
+                        )
+                    } else {
+                        ChapterItem(
+                            id = UUID.randomUUID().toString(),
+                            bookId = b.id,
+                            chapterNo = safeNo,
+                            title = title.trim().ifBlank { "অধ্যায় $safeNo" },
+                            type = chapterType,
+                            totalPages = safePages,
+                            defaultReadingMinutes = safePages * 4,
+                            audioSummaryTitle = "বাংলা অডিও সামারি (অধ্যায় $safeNo)",
+                            audioDurationMinutes = 6,
+                            flashNotes = cleanFlash.ifEmpty { listOf("নতুন অধ্যায়ের মূল নোট") },
+                            sections = listOf(ChapterSection("s-$safeNo-1", "মূল আলোচনা", "1-$safePages", emptyList())),
+                            learningOutcomes = cleanOutcomes.ifEmpty { listOf("অধ্যায়ের মূল ধারণা বিশ্লেষণ") },
+                            questions = b.chapters.first().questions,
+                            writingTaskPrompt = writingPrompt.trim().ifBlank { "এই অধ্যায়ের আলোকে একাডেমিক অনুচ্ছেদ লিখুন।" },
+                            minWords = safeMin,
+                            maxWords = safeMax
+                        )
+                    }
+                    val mergedChapters = (b.chapters.filter { it.chapterNo != safeNo } + newChapter)
+                        .sortedBy { it.chapterNo }
+                    b.copy(
+                        totalChapters = maxOf(b.totalChapters, safeNo),
+                        chapters = mergedChapters
+                    )
+                }
+            }
+            s.copy(
+                books = updatedBooks,
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "✓ Chapter $safeNo curriculum, flash notes & writing task saved!"
+                } else {
+                    "✓ অধ্যায় $safeNo-এর কারিকুলাম, ফ্ল্যাশ নোটস ও রাইটিং প্রম্পট সংরক্ষিত হয়েছে!"
+                }
+            )
+        }
+
+        launchRemoteSync {
+            supabaseClient.upsertChapterCurriculumRemote(
+                bookId = bookId,
+                chapterNo = safeNo,
+                title = title,
+                typeCode = chapterType.name.lowercase(),
+                totalPages = safePages,
+                flashNotes = cleanFlash,
+                learningOutcomes = cleanOutcomes,
+                writingPrompt = writingPrompt,
+                minWords = safeMin,
+                maxWords = safeMax
+            ).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
+    }
+
+    fun addCustomChapterQuestion(
+        bookId: String,
+        chapterNo: Int,
+        isAutoScored: Boolean,
+        sectionCode: String,
+        promptBn: String,
+        options: List<String>,
+        correctAnswer: String,
+        explanationBn: String,
+        modelPoints: List<String>
+    ) {
+        if (promptBn.isBlank()) return
+        val safeNo = chapterNo.coerceAtLeast(1)
+        val cleanOpts = options.map { it.trim() }.filter { it.isNotBlank() }
+        val cleanPts = modelPoints.map { it.trim() }.filter { it.isNotBlank() }
+        val resolvedSec = if (isAutoScored) {
+            sectionCode.uppercase().take(1).takeIf { it in listOf("A", "B", "C", "D", "E") } ?: "C"
+        } else {
+            sectionCode.uppercase().take(1).takeIf { it in listOf("F", "G", "H", "I", "J") } ?: "H"
+        }
+
+        _state.update { s ->
+            val updatedBooks = s.books.map { b ->
+                if (b.id != bookId) b else {
+                    val updatedChs = b.chapters.map { ch ->
+                        if (ch.chapterNo != safeNo) ch else {
+                            val nextNo = (ch.questions.maxOfOrNull { it.questionNo } ?: 0) + 1
+                            val q = AssessmentQuestion(
+                                id = UUID.randomUUID().toString(),
+                                questionNo = nextNo,
+                                sectionCode = resolvedSec,
+                                categoryLabel = if (isAutoScored) "MCQ" else "SCENARIO",
+                                isAutoScored = isAutoScored,
+                                maxMarks = if (isAutoScored) 1 else 3,
+                                promptBn = promptBn.trim(),
+                                options = if (isAutoScored) cleanOpts else emptyList(),
+                                lockedCorrectAnswer = if (isAutoScored) correctAnswer.trim() else null,
+                                explanationBn = explanationBn.trim(),
+                                supervisorModelPoints = if (!isAutoScored) cleanPts else emptyList()
+                            )
+                            ch.copy(questions = ch.questions + q)
+                        }
+                    }
+                    b.copy(chapters = updatedChs)
+                }
+            }
+            s.copy(
+                books = updatedBooks,
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "✓ Custom quiz question [$resolvedSec] added to Chapter $safeNo!"
+                } else {
+                    "✓ অধ্যায় $safeNo-এ নতুন কাস্টম কুইজ প্রশ্ন [$resolvedSec] যুক্ত হয়েছে!"
+                }
+            )
+        }
+
+        launchRemoteSync {
+            supabaseClient.upsertChapterQuestionRemote(
+                bookId = bookId,
+                chapterNo = safeNo,
+                isAutoScored = isAutoScored,
+                sectionCode = resolvedSec,
+                promptBn = promptBn,
+                options = cleanOpts,
+                correctAnswer = correctAnswer,
+                explanationBn = explanationBn,
+                modelPoints = cleanPts
+            ).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
+    }
 
     companion object {
         fun createInitialSeededState(): SparcAppState {

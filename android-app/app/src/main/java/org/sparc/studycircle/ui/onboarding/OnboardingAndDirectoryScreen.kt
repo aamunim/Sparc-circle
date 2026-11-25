@@ -1,5 +1,10 @@
 package org.sparc.studycircle.ui.onboarding
 
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -8,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -15,9 +21,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.sparc.studycircle.core.data.SparcAppState
 import org.sparc.studycircle.core.data.SparcRepository
 import org.sparc.studycircle.core.domain.SparcDomainEngine
@@ -26,6 +36,7 @@ import org.sparc.studycircle.core.theme.LocalSparcPalette
 import org.sparc.studycircle.core.theme.tr
 import org.sparc.studycircle.core.theme.trContent
 import org.sparc.studycircle.ui.components.*
+import java.io.File
 
 private val ALL_DEPARTMENTS = listOf(
     "All Depts", "Sociology", "Education & Research (IER)", "Anthropology", "Economics"
@@ -41,10 +52,11 @@ private val ALL_SKILL_TAGS = listOf(
 @Composable
 fun OnboardingAndDirectoryScreen(
     state: SparcAppState,
-    repository: SparcRepository
+    repository: SparcRepository,
+    initialSubTab: Int = 0
 ) {
     val p = LocalSparcPalette.current
-    var subTab by remember { mutableIntStateOf(0) }
+    var subTab by remember(initialSubTab) { mutableIntStateOf(initialSubTab) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedDept by remember { mutableStateOf("All Depts") }
     var inviteTarget by remember { mutableStateOf<UserProfile?>(null) }
@@ -54,6 +66,7 @@ fun OnboardingAndDirectoryScreen(
             val deptMatch = selectedDept == "All Depts" || m.department == selectedDept
             val searchMatch = searchQuery.isBlank() ||
                 m.name.contains(searchQuery, ignoreCase = true) ||
+                m.institution.contains(searchQuery, ignoreCase = true) ||
                 m.skills.any { it.contains(searchQuery, ignoreCase = true) }
             deptMatch && searchMatch
         }
@@ -64,7 +77,7 @@ fun OnboardingAndDirectoryScreen(
             SparcSegmentedPills(
                 options = listOf(
                     tr("গবেষক ডিরেক্টরি", "Researcher Directory"),
-                    tr("প্রোফাইল ও স্কিল সেটআপ", "Profile & Skills Setup")
+                    tr("প্রোফাইল ও ফটো স্টুডিও", "Profile & Photo Studio")
                 ),
                 selectedIndex = subTab,
                 onSelect = { subTab = it }
@@ -74,8 +87,18 @@ fun OnboardingAndDirectoryScreen(
         if (subTab == 1) {
             OnboardingProfileSetupView(
                 currentUser = state.currentUser,
-                onSave = { name, dept, interests, skills, refCode ->
-                    repository.updateProfileAndReferral(name, dept, interests, skills, refCode)
+                repository = repository,
+                onSave = { name, dept, inst, bio, goalMin, interests, skills, refCode ->
+                    repository.updateProfileAndReferral(
+                        name = name,
+                        department = dept,
+                        interests = interests,
+                        skills = skills,
+                        appliedReferralCode = refCode,
+                        institution = inst,
+                        bio = bio,
+                        dailyReadingGoalMinutes = goalMin
+                    )
                     subTab = 0
                 }
             )
@@ -89,7 +112,7 @@ fun OnboardingAndDirectoryScreen(
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        placeholder = { Text(tr("গবেষক বা দক্ষতা দিয়ে খুঁজুন...", "Search researchers or skills...")) },
+                        placeholder = { Text(tr("গবেষক, বিশ্ববিদ্যালয় বা দক্ষতা দিয়ে খুঁজুন...", "Search researchers, institution or skills...")) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         shape = RoundedCornerShape(16.dp),
                         singleLine = true,
@@ -145,14 +168,19 @@ fun OnboardingAndDirectoryScreen(
 
                 items(filteredMembers, key = { it.id }) { member ->
                     val memberName = trContent(member.name)
-                    SparcScholarlyCard {
+                    SparcScholarlyCard(compact = state.uiCustomization.compactHomeCards) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            SparcAvatarCircle(name = memberName, size = 44.dp)
+                            SparcAvatarCircle(
+                                name = memberName,
+                                avatarUrl = member.avatarUrl,
+                                size = 44.dp
+                            )
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(memberName, style = MaterialTheme.typography.titleMedium, color = p.text)
+                                val instSuffix = if (member.institution.isNotBlank()) " • ${member.institution}" else ""
                                 Text(
-                                    "${member.department} • ★ ${member.rating} • 🔥 ${member.readingStreakDays}d",
+                                    "${member.department}$instSuffix • ★ ${member.rating} • 🔥 ${member.readingStreakDays}d",
                                     fontSize = 12.sp,
                                     color = p.muted
                                 )
@@ -172,7 +200,11 @@ fun OnboardingAndDirectoryScreen(
                             }
                         }
 
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (member.bio.isNotBlank()) {
+                            Text(member.bio, fontSize = 12.sp, color = p.muted)
+                        }
+
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             member.skills.forEach { sk ->
                                 Surface(shape = RoundedCornerShape(10.dp), color = p.cardAlt) {
                                     Text(
@@ -252,14 +284,46 @@ fun OnboardingAndDirectoryScreen(
 @Composable
 private fun OnboardingProfileSetupView(
     currentUser: UserProfile,
-    onSave: (String, String, List<String>, List<String>, String) -> Unit
+    repository: SparcRepository,
+    onSave: (String, String, String, String, Int, List<String>, List<String>, String) -> Unit
 ) {
     val p = LocalSparcPalette.current
-    var name by remember { mutableStateOf(currentUser.name) }
-    var department by remember { mutableStateOf(currentUser.department) }
-    var interests by remember { mutableStateOf(currentUser.researchInterests.toSet()) }
-    var skills by remember { mutableStateOf(currentUser.skills.toSet()) }
-    var referralInput by remember { mutableStateOf("SPARC-FARHAN09") }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var name by remember(currentUser.id) { mutableStateOf(currentUser.name) }
+    var department by remember(currentUser.id) { mutableStateOf(currentUser.department) }
+    var institution by remember(currentUser.id) { mutableStateOf(currentUser.institution) }
+    var bio by remember(currentUser.id) { mutableStateOf(currentUser.bio) }
+    var dailyGoalMin by remember(currentUser.id) { mutableIntStateOf(currentUser.dailyReadingGoalMinutes) }
+    var interests by remember(currentUser.id) { mutableStateOf(currentUser.researchInterests.toSet()) }
+    var skills by remember(currentUser.id) { mutableStateOf(currentUser.skills.toSet()) }
+    var customSkillInput by remember { mutableStateOf("") }
+    var referralInput by remember { mutableStateOf("") }
+    var uploadingAvatar by remember { mutableStateOf(false) }
+
+    val avatarPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            uploadingAvatar = true
+            scope.launch {
+                val pair = withContext(Dispatchers.IO) {
+                    readAvatarBytesAndCache(context, uri)
+                }
+                if (pair != null) {
+                    repository.uploadProfileAvatar(
+                        imageBytes = pair.first,
+                        fileName = pair.second,
+                        localCacheFallbackPath = pair.third
+                    )
+                }
+                uploadingAvatar = false
+            }
+        }
+    }
+
+    val allSkillTags = remember(skills) { (ALL_SKILL_TAGS + skills).distinct() }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -268,27 +332,109 @@ private fun OnboardingProfileSetupView(
     ) {
         item {
             SparcScholarlyCard {
-                Text("STEP 2 OF 2 • RESEARCHER SETUP", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = p.primary)
-                Text(
-                    tr("গবেষক প্রোফাইল ও দক্ষতা নির্বাচন", "Researcher Profile & Skill Tags"),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = p.text
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    SparcAvatarCircle(
+                        name = name,
+                        avatarUrl = currentUser.avatarUrl,
+                        size = 64.dp
+                    )
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            tr("প্রোফাইল ছবি ও পরিচয় কাস্টমাইজ করুন", "Customize Profile Photo & Bio"),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = p.text
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = p.primarySoft,
+                            modifier = Modifier.clickable(enabled = !uploadingAvatar) {
+                                avatarPicker.launch("image/*")
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = p.primarySoftText, modifier = Modifier.size(16.dp))
+                                Text(
+                                    text = if (uploadingAvatar) tr("আপলোড হচ্ছে...", "Uploading...")
+                                    else tr("গ্যালারি থেকে ছবি দিন", "Upload Photo"),
+                                    color = p.primarySoftText,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                }
 
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text(tr("গবেষকের নাম", "Researcher Name")) },
+                    singleLine = true,
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = department,
+                        onValueChange = { department = it },
+                        label = { Text(tr("বিভাগ", "Department")) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = institution,
+                        onValueChange = { institution = it },
+                        label = { Text(tr("বিশ্ববিদ্যালয়/প্রতিষ্ঠান", "University / Inst.")) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
                 OutlinedTextField(
-                    value = department,
-                    onValueChange = { department = it },
-                    label = { Text(tr("বিভাগ (Department)", "Department")) },
+                    value = bio,
+                    onValueChange = { bio = it },
+                    label = { Text(tr("সংক্ষিপ্ত বায়ো / গবেষণার লক্ষ্য", "Short Bio / Academic Goal")) },
+                    minLines = 2,
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Text(
+                    tr("⏱️ দৈনিক পড়ার লক্ষ্যমাত্রা (Daily Reading Goal):", "⏱️ Daily Reading Goal:"),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = p.text
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(15, 30, 45, 60).forEach { mins ->
+                        val active = dailyGoalMin == mins
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (active) p.primary else p.cardAlt,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { dailyGoalMin = mins }
+                        ) {
+                            Text(
+                                text = tr("$mins মি.", "${mins}m"),
+                                color = if (active) Color.White else p.text,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.5.sp,
+                                modifier = Modifier
+                                    .padding(vertical = 8.dp)
+                                    .wrapContentWidth(Alignment.CenterHorizontally)
+                            )
+                        }
+                    }
+                }
 
                 Text(tr("রিসার্চ ইন্টারেস্ট:", "Research Interests:"), style = MaterialTheme.typography.titleMedium, color = p.text)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -312,9 +458,9 @@ private fun OnboardingProfileSetupView(
                     }
                 }
 
-                Text(tr("কো-অথর ম্যাচমেকিং স্কিলস:", "Co-Author Matchmaking Skills:"), style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(tr("কো-অথর ম্যাচমেকিং স্কিলস (কাস্টম ট্যাগ যোগ করুন):", "Co-Author Skills (Tap or Add Custom):"), style = MaterialTheme.typography.titleMedium, color = p.text)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ALL_SKILL_TAGS.forEach { sk ->
+                    allSkillTags.forEach { sk ->
                         val active = sk in skills
                         Surface(
                             shape = RoundedCornerShape(12.dp),
@@ -334,6 +480,28 @@ private fun OnboardingProfileSetupView(
                         }
                     }
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = customSkillInput,
+                        onValueChange = { customSkillInput = it },
+                        placeholder = { Text(tr("নতুন স্কিল লিখুন (যেমন SPSS, NVivo)...", "Add custom skill (e.g. SPSS, NVivo)..."), fontSize = 12.sp) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Button(
+                        onClick = {
+                            if (customSkillInput.isNotBlank()) {
+                                skills = skills + customSkillInput.trim()
+                                customSkillInput = ""
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = p.primary)
+                    ) {
+                        Text("+ Add")
+                    }
+                }
 
                 Surface(shape = RoundedCornerShape(14.dp), color = p.accentSoft) {
                     Row(
@@ -346,7 +514,7 @@ private fun OnboardingProfileSetupView(
                         OutlinedTextField(
                             value = referralInput,
                             onValueChange = { referralInput = it },
-                            label = { Text(tr("রেফারেল কোড", "Referral Code")) },
+                            label = { Text(tr("রেফারেল কোড (ঐচ্ছিক)", "Referral Code (Optional)")) },
                             singleLine = true,
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
@@ -357,10 +525,36 @@ private fun OnboardingProfileSetupView(
                 }
 
                 SparcPrimaryButton(
-                    text = tr("প্রোফাইল সংরক্ষণ করুন", "Save Researcher Profile"),
-                    onClick = { onSave(name, department, interests.toList(), skills.toList(), referralInput) }
+                    text = tr("প্রোফাইল ও কাস্টমাইজেশন সেভ করুন", "Save Profile & Customization"),
+                    onClick = {
+                        onSave(
+                            name,
+                            department,
+                            institution,
+                            bio,
+                            dailyGoalMin,
+                            interests.toList(),
+                            skills.toList(),
+                            referralInput
+                        )
+                    }
                 )
             }
         }
     }
 }
+
+private fun readAvatarBytesAndCache(context: Context, uri: Uri): Triple<ByteArray, String, String>? = runCatching {
+    var name = "avatar.jpg"
+    context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+        val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (idx >= 0 && c.moveToFirst()) {
+            name = c.getString(idx) ?: name
+        }
+    }
+    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
+    val cacheDir = File(context.cacheDir, "avatars").apply { mkdirs() }
+    val localFile = File(cacheDir, "${System.currentTimeMillis()}_$name")
+    localFile.writeBytes(bytes)
+    Triple(bytes, name, localFile.absolutePath)
+}.getOrNull()

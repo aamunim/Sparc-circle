@@ -7,7 +7,9 @@ import kotlinx.serialization.json.Json
 import org.sparc.studycircle.core.data.SparcRepository
 import org.sparc.studycircle.core.data.SupabaseAuthSession
 import org.sparc.studycircle.core.model.ApiKeyVaultConfig
+import org.sparc.studycircle.core.model.AppCustomizationConfig
 import org.sparc.studycircle.core.model.SparcVisualTheme
+import org.sparc.studycircle.core.model.UserUiCustomization
 
 class SparcApp : Application() {
     lateinit var repository: SparcRepository
@@ -36,6 +38,16 @@ class SparcApp : Application() {
             runCatching { json.decodeFromString<SupabaseAuthSession>(it) }.getOrNull()
         }
 
+        val savedAppCustomJson = prefs.getString("app_customization_config", null)
+        val initialAppCustom = savedAppCustomJson?.let {
+            runCatching { json.decodeFromString<AppCustomizationConfig>(it) }.getOrNull()
+        } ?: AppCustomizationConfig()
+
+        val savedUiCustomJson = prefs.getString("user_ui_customization", null)
+        val initialUiCustom = savedUiCustomJson?.let {
+            runCatching { json.decodeFromString<UserUiCustomization>(it) }.getOrNull()
+        } ?: UserUiCustomization()
+
         repository = SparcRepository(
             initialTheme = initialTheme,
             initialAuthenticated = isAuthenticated,
@@ -44,6 +56,8 @@ class SparcApp : Application() {
             initialLanguage = savedLang,
             initialApiVault = initialVault,
             initialSession = initialSession,
+            initialAppCustomization = initialAppCustom,
+            initialUiCustomization = initialUiCustom,
             onPersistTheme = { chosen ->
                 prefs.edit().putString("visual_theme", chosen.name).apply()
             },
@@ -68,6 +82,12 @@ class SparcApp : Application() {
                     ed.putString("supabase_auth_session", json.encodeToString(sess))
                 }
                 ed.apply()
+            },
+            onPersistAppCustomization = { cfg ->
+                prefs.edit().putString("app_customization_config", json.encodeToString(cfg)).apply()
+            },
+            onPersistUiCustomization = { uiCfg ->
+                prefs.edit().putString("user_ui_customization", json.encodeToString(uiCfg)).apply()
             }
         )
     }

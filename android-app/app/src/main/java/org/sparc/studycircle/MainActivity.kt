@@ -22,10 +22,12 @@ class MainActivity : ComponentActivity() {
 
             SparcTheme(
                 visualTheme = state.visualTheme,
+                accentPreset = state.uiCustomization.accentPreset,
                 appLanguage = state.appLanguage
             ) {
                 when {
                     showSplash -> SparcAnimatedSplashScreen(
+                        appCustomization = state.appCustomization,
                         onFinished = { showSplash = false }
                     )
                     !state.isAuthenticated -> SparcAuthScreen(repository = repository)
