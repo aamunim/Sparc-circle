@@ -295,6 +295,120 @@ fun SparcAuthScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            var showForgotDialog by remember { mutableStateOf(false) }
+            var resetSuccessMsg by remember { mutableStateOf<String?>(null) }
+
+            if (mode == 0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Text(
+                        text = tr("🔑 পাসওয়ার্ড ভুলে গেছেন?", "🔑 Forgot Password?"),
+                        color = p.primary,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable {
+                            errorMessage = null
+                            resetSuccessMsg = null
+                            showForgotDialog = true
+                        }
+                    )
+                }
+            }
+
+            if (showForgotDialog) {
+                var resetEmail by remember(email) { mutableStateOf(email) }
+                var resetContact by remember { mutableStateOf("") }
+                var resetBusy by remember { mutableStateOf(false) }
+                var resetErr by remember { mutableStateOf<String?>(null) }
+
+                AlertDialog(
+                    onDismissRequest = { if (!resetBusy) showForgotDialog = false },
+                    title = {
+                        Text(
+                            tr("🔑 পাসওয়ার্ড রিসেট অনুরোধ", "🔑 Request Password Reset"),
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                tr(
+                                    "আপনার নিবন্ধিত ইমেইল ও যোগাযোগের নম্বর (হোয়াটসঅ্যাপ/মোবাইল) দিন। SPARC অ্যাডমিন যাচাই করে আপনার পাসওয়ার্ড রিসেট করে দেবেন।",
+                                    "Enter your registered email and WhatsApp/phone number. A SPARC Admin will verify and reset your password."
+                                ),
+                                fontSize = 12.sp,
+                                color = p.muted
+                            )
+                            OutlinedTextField(
+                                value = resetEmail,
+                                onValueChange = { resetEmail = it },
+                                label = { Text(tr("নিবন্ধিত ইমেইল", "Registered Email")) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = resetContact,
+                                onValueChange = { resetContact = it },
+                                label = { Text(tr("হোয়াটসঅ্যাপ / মোবাইল নম্বর", "WhatsApp / Phone Number")) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            resetErr?.let {
+                                Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            enabled = !resetBusy,
+                            onClick = {
+                                scope.launch {
+                                    resetBusy = true
+                                    resetErr = null
+                                    val res = repository.requestPasswordReset(resetEmail, resetContact)
+                                    resetBusy = false
+                                    res.onSuccess {
+                                        showForgotDialog = false
+                                        resetSuccessMsg = if (state.appLanguage == "en") {
+                                            "✓ Password reset request sent! Admin will contact you shortly."
+                                        } else {
+                                            "✓ পাসওয়ার্ড রিসেট অনুরোধ জমা হয়েছে! অ্যাডমিন দ্রুত নতুন পাসওয়ার্ড জানিয়ে দেবেন।"
+                                        }
+                                    }.onFailure {
+                                        resetErr = it.message
+                                    }
+                                }
+                            }
+                        ) {
+                            Text(if (resetBusy) tr("পাঠানো হচ্ছে...", "Sending...") else tr("অনুরোধ পাঠান", "Submit Request"))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showForgotDialog = false }) {
+                            Text(tr("বাতিল", "Cancel"))
+                        }
+                    }
+                )
+            }
+
+            resetSuccessMsg?.let { okMsg ->
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = p.primarySoft,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        okMsg,
+                        color = p.primarySoftText,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
+            }
+
             if (mode == 1) {
                 Text(
                     tr("আপনার মূল দক্ষতা (কো-অথর ম্যাচমেকিং):", "Core Skills (Co-Author Matchmaking):"),
@@ -368,7 +482,8 @@ fun SparcAuthScreen(
             )
         }
 
-        // Instant 1-Tap Demo Entry Card
+        // Guest Preview Card + Privacy Policy Link
+        var showPrivacyModal by remember { mutableStateOf(false) }
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = p.card,
@@ -393,18 +508,53 @@ fun SparcAuthScreen(
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        tr("ডেমো গবেষক হিসেবে সরাসরি প্রবেশ করুন", "Enter Instantly as Demo Researcher"),
+                        tr("গেস্ট প্রিভিউ মোডে ঘুরে দেখুন", "Explore in Guest Preview Mode"),
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.5.sp,
                         color = p.text
                     )
                     Text(
-                        tr("পাসওয়ার্ড ছাড়াই ১ ট্যাপে সব ফিচার ও ১২টি স্ক্রিন টেস্ট করুন", "Explore all features & 12 screens in 1 tap without a password"),
+                        tr("অ্যাকাউন্ট খোলার আগে অ্যাপের ইন্টারফেস দেখে নিন", "Preview the interface before creating an account"),
                         fontSize = 11.5.sp,
                         color = p.muted
                     )
                 }
             }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = tr("🔒 গোপনীয়তা নীতি ও ডেটা সুরক্ষা (Privacy Policy)", "🔒 Privacy Policy & Data Safety"),
+                fontSize = 12.sp,
+                color = p.muted,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable { showPrivacyModal = true }
+            )
+        }
+
+        if (showPrivacyModal) {
+            AlertDialog(
+                onDismissRequest = { showPrivacyModal = false },
+                title = { Text(tr("🔒 SPARC গোপনীয়তা নীতি", "🔒 SPARC Privacy Policy"), fontWeight = FontWeight.ExtraBold) },
+                text = {
+                    Text(
+                        tr(
+                            "SPARC Study Circle আপনার নাম, ইমেইল, বিভাগ, পাঠ অগ্রগতি এবং রাইটিং পাণ্ডুলিপি শুধুমাত্র একাডেমিক পাঠচক্র ও মানব মেন্টর মূল্যায়নের জন্য সুরক্ষিত সার্ভারে সংরক্ষণ করে। আপনার তথ্য কখনোই কোনো তৃতীয় পক্ষের কাছে বিক্রি বা বিজ্ঞাপনের কাজে শেয়ার করা হয় না। লগইন করার পর Settings -> App থেকে যেকোনো সময় ১ ক্লিকে আপনার অ্যাকাউন্ট ও সমস্ত ডেটা স্থায়ীভাবে মুছে ফেলতে পারবেন।",
+                            "SPARC Study Circle stores your name, email, department, reading progress, and manuscripts securely solely for academic study circles and human mentor evaluation. We never sell or share user data for advertising. You can permanently delete your account and all associated data anytime from Settings -> App."
+                        ),
+                        fontSize = 12.5.sp,
+                        lineHeight = 19.sp
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { showPrivacyModal = false }) {
+                        Text(tr("বুঝেছি", "Got It"))
+                    }
+                }
+            )
         }
     }
 }

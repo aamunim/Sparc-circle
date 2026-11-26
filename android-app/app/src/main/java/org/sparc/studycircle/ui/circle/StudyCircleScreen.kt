@@ -381,6 +381,39 @@ fun StudyCircleScreen(
                                 )
                             }
                         }
+
+                        // Pack 2: Viral WhatsApp / Messenger Circle Invite Poster & Code Share
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color.White.copy(alpha = 0.22f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    shareCircleInvitePoster(
+                                        context = context,
+                                        circle = circle,
+                                        bookTitle = circleBook.title,
+                                        hostName = state.currentUser.name,
+                                        lang = lang
+                                    )
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = tr(
+                                        "📲 WhatsApp / Messenger ইনভাইট পোস্টার ও কোড শেয়ার করুন",
+                                        "📲 Share WhatsApp / Messenger Invite Poster & Code"
+                                    ),
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -1410,3 +1443,96 @@ private fun CircleCustomizationBottomSheet(
         }
     }
 }
+
+private fun shareCircleInvitePoster(
+    context: android.content.Context,
+    circle: StudyCircleGroup,
+    bookTitle: String,
+    hostName: String,
+    lang: String
+) {
+    val codeLine = if (circle.isPrivate && !circle.inviteCode.isNullOrBlank()) {
+        if (lang == "en") "🔑 Private Invite Code: ${circle.inviteCode}" else "🔑 প্রাইভেট ইনভাইট কোড: ${circle.inviteCode}"
+    } else {
+        if (lang == "en") "🌐 Open Public Study Circle" else "🌐 উন্মুক্ত পাবলিক স্টাডি সার্কেল"
+    }
+    val caption = if (lang == "en") {
+        """📚 Join our SPARC Study Circle!
+Circle: ${circle.name}
+Book: $bookTitle
+Schedule: ${circle.sessionScheduleLabel}
+Host: $hostName
+$codeLine
+Download SPARC Study Circle & join Chapter ${circle.currentGroupChapter}!"""
+    } else {
+        """📚 আমাদের SPARC স্টাডি সার্কেলে আমন্ত্রণ!
+সার্কেল: ${circle.name}
+বই: $bookTitle
+সেশন সময়সূচি: ${circle.sessionScheduleLabel}
+আয়োজনে: $hostName
+$codeLine
+SPARC Study Circle অ্যাপে যুক্ত হয়ে একসাথে অধ্যায় ${circle.currentGroupChapter} পড়া ও গবেষণা শুরু করুন!"""
+    }
+
+    runCatching {
+        val bmp = android.graphics.Bitmap.createBitmap(1080, 620, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bmp)
+        val bg = android.graphics.Paint().apply { color = android.graphics.Color.parseColor("#0F172A") }
+        canvas.drawRect(0f, 0f, 1080f, 620f, bg)
+
+        val accent = android.graphics.Paint().apply { color = android.graphics.Color.parseColor("#2563EB") }
+        canvas.drawRect(0f, 0f, 1080f, 18f, accent)
+
+        val badgePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.parseColor("#60A5FA")
+            textSize = 28f
+            isFakeBoldText = true
+        }
+        val titlePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.WHITE
+            textSize = 46f
+            isFakeBoldText = true
+        }
+        val bodyPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.parseColor("#E2E8F0")
+            textSize = 32f
+        }
+        val codePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.parseColor("#FCD34D")
+            textSize = 34f
+            isFakeBoldText = true
+        }
+
+        canvas.drawText("SPARC STUDY CIRCLE • INVITATION", 60f, 95f, badgePaint)
+        canvas.drawText(circle.name.take(36), 60f, 175f, titlePaint)
+        canvas.drawText("📖 ${bookTitle.take(44)}", 60f, 255f, bodyPaint)
+        canvas.drawText("🗓️ ${circle.sessionScheduleLabel} • 👥 ${circle.memberIds.size}/${circle.maxMembers}", 60f, 325f, bodyPaint)
+        canvas.drawText(codeLine, 60f, 415f, codePaint)
+        canvas.drawText("বই পড়তে পড়তে লেখা শেখা • Host: ${hostName.take(28)}", 60f, 540f, bodyPaint)
+
+        val dir = java.io.File(context.cacheDir, "social_cards").apply { mkdirs() }
+        val posterFile = java.io.File(dir, "sparc_circle_invite.png")
+        java.io.FileOutputStream(posterFile).use { out ->
+            bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+        }
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            posterFile
+        )
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_TEXT, caption)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(shareIntent, "Share Study Circle Invite"))
+    }.onFailure {
+        val textIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, caption)
+        }
+        context.startActivity(Intent.createChooser(textIntent, "Share Study Circle Invite"))
+    }
+}
+

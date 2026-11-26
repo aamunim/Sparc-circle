@@ -551,6 +551,7 @@ fun SparcSettingsBottomSheet(
     onSaveAppCustomization: (AppCustomizationConfig) -> Unit = {},
     onUpdateApiVault: (ApiKeyVaultConfig, String) -> Unit = { _, _ -> },
     onLogout: () -> Unit = {},
+    onDeleteAccount: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val p = LocalSparcPalette.current
@@ -611,6 +612,10 @@ fun SparcSettingsBottomSheet(
                     onLogout = {
                         onDismiss()
                         onLogout()
+                    },
+                    onDeleteAccount = {
+                        onDismiss()
+                        onDeleteAccount()
                     }
                 )
                 2 -> BrandAndPaymentAdminTab(
@@ -864,9 +869,13 @@ private fun AppIconAndLayoutTab(
     uiCustomization: UserUiCustomization,
     onSwitchRolePreview: (UserRole) -> Unit,
     onUpdateUiCustomization: (UserUiCustomization, String?, String?) -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onDeleteAccount: () -> Unit = {}
 ) {
     val p = LocalSparcPalette.current
+    var showPrivacyDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var deleteConfirmText by remember { mutableStateOf("") }
     val tabChoices = listOf(
         "CIRCLE" to tr("সার্কেল", "Circle"),
         "LIBRARY" to tr("লাইব্রেরি", "Library"),
@@ -1062,15 +1071,118 @@ private fun AppIconAndLayoutTab(
         }
 
         item {
-            OutlinedButton(
-                onClick = onLogout,
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.2.dp, SparcCrimson),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(tr("লগআউট করুন (Sign Out)", "Sign Out"), color = SparcCrimson, fontWeight = FontWeight.Bold)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { showPrivacyDialog = true },
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, p.border),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        tr("🔒 গোপনীয়তা নীতি ও ডেটা সুরক্ষা (Privacy Policy)", "🔒 Privacy Policy & Data Safety"),
+                        color = p.text,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onLogout,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.2.dp, SparcCrimson),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(tr("লগআউট করুন (Sign Out)", "Sign Out"), color = SparcCrimson, fontWeight = FontWeight.Bold)
+                }
+
+                TextButton(
+                    onClick = {
+                        deleteConfirmText = ""
+                        showDeleteConfirmDialog = true
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        tr("🗑️ স্থায়ীভাবে অ্যাকাউন্ট ও ডেটা মুছুন (Delete Account)", "🗑️ Permanently Delete Account & Data"),
+                        color = SparcCrimson,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
+    }
+
+    if (showPrivacyDialog) {
+        AlertDialog(
+            onDismissRequest = { showPrivacyDialog = false },
+            title = { Text(tr("🔒 SPARC গোপনীয়তা নীতি", "🔒 SPARC Privacy Policy"), fontWeight = FontWeight.ExtraBold) },
+            text = {
+                Text(
+                    tr(
+                        "SPARC Study Circle আপনার একাডেমিক প্রোফাইল, পাঠ অগ্রগতি, রাইটিং পাণ্ডুলিপি এবং ওয়ালেট লেনদেন শুধুমাত্র পাঠচক্র পরিচালনা ও মেন্টর মূল্যায়নের জন্য সুরক্ষিত রাখে। কোনো তৃতীয় পক্ষের কাছে ডেটা বিক্রি বা বিজ্ঞাপনে ব্যবহার করা হয় না। ফোনের নোটিফিকেশন রাত ১০টা থেকে সকাল ৭টা পর্যন্ত স্বয়ংক্রিয়ভাবে সাইলেন্ট (Quiet Hours) থাকে।",
+                        "SPARC Study Circle stores your academic profile, reading progress, manuscripts, and wallet ledger solely for study circle collaboration and human mentor evaluation. Data is never sold or shared for ads. Notifications observe 10 PM–7 AM Quiet Hours."
+                    ),
+                    fontSize = 12.5.sp,
+                    lineHeight = 19.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showPrivacyDialog = false }) {
+                    Text(tr("বন্ধ করুন", "Close"))
+                }
+            }
+        )
+    }
+
+    if (showDeleteConfirmDialog) {
+        val canDelete = deleteConfirmText.trim().equals("DELETE", ignoreCase = true)
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            title = {
+                Text(
+                    tr("⚠️ স্থায়ীভাবে অ্যাকাউন্ট মুছবেন?", "⚠️ Permanently Delete Account?"),
+                    color = SparcCrimson,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        tr(
+                            "সতর্কতা: আপনার প্রোফাইল, পাঠ অগ্রগতি, রাইটিং এবং ওয়ালেট ডেটা সার্ভার থেকে স্থায়ীভাবে মুছে যাবে। এটি আর ফিরিয়ে আনা যাবে না। নিশ্চিত করতে নিচে ইংরেজিতে DELETE লিখুন:",
+                            "Warning: Your profile, reading progress, manuscripts, and wallet history will be permanently erased from the server. Type DELETE below to confirm:"
+                        ),
+                        fontSize = 12.sp,
+                        color = p.muted
+                    )
+                    OutlinedTextField(
+                        value = deleteConfirmText,
+                        onValueChange = { deleteConfirmText = it },
+                        label = { Text("DELETE") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = canDelete,
+                    colors = ButtonDefaults.buttonColors(containerColor = SparcCrimson),
+                    onClick = {
+                        showDeleteConfirmDialog = false
+                        onDeleteAccount()
+                    }
+                ) {
+                    Text(tr("স্থায়ীভাবে মুছুন", "Delete Permanently"), color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                    Text(tr("বাতিল", "Cancel"))
+                }
+            }
+        )
     }
 }
 

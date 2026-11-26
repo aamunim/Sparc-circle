@@ -293,7 +293,14 @@ private fun AcademicLibraryCatalogView(
         }
 
         items(books, key = { it.id }) { book ->
+            val context = LocalContext.current
             val hasCloudPdf = book.pdfUrl.startsWith("http") && !book.pdfUrl.contains("storage.sparc.org.bd")
+            val isOfflineCached = remember(book.pdfUrl) {
+                hasCloudPdf && java.io.File(
+                    context.cacheDir,
+                    "cloud_pdfs/sparc_${book.pdfUrl.hashCode().toUInt()}.pdf"
+                ).let { it.exists() && it.length() > 100L }
+            }
             val hasCloudAudio = book.chapters.any {
                 it.audioSummaryUrl.startsWith("http") && !it.audioSummaryUrl.contains("storage.sparc.org.bd")
             }
@@ -342,7 +349,17 @@ private fun AcademicLibraryCatalogView(
                                     )
                                 }
                             }
-                            if (hasCloudPdf) {
+                            if (isOfflineCached) {
+                                Surface(shape = RoundedCornerShape(8.dp), color = p.accentSoft) {
+                                    Text(
+                                        text = tr("📥 অফলাইন প্রস্তুত ✓", "📥 Offline Ready ✓"),
+                                        color = p.accentText,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                    )
+                                }
+                            } else if (hasCloudPdf) {
                                 Surface(shape = RoundedCornerShape(8.dp), color = p.primarySoft) {
                                     Text(
                                         text = "☁️ PDF",

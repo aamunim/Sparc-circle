@@ -1,6 +1,8 @@
-// Supabase Edge Function: auth-register
-// Creates an auto-confirmed user via Admin API (bypassing SMTP 2/hr HTTP 429 rate limits)
-// and immediately returns an authenticated session token + provisioned researcher profile.
+// Server Edge Function: auth-register
+// 1. Default action: Creates an auto-confirmed user via Admin API (bypassing SMTP 2/hr HTTP 429 rate limits)
+//    and immediately returns an authenticated session token + provisioned researcher profile.
+// 2. action === "admin_reset_password": Allows an authenticated SPARC Admin (base_role = 'admin')
+//    to reset any researcher's password in 1 click without SMTP bottlenecks.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -27,7 +29,57 @@ serve(async (req: Request) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const { email, password, name, department, skills, referral_code } = await req.json();
+    const payload = await req.json();
+
+    // ------------------------------------------------------------------------
+    // Admin 1-Click Password Reset
+    // ------------------------------------------------------------------------
+    if (payload?.action === "admin_reset_password") {
+      const authHeader = req.headers.get("Authorization") ?? "";
+      const jwt = authHeader.replace(/^Bearer\s+/i, "").trim();
+      if (!jwt) throw new Error("Admin authentication required.");
+
+      const { data: callerAuth, error: callerErr } = await adminClient.auth.getUser(jwt);
+      if (callerErr || !callerAuth?.user) throw new Error("Invalid session.");
+
+      const { data: callerProf } = await adminClient
+        .from("profiles")
+        .select("role,base_role")
+        .eq("id", callerAuth.user.id)
+        .single();
+
+      if (callerProf?.base_role !== "admin" && callerProf?.role !== "admin") {
+        throw new Error("শুধুমাত্র অ্যাডমিন পাসওয়ার্ড রিসেট করতে পারেন।");
+      }
+
+      const targetUserId = String(payload.target_user_id ?? "").trim();
+      const newPassword = String(payload.new_password ?? "");
+      if (!targetUserId || newPassword.length < 6) {
+        throw new Error("নতুন পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।");
+      }
+
+      const { error: updErr } = await adminClient.auth.admin.updateUserById(targetUserId, {
+        password: newPassword,
+        email_confirm: true,
+      });
+      if (updErr) throw updErr;
+
+      await adminClient
+        .from("password_reset_requests")
+        .update({ status: "resolved", resolved_at: new Date().toISOString() })
+        .eq("user_id", targetUserId)
+        .eq("status", "pending");
+
+      return new Response(
+        JSON.stringify({ updated: true }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ------------------------------------------------------------------------
+    // Standard Auto-Confirmed Researcher Registration
+    // ------------------------------------------------------------------------
+    const { email, password, name, department, skills, referral_code } = payload;
     const cleanEmail = String(email ?? "").trim().toLowerCase();
     const cleanPassword = String(password ?? "");
     const cleanName = String(name ?? "").trim() || cleanEmail.split("@")[0];
@@ -37,7 +89,6 @@ serve(async (req: Request) => {
       throw new Error("Please provide a valid email and a password of at least 6 characters.");
     }
 
-    // Create confirmed user via Admin API — zero confirmation emails sent, zero HTTP 429 rate limits!
     const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
       email: cleanEmail,
       password: cleanPassword,
@@ -48,11 +99,8 @@ serve(async (req: Request) => {
       },
     });
 
-    if (createErr) {
-      // If user already exists, allow signing in directly with their password
-      if (!createErr.message.toLowerCase().includes("already")) {
-        throw createErr;
-      }
+    if (createErr && !createErr.message.toLowerCase().includes("already")) {
+      throw createErr;
     }
 
     const userId = created?.user?.id;
@@ -71,7 +119,6 @@ serve(async (req: Request) => {
       }
     }
 
-    // Immediately issue a real JWT session
     const { data: signInData, error: signInErr } = await publicClient.auth.signInWithPassword({
       email: cleanEmail,
       password: cleanPassword,

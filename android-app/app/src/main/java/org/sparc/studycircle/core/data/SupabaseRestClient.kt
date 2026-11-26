@@ -1858,4 +1858,77 @@ Target Word Range: $minWords-$maxWords words (Current: $wordCount words)."""
             Unit
         }
     }
+
+    suspend fun requestPasswordResetRemote(email: String, contactNote: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(isConfigured) { "Server not configured" }
+            val url = "${activeSupabaseUrl.trimEnd('/')}/rest/v1/rpc/request_password_reset_rpc"
+            val body = buildJsonObject {
+                put("p_email", email.trim())
+                put("p_contact_note", contactNote.trim())
+            }
+            val req = Request.Builder()
+                .url(url)
+                .addHeader("apikey", activeAnonKey)
+                .addHeader("Authorization", "Bearer $activeAnonKey")
+                .post(body.toString().toRequestBody(jsonMedia))
+                .build()
+            http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    val raw = resp.body?.string().orEmpty()
+                    val msg = runCatching {
+                        json.parseToJsonElement(raw).jsonObject["message"]?.jsonPrimitive?.contentOrNull
+                    }.getOrNull() ?: "HTTP ${resp.code}"
+                    error(msg)
+                }
+            }
+            // Best-effort standard recover endpoint trigger if SMTP is configured
+            runCatching {
+                val recReq = Request.Builder()
+                    .url("${activeSupabaseUrl.trimEnd('/')}/auth/v1/recover")
+                    .addHeader("apikey", activeAnonKey)
+                    .post(buildJsonObject { put("email", email.trim()) }.toString().toRequestBody(jsonMedia))
+                    .build()
+                http.newCall(recReq).execute().close()
+            }
+            Unit
+        }
+    }
+
+    suspend fun deleteMyAccountRemote(): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser)
+            postRpc("delete_my_account_rpc", buildJsonObject {})
+            Unit
+        }
+    }
+
+    suspend fun redeemScholarshipCouponRemote(code: String): Result<JsonObject> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser)
+            postRpc(
+                "redeem_scholarship_coupon_rpc",
+                buildJsonObject { put("p_code", code.trim().uppercase()) }
+            ).jsonObject
+        }
+    }
+
+    suspend fun issueOrGetCertificateRemote(
+        circleId: String? = null,
+        bookId: String? = null,
+        title: String? = null
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser)
+            val obj = postRpc(
+                "issue_or_get_certificate_rpc",
+                buildJsonObject {
+                    if (!circleId.isNullOrBlank() && isUuid(circleId)) put("p_circle_id", circleId)
+                    if (!bookId.isNullOrBlank() && isUuid(bookId)) put("p_book_id", bookId)
+                    if (!title.isNullOrBlank()) put("p_title", title.trim())
+                }
+            ).jsonObject
+            obj["certificate_code"]?.jsonPrimitive?.contentOrNull ?: ""
+        }
+    }
 }

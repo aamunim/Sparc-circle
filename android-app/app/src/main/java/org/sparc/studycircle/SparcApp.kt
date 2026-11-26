@@ -6,6 +6,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.sparc.studycircle.core.data.SparcRepository
 import org.sparc.studycircle.core.data.SupabaseAuthSession
+import org.sparc.studycircle.core.media.SparcNotificationHelper
 import org.sparc.studycircle.core.model.ApiKeyVaultConfig
 import org.sparc.studycircle.core.model.AppCustomizationConfig
 import org.sparc.studycircle.core.model.SparcVisualTheme
@@ -17,6 +18,7 @@ class SparcApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        SparcNotificationHelper.ensureChannel(this)
         val json = Json { ignoreUnknownKeys = true }
         val prefs = getSharedPreferences("sparc_ui_prefs", Context.MODE_PRIVATE)
         val savedTheme = prefs.getString("visual_theme", SparcVisualTheme.COBALT_SAAS.name)
@@ -88,6 +90,9 @@ class SparcApp : Application() {
             },
             onPersistUiCustomization = { uiCfg ->
                 prefs.edit().putString("user_ui_customization", json.encodeToString(uiCfg)).apply()
+            },
+            onSystemAlert = { title, body ->
+                SparcNotificationHelper.dispatchAlert(this@SparcApp, title, body)
             }
         )
     }

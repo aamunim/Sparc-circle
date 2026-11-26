@@ -435,6 +435,13 @@ fun SparcMainScaffold(repository: SparcRepository) {
             },
             onUpdateApiVault = { vault, msg -> repository.updateApiVault(vault, msg) },
             onLogout = { repository.logout() },
+            onDeleteAccount = {
+                scope.launch {
+                    repository.deleteMyAccount().onFailure { err ->
+                        repository.dismissBanner()
+                    }
+                }
+            },
             onDismiss = { showSettingsSheet = false }
         )
     }

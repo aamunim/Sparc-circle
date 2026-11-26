@@ -636,4 +636,51 @@ class SparcDomainEngineTest {
         assertEquals(1, prodRepo.state.value.bookOrders.size)
         assertEquals(0.0, prodRepo.state.value.currentUser.walletBalanceBdt, 0.001)
     }
+
+    @Test
+    fun `v4 suite validates quiet hours, AI exercise prompt generator, password recovery, account deletion, and verifiable certificates`() = kotlinx.coroutines.runBlocking {
+        // 1. Quiet Hours (10 PM - 7 AM)
+        assertTrue(org.sparc.studycircle.core.media.SparcNotificationHelper.isQuietHoursNow(java.time.LocalTime.of(22, 0)))
+        assertTrue(org.sparc.studycircle.core.media.SparcNotificationHelper.isQuietHoursNow(java.time.LocalTime.of(23, 30)))
+        assertTrue(org.sparc.studycircle.core.media.SparcNotificationHelper.isQuietHoursNow(java.time.LocalTime.of(3, 15)))
+        assertFalse(org.sparc.studycircle.core.media.SparcNotificationHelper.isQuietHoursNow(java.time.LocalTime.of(7, 0)))
+        assertFalse(org.sparc.studycircle.core.media.SparcNotificationHelper.isQuietHoursNow(java.time.LocalTime.of(14, 45)))
+        assertFalse(org.sparc.studycircle.core.media.SparcNotificationHelper.isQuietHoursNow(java.time.LocalTime.of(21, 59)))
+
+        // 2. 1-Click AI Exercise Template Prompt Generator
+        val bnPrompt = ExerciseTemplateParser.generateAiPrompt("bn", chapterNo = 3, bookTitle = "গবেষণা পদ্ধতি")
+        assertTrue(bnPrompt.contains("CHAPTER_NO: 3"))
+        assertTrue(bnPrompt.contains("OPT*:"))
+        assertTrue(bnPrompt.contains("[OPEN | H]"))
+
+        val enPrompt = ExerciseTemplateParser.generateAiPrompt("en", chapterNo = 2, bookTitle = "Qualitative Inquiry")
+        assertTrue(enPrompt.contains("CHAPTER_NO: 2"))
+        assertTrue(enPrompt.contains("Qualitative Inquiry"))
+
+        // 3. Password Reset, Verifiable Certificate & Account Deletion
+        val repo = org.sparc.studycircle.core.data.SparcRepository(
+            supabaseClient = org.sparc.studycircle.core.data.SupabaseRestClient("", "")
+        )
+        assertTrue(repo.requestPasswordReset("invalid-email", "").isFailure)
+        assertTrue(repo.requestPasswordReset("researcher@du.ac.bd", "01711223344").isSuccess)
+
+        repo.registerResearcher(
+            name = "Nadia Rahman",
+            email = "nadia@du.ac.bd",
+            password = "password123",
+            department = "Sociology",
+            skills = listOf("Academic Writing"),
+            referralCode = ""
+        )
+        assertTrue(repo.state.value.isAuthenticated)
+
+        var callbackCode = ""
+        repo.requestVerifiableCertificate { callbackCode = it }
+        assertTrue(callbackCode.startsWith("SPARC-"))
+        assertEquals(callbackCode, repo.state.value.issuedCertificateCode)
+
+        assertTrue(repo.deleteMyAccount().isSuccess)
+        assertFalse(repo.state.value.isAuthenticated)
+    }
 }
+

@@ -223,6 +223,8 @@ export default function SparcAdminPortal() {
       <footer className="text-center text-[11px] text-slate-500 py-4 space-x-3">
         <span>SPARC Study Circle • বই পড়তে পড়তে লেখা শেখা</span>
         <span>•</span>
+        <a href="/verify" className="underline hover:text-slate-800">সার্টিফিকেট যাচাই</a>
+        <span>•</span>
         <a href="/privacy" className="underline hover:text-slate-800">গোপনীয়তা নীতি</a>
         <span>•</span>
         <a href="/delete-account" className="underline hover:text-slate-800">অ্যাকাউন্ট মুছুন</a>
@@ -250,6 +252,9 @@ function BrandHeader({ subtitle }: { subtitle: string }) {
 function LoginScreen({ onReconfigure }: { onReconfigure: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [forgotMode, setForgotMode] = useState(false);
+  const [contactNote, setContactNote] = useState("");
+  const [resetSentMsg, setResetSentMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const cfg = readServerConfig();
@@ -260,6 +265,20 @@ function LoginScreen({ onReconfigure }: { onReconfigure: () => void }) {
     if (!sb) return;
     setBusy(true);
     setErr(null);
+    setResetSentMsg(null);
+    if (forgotMode) {
+      const { error } = await sb.rpc("request_password_reset_rpc", {
+        p_email: email.trim(),
+        p_contact_note: contactNote.trim(),
+      });
+      await sb.auth.resetPasswordForEmail(email.trim()).catch(() => null);
+      setBusy(false);
+      if (error) setErr(friendlyError(error));
+      else {
+        setResetSentMsg("✓ আপনার পাসওয়ার্ড রিসেট অনুরোধ অ্যাডমিন কিউতে জমা হয়েছে। অ্যাডমিন নতুন পাসওয়ার্ড সেট করে জানাবেন।");
+      }
+      return;
+    }
     const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
     setBusy(false);
     if (error) setErr(friendlyError(error));
@@ -268,17 +287,58 @@ function LoginScreen({ onReconfigure }: { onReconfigure: () => void }) {
   return (
     <FullScreen>
       <form onSubmit={submit} className="w-full max-w-sm bg-white p-8 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-        <BrandHeader subtitle="অ্যাডমিন ও মেন্টর পোর্টালে সাইন ইন করুন" />
+        <BrandHeader subtitle={forgotMode ? "পাসওয়ার্ড রিসেট অনুরোধ" : "অ্যাডমিন ও মেন্টর পোর্টালে সাইন ইন করুন"} />
         <div className="space-y-1">
           <label className="text-xs font-semibold text-slate-700">ইমেইল</label>
           <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} autoComplete="email" />
         </div>
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-slate-700">পাসওয়ার্ড</label>
-          <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} autoComplete="current-password" />
-        </div>
+        {forgotMode ? (
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-slate-700">যোগাযোগের নম্বর / নোট (যাতে অ্যাডমিন জানাতে পারেন)</label>
+            <input
+              value={contactNote}
+              onChange={(e) => setContactNote(e.target.value)}
+              placeholder="যেমন: WhatsApp 017XXXXXXXX"
+              className={inputCls}
+            />
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <div className="flex justify-between items-center">
+              <label className="text-xs font-semibold text-slate-700">পাসওয়ার্ড</label>
+              <button
+                type="button"
+                onClick={() => {
+                  setForgotMode(true);
+                  setErr(null);
+                  setResetSentMsg(null);
+                }}
+                className="text-[11px] text-[#0F5132] font-semibold underline"
+              >
+                পাসওয়ার্ড ভুলে গেছেন?
+              </button>
+            </div>
+            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} autoComplete="current-password" />
+          </div>
+        )}
         {err && <p className="text-xs text-red-700 bg-red-50 px-3 py-2 rounded-lg">{err}</p>}
-        <Btn type="submit" busy={busy} className="w-full py-2.5 text-sm">সাইন ইন</Btn>
+        {resetSentMsg && <p className="text-xs text-emerald-900 bg-emerald-50 px-3 py-2 rounded-lg">{resetSentMsg}</p>}
+        <Btn type="submit" busy={busy} className="w-full py-2.5 text-sm">
+          {forgotMode ? "রিসেট অনুরোধ পাঠান" : "সাইন ইন"}
+        </Btn>
+        {forgotMode && (
+          <button
+            type="button"
+            onClick={() => {
+              setForgotMode(false);
+              setErr(null);
+              setResetSentMsg(null);
+            }}
+            className="block mx-auto text-xs text-slate-600 underline"
+          >
+            ← সাইন ইনে ফিরে যান
+          </button>
+        )}
         <p className="text-[11px] text-slate-500 text-center">
           অ্যান্ড্রয়েড অ্যাপের একই অ্যাকাউন্ট দিয়ে সাইন ইন করুন। শুধু মেন্টর, SPARC প্রতিনিধি ও অ্যাডমিন প্রবেশ করতে পারবেন।
         </p>
@@ -294,7 +354,8 @@ function LoginScreen({ onReconfigure }: { onReconfigure: () => void }) {
             সার্ভার সংযোগ পরিবর্তন করুন
           </button>
         )}
-        <div className="pt-2 border-t border-slate-100 flex justify-center gap-4 text-[11px] text-slate-500">
+        <div className="pt-2 border-t border-slate-100 flex justify-center gap-3 text-[11px] text-slate-500">
+          <a href="/verify" className="underline hover:text-slate-800">সার্টিফিকেট যাচাই</a>
           <a href="/privacy" className="underline hover:text-slate-800">গোপনীয়তা নীতি</a>
           <a href="/delete-account" className="underline hover:text-slate-800">অ্যাকাউন্ট মুছুন</a>
         </div>

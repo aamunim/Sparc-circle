@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { friendlyError, server } from "@/lib/server";
-import { parseTemplate, ParsedTemplate, SAMPLE_TEMPLATE_BN } from "@/lib/templateParser";
+import { AI_GENERATOR_PROMPT_BN, parseTemplate, ParsedTemplate, SAMPLE_TEMPLATE_BN } from "@/lib/templateParser";
 import { Btn, Card, Empty, ErrorBox, Loading, Pill, SectionTitle, inputCls } from "@/components/ui";
 import type { TabProps } from "@/components/SparcAdminPortal";
 
@@ -305,11 +305,23 @@ function TemplateImporter({ books, notify, onImported }: { books: BookRow[]; not
 
   return (
     <Card className="space-y-3">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-2">
         <h3 className="text-sm font-bold">📝 নির্ধারিত অনুশীলনী টেমপ্লেট ইমপোর্টার</h3>
-        <button type="button" onClick={() => check(SAMPLE_TEMPLATE_BN)} className="text-xs underline text-[#0F5132] font-semibold">
-          নমুনা টেমপ্লেট বসান
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={async () => {
+              await navigator.clipboard.writeText(AI_GENERATOR_PROMPT_BN);
+              notify("🤖 AI প্রম্পট কপি হয়েছে! যেকোনো AI-তে আপনার PDF দিয়ে এটি পেস্ট করলেই পূর্ণাঙ্গ টেমপ্লেট পেয়ে যাবেন।");
+            }}
+            className="text-xs px-2.5 py-1 rounded-md bg-amber-100 hover:bg-amber-200 text-amber-950 font-semibold"
+          >
+            🤖 AI প্রম্পট কপি
+          </button>
+          <button type="button" onClick={() => check(SAMPLE_TEMPLATE_BN)} className="text-xs underline text-[#0F5132] font-semibold">
+            নমুনা বসান
+          </button>
+        </div>
       </div>
       <select value={bookId} onChange={(e) => setBookId(e.target.value)} className={inputCls}>
         {books.map((b) => (

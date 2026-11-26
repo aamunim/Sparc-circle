@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import org.sparc.studycircle.core.domain.SparcDomainEngine
 import org.sparc.studycircle.core.model.*
 import java.util.UUID
@@ -42,6 +44,7 @@ data class SparcAppState(
     val supervisionDeals: List<SupervisionDeal>,
     val walletHistory: List<WalletTransactionItem>,
     val lastAiFeedback: AiWritingFeedback? = null,
+    val issuedCertificateCode: String = "",
     val statusBannerMessage: String? = null
 )
 
@@ -63,9 +66,13 @@ class SparcRepository(
     private val onPersistApiVault: (ApiKeyVaultConfig) -> Unit = {},
     private val onPersistSession: (SupabaseAuthSession?) -> Unit = {},
     private val onPersistAppCustomization: (AppCustomizationConfig) -> Unit = {},
-    private val onPersistUiCustomization: (UserUiCustomization) -> Unit = {}
+    private val onPersistUiCustomization: (UserUiCustomization) -> Unit = {},
+    private val onSystemAlert: (String, String) -> Unit = { _, _ -> }
 ) {
     private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile
+    private var initialSyncDone = false
+    private val alertedKeys: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
 
     private val _state = MutableStateFlow(
         (if (useSeedFixtures) createInitialSeededState() else createCleanEmptyState()).let { base ->
@@ -130,6 +137,75 @@ class SparcRepository(
         }
         val snapRes = supabaseClient.fetchLiveWorkspaceSnapshot(emptyList())
         snapRes.onSuccess { snap ->
+            val currentSnapshotAlerts = mutableListOf<Triple<String, String, String>>()
+            val liveMeSnapshot = snap.me ?: _state.value.currentUser
+            val isEn = _state.value.appLanguage == "en"
+
+            if (snap.activeMuteScope == null) {
+                snap.pokesToday.filter { it.receiverId == liveMeSnapshot.id }.forEach { pk ->
+                    currentSnapshotAlerts += Triple(
+                        "poke:${pk.id}",
+                        if (isEn) "👋 ${pk.senderName} sent a reading nudge" else "👋 ${pk.senderName} আপনাকে পোক পাঠিয়েছেন",
+                        pk.presetMessage
+                    )
+                }
+            }
+            snap.messages.filter { it.receiverId == liveMeSnapshot.id }.forEach { m ->
+                currentSnapshotAlerts += Triple(
+                    "msg:${m.id}",
+                    if (isEn) "💬 Message from ${m.senderName}" else "💬 ${m.senderName}-এর বার্তা",
+                    m.body
+                )
+            }
+            snap.walletHistory.filter { it.amountBdt > 0 && it.status.equals("Verified", ignoreCase = true) }.forEach { w ->
+                currentSnapshotAlerts += Triple(
+                    "wallet:${w.id}:Verified",
+                    if (isEn) "✅ Wallet Credited (+৳${w.amountBdt.toInt()})" else "✅ ওয়ালেট অনুমোদিত (+৳${w.amountBdt.toInt()})",
+                    "${w.description} (${w.reference})"
+                )
+            }
+            snap.myChapterProgress.forEach { (chNo, prog) ->
+                if (prog.supervisorScore != null) {
+                    currentSnapshotAlerts += Triple(
+                        "grade:$chNo:${prog.supervisorScore}",
+                        if (isEn) "🎓 Chapter $chNo Evaluated by Mentor" else "🎓 অধ্যায় $chNo মেন্টর কর্তৃক মূল্যায়িত",
+                        if (isEn) "Mentor score: ${prog.supervisorScore}" else "মেন্টর প্রদত্ত নম্বর: ${prog.supervisorScore}"
+                    )
+                }
+                if (prog.writingSupervisorApproved) {
+                    currentSnapshotAlerts += Triple(
+                        "writeok:$chNo",
+                        if (isEn) "✍️ Chapter $chNo Writing Approved!" else "✍️ অধ্যায় $chNo রাইটিং অনুমোদিত!",
+                        if (isEn) "Your mentor approved your chapter manuscript." else "মানব মেন্টর আপনার অধ্যায়ের লেখাটি অনুমোদন করেছেন।"
+                    )
+                }
+                if (!prog.peerBuddyId.isNullOrBlank()) {
+                    currentSnapshotAlerts += Triple(
+                        "buddy:$chNo:${prog.peerBuddyId}",
+                        if (isEn) "🤝 Peer Study Buddy Assigned" else "🤝 সহপাঠী স্টাডি বাডি যুক্ত হয়েছে",
+                        if (isEn) "Collaborate on Chapter $chNo!" else "অধ্যায় $chNo একসাথে অনুশীলনের জন্য সহপাঠী বাডি যুক্ত হয়েছে।"
+                    )
+                }
+            }
+            snap.sessions.filter { it.hoursUntilSession in 0..24 }.forEach { sess ->
+                currentSnapshotAlerts += Triple(
+                    "sess:${sess.id}",
+                    if (isEn) "🎥 Upcoming Session: ${sess.title}" else "🎥 আসন্ন লাইভ সেশন: ${sess.title}",
+                    "${sess.scheduleLabel} • ${sess.presenterName}"
+                )
+            }
+
+            if (!initialSyncDone) {
+                currentSnapshotAlerts.forEach { (key, _, _) -> alertedKeys.add(key) }
+                initialSyncDone = true
+            } else {
+                currentSnapshotAlerts.forEach { (key, title, body) ->
+                    if (alertedKeys.add(key)) {
+                        runCatching { onSystemAlert(title, body) }
+                    }
+                }
+            }
+
             _state.update { s ->
                 val liveMe = snap.me ?: s.currentUser
                 onPersistAuth(s.isAuthenticated, liveMe.name, liveMe.department)
@@ -332,6 +408,8 @@ class SparcRepository(
     }
 
     fun logout() {
+        initialSyncDone = false
+        alertedKeys.clear()
         supabaseClient.clearSession()
         onPersistAuth(false, "", "")
         _state.update { s ->
@@ -2134,6 +2212,145 @@ class SparcRepository(
                 modelPoints = cleanPts
             ).getOrThrow()
             syncFromSupabaseNow(silent = true)
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // v4.0.0: Password Recovery, Account Deletion, Scholarships & Certificates
+    // ------------------------------------------------------------------------
+    suspend fun requestPasswordReset(email: String, contactNote: String): Result<Unit> {
+        val cleanEmail = email.trim()
+        if (cleanEmail.isBlank() || !cleanEmail.contains("@")) {
+            return Result.failure(
+                IllegalArgumentException(
+                    msg("সঠিক ইমেইল ঠিকানা লিখুন।", "Please enter a valid email address.")
+                )
+            )
+        }
+        if (supabaseClient.isConfigured) {
+            val res = supabaseClient.requestPasswordResetRemote(cleanEmail, contactNote)
+            if (res.isFailure) return res
+        }
+        _state.update { s ->
+            s.copy(
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "✓ Password reset request submitted! Admin will reset and notify you shortly."
+                } else {
+                    "✓ পাসওয়ার্ড রিসেট অনুরোধ সার্ভারে জমা হয়েছে! অ্যাডমিন যাচাই করে নতুন পাসওয়ার্ড জানিয়ে দেবেন।"
+                }
+            )
+        }
+        return Result.success(Unit)
+    }
+
+    suspend fun deleteMyAccount(): Result<Unit> {
+        if (supabaseClient.hasAuthenticatedUser) {
+            val res = supabaseClient.deleteMyAccountRemote()
+            if (res.isFailure) return res
+        }
+        logout()
+        return Result.success(Unit)
+    }
+
+    fun redeemScholarshipCoupon(code: String) {
+        val clean = code.trim().uppercase()
+        if (clean.length < 3) {
+            _state.update {
+                it.copy(
+                    statusBannerMessage = msg(
+                        "সঠিক স্কলারশিপ / ভাউচার কোড লিখুন।",
+                        "Please enter a valid scholarship or voucher code."
+                    )
+                )
+            }
+            return
+        }
+        if (!supabaseClient.hasAuthenticatedUser) {
+            _state.update {
+                it.copy(
+                    statusBannerMessage = msg(
+                        "ভাউচার রিডিম করতে লগইন করুন।",
+                        "Please sign in to redeem a scholarship voucher."
+                    )
+                )
+            }
+            return
+        }
+        repoScope.launch {
+            val res = supabaseClient.redeemScholarshipCouponRemote(clean)
+            res.onSuccess { obj ->
+                val bonus = obj["bonus_bdt"]?.jsonPrimitive?.doubleOrNull ?: 0.0
+                val newBal = obj["new_balance_bdt"]?.jsonPrimitive?.doubleOrNull
+                _state.update { s ->
+                    s.copy(
+                        currentUser = s.currentUser.copy(
+                            walletBalanceBdt = newBal ?: (s.currentUser.walletBalanceBdt + bonus)
+                        ),
+                        statusBannerMessage = if (s.appLanguage == "en") {
+                            "🎉 Scholarship code $clean redeemed! +৳${bonus.toInt()} added to your wallet."
+                        } else {
+                            "🎉 স্কলারশিপ কোড $clean সফলভাবে রিডিম হয়েছে! ওয়ালেটে +৳${bonus.toInt()} যোগ হয়েছে।"
+                        }
+                    )
+                }
+                syncFromSupabaseNow(silent = true)
+            }.onFailure { err ->
+                _state.update {
+                    it.copy(
+                        statusBannerMessage = err.message ?: msg(
+                            "কোডটি বৈধ নয় বা ইতিমধ্যে ব্যবহৃত হয়েছে।",
+                            "Invalid or already redeemed coupon code."
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun requestVerifiableCertificate(onReady: (String) -> Unit = {}) {
+        val s = _state.value
+        val activeCircle = s.circles.find { it.id == s.activeCircleId } ?: s.circles.firstOrNull()
+        val activeBook = s.books.find { it.id == activeCircle?.bookId } ?: s.books.firstOrNull()
+        val certTitle = activeBook?.title ?: activeCircle?.name ?: "SPARC Academic Study Circle"
+
+        if (!supabaseClient.hasAuthenticatedUser) {
+            val fallbackCode = s.issuedCertificateCode.ifBlank {
+                "SPARC-" + s.currentUser.id.filter { it.isLetterOrDigit() }.take(8).uppercase().ifBlank { "CERT2026" }
+            }
+            _state.update { it.copy(issuedCertificateCode = fallbackCode) }
+            onReady(fallbackCode)
+            return
+        }
+
+        repoScope.launch {
+            val res = supabaseClient.issueOrGetCertificateRemote(
+                circleId = activeCircle?.id,
+                bookId = activeBook?.id,
+                title = certTitle
+            )
+            res.onSuccess { code ->
+                val resolved = code.ifBlank { "SPARC-VERIFIED" }
+                _state.update { curr ->
+                    curr.copy(
+                        issuedCertificateCode = resolved,
+                        statusBannerMessage = if (curr.appLanguage == "en") {
+                            "✓ Official Verifiable Certificate issued ($resolved)!"
+                        } else {
+                            "✓ ভেরিফায়েবল সার্টিফিকেট ইস্যু হয়েছে (কোড: $resolved)!"
+                        }
+                    )
+                }
+                onReady(resolved)
+            }.onFailure { err ->
+                _state.update { curr ->
+                    curr.copy(
+                        statusBannerMessage = err.message ?: msg(
+                            "সার্টিফিকেট ইস্যু করতে অন্তত ১টি অধ্যায় সম্পন্ন করুন।",
+                            "Complete at least 1 chapter to issue a verifiable certificate."
+                        )
+                    )
+                }
+            }
         }
     }
 

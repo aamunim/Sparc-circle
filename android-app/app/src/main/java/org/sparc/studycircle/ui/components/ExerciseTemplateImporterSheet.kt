@@ -188,6 +188,43 @@ fun ExerciseTemplateImporterSheet(
                 }
             }
 
+            // Pack 3: 1-Click AI Exercise Generator Prompt Copy Button
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = p.accentSoft,
+                border = BorderStroke(1.dp, p.primary.copy(alpha = 0.35f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        val promptText = ExerciseTemplateParser.generateAiPrompt(lang, chapterNo, book.title)
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                        cm?.setPrimaryClip(ClipData.newPlainText("SPARC AI Exercise Prompt", promptText))
+                        statusNote = if (lang == "en") {
+                            "🤖 AI Prompt copied! Paste it with your PDF into any AI, then paste the generated exercises below."
+                        } else {
+                            "🤖 AI প্রম্পট কপি হয়েছে! যেকোনো AI-তে আপনার PDF-সহ পেস্ট করে তৈরি হওয়া প্রশ্ন নিচে বসিয়ে দিন।"
+                        }
+                    }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        tr(
+                            "🤖 ১-ক্লিকে AI অনুশীলনী প্রম্পট কপি করুন (PDF থেকে অটো প্রশ্ন তৈরি)",
+                            "🤖 1-Click Copy AI Prompt (Generate Exercises from PDF)"
+                        ),
+                        color = p.accentText,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, tint = p.accentText, modifier = Modifier.size(16.dp))
+                }
+            }
+
             // Upload .txt / .csv / .json File from Phone
             Surface(
                 shape = RoundedCornerShape(14.dp),

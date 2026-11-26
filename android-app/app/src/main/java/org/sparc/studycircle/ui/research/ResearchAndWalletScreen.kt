@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
 import org.sparc.studycircle.core.data.SparcAppState
 import org.sparc.studycircle.core.data.SparcRepository
 import org.sparc.studycircle.core.domain.SparcDomainEngine
-import org.sparc.studycircle.core.model.PaymentMethod
+import org.sparc.studycircle.core.model.*
 import org.sparc.studycircle.core.theme.LocalAppLanguage
 import org.sparc.studycircle.core.theme.LocalSparcPalette
 import org.sparc.studycircle.core.theme.tr
@@ -63,7 +63,7 @@ fun ResearchAndWalletScreen(
         when (subTab) {
             0 -> AiWritingAndCoAuthorView(state = state, repository = repository)
             1 -> CreditWalletAndSupervisionView(state = state, repository = repository)
-            2 -> StreakLeaderboardAndCertificateView(state = state)
+            2 -> StreakLeaderboardAndCertificateView(state = state, repository = repository)
         }
     }
 }
@@ -76,9 +76,11 @@ private fun AiWritingAndCoAuthorView(
 ) {
     val p = LocalSparcPalette.current
     val lang = LocalAppLanguage.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val chapter = state.books.firstOrNull()?.chapters?.firstOrNull()
-    if (chapter == null) {
+    val activeBook = state.books.firstOrNull()
+    val chapter = activeBook?.chapters?.firstOrNull()
+    if (activeBook == null || chapter == null) {
         Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             SparcScholarlyCard {
                 Text(
@@ -98,12 +100,31 @@ private fun AiWritingAndCoAuthorView(
         }
         return
     }
-    val progress = state.myChapterProgress[chapter.chapterNo]
 
-    var draft by remember(progress?.writingContent, lang) {
-        mutableStateOf(progress?.writingContent.orEmpty())
+    val autosavePrefs = remember(context) {
+        context.getSharedPreferences("sparc_draft_autosave", Context.MODE_PRIVATE)
     }
+    var selectedChapterNo by remember(activeBook.id) { mutableIntStateOf(chapter.chapterNo) }
+    val selectedChapter = activeBook.chapters.find { it.chapterNo == selectedChapterNo } ?: chapter
+    val progress = state.myChapterProgress[selectedChapter.chapterNo]
+    val draftPrefKey = "${state.currentUser.id}_${activeBook.id}_ch_${selectedChapter.chapterNo}"
+
+    var draft by remember(draftPrefKey, progress?.writingContent, lang) {
+        val serverDraft = progress?.writingContent.orEmpty()
+        val cachedDraft = autosavePrefs.getString(draftPrefKey, "").orEmpty()
+        mutableStateOf(serverDraft.ifBlank { cachedDraft })
+    }
+    var autoSavedLabel by remember(draftPrefKey) { mutableStateOf(false) }
     var showAiWarningDialog by remember { mutableStateOf(false) }
+
+    // Pack 5: Local Auto-Save every 5 seconds so zero words are ever lost offline
+    LaunchedEffect(draft, draftPrefKey) {
+        if (draft.isNotBlank()) {
+            kotlinx.coroutines.delay(5000L)
+            autosavePrefs.edit().putString(draftPrefKey, draft).apply()
+            autoSavedLabel = true
+        }
+    }
 
     val wordCount = remember(draft) { draft.trim().split(Regex("\\s+")).count { it.isNotBlank() } }
     val displayWords = wordCount
@@ -126,20 +147,59 @@ private fun AiWritingAndCoAuthorView(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("PUBLISH PIPELINE • STEP 1/7", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = p.muted)
-                        Text("Felt-Concern Statement", style = MaterialTheme.typography.titleLarge, color = p.text)
-                        if (chapter.writingTaskPrompt.isNotBlank()) {
-                            Text(trContent(chapter.writingTaskPrompt), fontSize = 11.5.sp, color = p.muted)
+                        Text(
+                            "PUBLISH PIPELINE • CH ${selectedChapter.chapterNo}/${activeBook.totalChapters.coerceAtLeast(activeBook.chapters.size)}",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = p.muted
+                        )
+                        Text(trContent(selectedChapter.title), style = MaterialTheme.typography.titleLarge, color = p.text)
+                        if (selectedChapter.writingTaskPrompt.isNotBlank()) {
+                            Text(trContent(selectedChapter.writingTaskPrompt), fontSize = 11.5.sp, color = p.muted)
                         }
                     }
-                    Surface(shape = RoundedCornerShape(10.dp), color = p.primarySoft) {
-                        Text(
-                            "$displayWords / ${chapter.maxWords}w",
-                            color = p.primarySoftText,
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                        )
+                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Surface(shape = RoundedCornerShape(10.dp), color = p.primarySoft) {
+                            Text(
+                                "$displayWords / ${selectedChapter.maxWords}w",
+                                color = p.primarySoftText,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                        if (autoSavedLabel) {
+                            Text(
+                                tr("💾 অটো-সেভড ✓", "💾 Auto-saved ✓"),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = p.primary
+                            )
+                        }
+                    }
+                }
+
+                if (activeBook.chapters.size > 1) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        activeBook.chapters.sortedBy { it.chapterNo }.forEach { ch ->
+                            val isSel = ch.chapterNo == selectedChapter.chapterNo
+                            val hasText = !state.myChapterProgress[ch.chapterNo]?.writingContent.isNullOrBlank() ||
+                                !autosavePrefs.getString("${state.currentUser.id}_${activeBook.id}_ch_${ch.chapterNo}", "").isNullOrBlank()
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSel) p.primary else p.cardAlt,
+                                border = BorderStroke(1.dp, if (isSel) p.primary else p.border),
+                                modifier = Modifier.clickable { selectedChapterNo = ch.chapterNo }
+                            ) {
+                                Text(
+                                    text = "Ch ${ch.chapterNo}" + if (hasText) " ✓" else "",
+                                    color = if (isSel) Color.White else p.text,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -180,7 +240,10 @@ private fun AiWritingAndCoAuthorView(
 
                 OutlinedTextField(
                     value = draft,
-                    onValueChange = { draft = it },
+                    onValueChange = {
+                        draft = it
+                        autoSavedLabel = false
+                    },
                     minLines = 4,
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -199,7 +262,11 @@ private fun AiWritingAndCoAuthorView(
                         }
                     }
                     Button(
-                        onClick = { repository.submitWritingForHumanEvaluation(chapter, draft) },
+                        onClick = {
+                            autosavePrefs.edit().putString(draftPrefKey, draft).apply()
+                            autoSavedLabel = true
+                            repository.submitWritingForHumanEvaluation(selectedChapter, draft)
+                        },
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = p.primary),
                         modifier = Modifier.weight(1.25f)
@@ -207,6 +274,38 @@ private fun AiWritingAndCoAuthorView(
                         Text(tr("👤 Evaluate-এর জন্য জমা দিন", "👤 Submit for Human Eval"), fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
                     }
                 }
+            }
+        }
+
+        // Pack 3: Full Paper Compiler (Chapters 1..N -> Complete Proposal / Working Paper Export)
+        item {
+            SparcScholarlyCard {
+                Text(
+                    tr("📑 পূর্ণাঙ্গ প্রপোজাল / পেপার কম্পাইলার (Full Paper Export)", "📑 Full Research Proposal / Paper Compiler"),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = p.text
+                )
+                Text(
+                    tr(
+                        "সকল অধ্যায়ে আপনার লেখা রাইটিং টাস্ক ও লোকাল ড্রাফট একত্র করে ১ ক্লিকে সাজানো পাণ্ডুলিপি (.md / টেক্সট) হিসেবে ডাউনলোড বা শেয়ার করুন।",
+                        "Compile all your chapter writing tasks & saved drafts into a formatted research manuscript (.md) in 1 tap."
+                    ),
+                    fontSize = 12.sp,
+                    color = p.muted
+                )
+                SparcPrimaryButton(
+                    text = tr("📥 পূর্ণাঙ্গ গবেষণাপত্র এক্সপোর্ট ও শেয়ার করুন", "📥 Compile & Export Full Manuscript"),
+                    onClick = {
+                        exportCompiledResearchManuscript(
+                            context = context,
+                            state = state,
+                            book = activeBook,
+                            autosavePrefs = autosavePrefs,
+                            coAuthorNames = coAuthors.map { it.user.name },
+                            lang = lang
+                        )
+                    }
+                )
             }
         }
 
@@ -271,14 +370,14 @@ private fun AiWritingAndCoAuthorView(
                         text = tr("👤 মানুষের কাছে Evaluate-এর জন্য জমা দিন", "👤 Submit to Human Mentor for Evaluation"),
                         onClick = {
                             showAiWarningDialog = false
-                            repository.submitWritingForHumanEvaluation(chapter, draft)
+                            repository.submitWritingForHumanEvaluation(selectedChapter, draft)
                         }
                     )
 
                     OutlinedButton(
                         onClick = {
                             showAiWarningDialog = false
-                            scope.launch { repository.analyzeWritingWithAi(chapter, draft) }
+                            scope.launch { repository.analyzeWritingWithAi(selectedChapter, draft) }
                         },
                         shape = RoundedCornerShape(14.dp),
                         border = BorderStroke(1.dp, p.border),
@@ -321,6 +420,7 @@ private fun CreditWalletAndSupervisionView(
     var selectedChannel by remember { mutableStateOf("bKash") }
     var senderPhoneInput by remember { mutableStateOf("") }
     var trxIdInput by remember { mutableStateOf("") }
+    var couponCodeInput by remember { mutableStateOf("") }
 
     val parsedAmount = amountText.toIntOrNull() ?: minTop
 
@@ -378,6 +478,48 @@ private fun CreditWalletAndSupervisionView(
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
                         )
+                    }
+                }
+            }
+        }
+
+        // Pack 4: Scholarship & Discount Voucher Redeemer Card
+        item {
+            SparcScholarlyCard {
+                Text(
+                    tr("🎟️ স্কলারশিপ ও ডিসকাউন্ট ভাউচার কোড", "🎟️ Scholarship & Discount Voucher"),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = p.text
+                )
+                Text(
+                    tr(
+                        "SPARC ওয়ার্কশপ বা ফেলোশিপ থেকে পাওয়া ভাউচার কোড (যেমন SPARC50, FELLOW100) রিডিম করে ওয়ালেট বোনাস নিন:",
+                        "Redeem an official SPARC workshop or fellowship voucher code to credit your wallet:"
+                    ),
+                    fontSize = 11.5.sp,
+                    color = p.muted
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = couponCodeInput,
+                        onValueChange = { couponCodeInput = it.uppercase() },
+                        label = { Text(tr("ভাউচার কোড", "Voucher Code")) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Button(
+                        onClick = {
+                            repository.redeemScholarshipCoupon(couponCodeInput)
+                            couponCodeInput = ""
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = p.primary)
+                    ) {
+                        Text(tr("রিডিম", "Redeem"), fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -603,8 +745,9 @@ private fun CreditWalletAndSupervisionView(
                         color = p.muted
                     )
                 }
-                state.walletHistory.take(6).forEach { tx ->
+                state.walletHistory.take(8).forEach { tx ->
                     val isCredit = tx.amountBdt >= 0
+                    val isVerified = tx.status.equals("Verified", ignoreCase = true)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -614,12 +757,35 @@ private fun CreditWalletAndSupervisionView(
                             Text(tx.reference, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = p.text)
                             Text("${tx.status} • ${tx.description}", fontSize = 11.sp, color = p.muted)
                         }
-                        Text(
-                            text = if (isCredit) "+৳${tx.amountBdt.toInt()}" else "-৳${(-tx.amountBdt).toInt()}",
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 13.sp,
-                            color = if (isCredit) p.primary else p.accentText
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = if (isCredit) "+৳${tx.amountBdt.toInt()}" else "-৳${(-tx.amountBdt).toInt()}",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 13.sp,
+                                color = if (isCredit) p.primary else p.accentText
+                            )
+                            if (isVerified) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = p.primarySoft,
+                                    modifier = Modifier.clickable {
+                                        shareOfficialWalletReceipt(
+                                            context = context,
+                                            userName = state.currentUser.name,
+                                            tx = tx
+                                        )
+                                    }
+                                ) {
+                                    Text(
+                                        tr("🧾 রিসিট", "🧾 Receipt"),
+                                        color = p.primarySoftText,
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -628,12 +794,30 @@ private fun CreditWalletAndSupervisionView(
 }
 
 @Composable
-private fun StreakLeaderboardAndCertificateView(state: SparcAppState) {
+private fun StreakLeaderboardAndCertificateView(
+    state: SparcAppState,
+    repository: SparcRepository
+) {
     val p = LocalSparcPalette.current
     val context = LocalContext.current
     val ranked = remember(state.currentUser, state.directoryMembers) {
         (listOf(state.currentUser) + state.directoryMembers)
             .sortedByDescending { it.gamificationPoints }
+    }
+
+    // Pack 2: University & Department Leaderboard Aggregation
+    val campusRanks = remember(state.currentUser, state.directoryMembers) {
+        (listOf(state.currentUser) + state.directoryMembers)
+            .mapNotNull { u ->
+                val label = listOf(u.institution.trim(), u.department.trim())
+                    .filter { it.isNotBlank() }
+                    .joinToString(" • ")
+                if (label.isBlank()) null else label to u.gamificationPoints
+            }
+            .groupBy({ it.first }, { it.second })
+            .map { (campus, pts) -> Triple(campus, pts.size, pts.sum()) }
+            .sortedByDescending { it.third }
+            .take(5)
     }
 
     LazyColumn(
@@ -678,6 +862,62 @@ private fun StreakLeaderboardAndCertificateView(state: SparcAppState) {
             }
         }
 
+        // Pack 2: University & Department Leaderboard Card
+        item {
+            SparcScholarlyCard {
+                Text(
+                    tr("🏛️ বিশ্ববিদ্যালয় ও বিভাগভিত্তিক র‍্যাংকিং", "🏛️ University & Department Leaderboard"),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = p.text
+                )
+                if (campusRanks.isEmpty()) {
+                    Text(
+                        tr(
+                            "প্রোফাইলে আপনার বিশ্ববিদ্যালয় ও বিভাগের নাম যুক্ত করলে ক্যাম্পাস লিডারবোর্ডে র‍্যাংক দেখা যাবে।",
+                            "Add your university and department in your profile to appear on the Campus Leaderboard."
+                        ),
+                        fontSize = 12.sp,
+                        color = p.muted
+                    )
+                } else {
+                    campusRanks.forEachIndexed { idx, (campusName, memberCount, totalPts) ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (idx == 0) p.primarySoft else p.cardAlt
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "#${idx + 1} $campusName",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.5.sp,
+                                        color = if (idx == 0) p.primarySoftText else p.text
+                                    )
+                                    Text(
+                                        tr("$memberCount জন গবেষক সক্রিয়", "$memberCount active researchers"),
+                                        fontSize = 11.sp,
+                                        color = p.muted
+                                    )
+                                }
+                                Text(
+                                    "$totalPts pts",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 13.sp,
+                                    color = p.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Streak Milestones
         item {
             SparcScholarlyCard {
@@ -697,10 +937,14 @@ private fun StreakLeaderboardAndCertificateView(state: SparcAppState) {
             }
         }
 
-        // Completion Certificate & Social Share Card
+        // Pack 3: Verifiable Completion Certificate & Social Share Card
         item {
             SparcScholarlyCard {
-                Text("Study-Circle Completion Certificate", style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(
+                    tr("🏅 ভেরিফায়েবল সার্টিফিকেট (QR / Code Verified)", "🏅 Verifiable Completion Certificate"),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = p.text
+                )
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = p.cardAlt,
@@ -715,45 +959,48 @@ private fun StreakLeaderboardAndCertificateView(state: SparcAppState) {
                     ) {
                         Text("SPARC VERIFIED CERTIFICATE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = p.primary)
                         Text(trContent(state.currentUser.name), style = MaterialTheme.typography.titleLarge, color = p.text)
-                        Text("QR ID: SPARC-2026-8F4A2C", fontSize = 11.5.sp, color = p.muted)
+                        Text(
+                            text = if (state.issuedCertificateCode.isNotBlank()) {
+                                tr("ভেরিফিকেশন কোড: ${state.issuedCertificateCode}", "Verification Code: ${state.issuedCertificateCode}")
+                            } else {
+                                tr("সার্ভার থেকে ভেরিফিকেশন কোড জেনারেট করতে নিচের বাটনে ট্যাপ করুন", "Tap below to issue your official verification code")
+                            },
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (state.issuedCertificateCode.isNotBlank()) p.primary else p.muted,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = {
-                            shareBrandedProgressCard(
-                                context = context,
-                                researcherName = state.currentUser.name,
-                                streakDays = state.currentUser.readingStreakDays,
-                                badges = state.currentUser.earnedBadges
-                            )
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = p.primary),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(tr("LinkedIn শেয়ার", "Share on LinkedIn"), fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = p.cardAlt,
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable {
+                SparcPrimaryButton(
+                    text = if (state.issuedCertificateCode.isBlank()) {
+                        tr("✅ ভেরিফায়েবল সার্টিফিকেট ইস্যু করুন", "✅ Issue Official Verifiable Certificate")
+                    } else {
+                        tr("📤 ভেরিফায়েবল সার্টিফিকেট শেয়ার করুন (${state.issuedCertificateCode})", "📤 Share Verifiable Certificate (${state.issuedCertificateCode})")
+                    },
+                    onClick = {
+                        if (state.issuedCertificateCode.isBlank()) {
+                            repository.requestVerifiableCertificate { issuedCode ->
                                 shareBrandedProgressCard(
                                     context = context,
                                     researcherName = state.currentUser.name,
                                     streakDays = state.currentUser.readingStreakDays,
-                                    badges = state.currentUser.earnedBadges
+                                    badges = state.currentUser.earnedBadges,
+                                    certificateCode = issuedCode
                                 )
                             }
-                    ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 11.dp)) {
-                            Text(tr("Facebook শেয়ার", "Share on Facebook"), color = p.text, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                        } else {
+                            shareBrandedProgressCard(
+                                context = context,
+                                researcherName = state.currentUser.name,
+                                streakDays = state.currentUser.readingStreakDays,
+                                badges = state.currentUser.earnedBadges,
+                                certificateCode = state.issuedCertificateCode
+                            )
                         }
                     }
-                }
+                )
             }
         }
     }
@@ -778,31 +1025,156 @@ private fun PodiumTile(
     }
 }
 
+private fun exportCompiledResearchManuscript(
+    context: Context,
+    state: SparcAppState,
+    book: BookItem,
+    autosavePrefs: android.content.SharedPreferences,
+    coAuthorNames: List<String>,
+    lang: String
+) {
+    val sb = StringBuilder()
+    sb.appendLine("# ${book.title}")
+    sb.appendLine("## SPARC Study Circle — Compiled Research Proposal / Working Paper")
+    sb.appendLine("- **Author:** ${state.currentUser.name} (${state.currentUser.department.ifBlank { "Researcher" }})")
+    if (state.currentUser.institution.isNotBlank()) {
+        sb.appendLine("- **Institution:** ${state.currentUser.institution}")
+    }
+    if (coAuthorNames.isNotEmpty()) {
+        sb.appendLine("- **Suggested Co-Authors:** ${coAuthorNames.joinToString(", ")}")
+    }
+    sb.appendLine()
+    sb.appendLine("---")
+    sb.appendLine()
+
+    var includedSections = 0
+    book.chapters.sortedBy { it.chapterNo }.forEach { ch ->
+        val prog = state.myChapterProgress[ch.chapterNo]
+        val localSaved = autosavePrefs.getString("${state.currentUser.id}_${book.id}_ch_${ch.chapterNo}", "").orEmpty()
+        val body = prog?.writingContent?.takeIf { it.isNotBlank() } ?: localSaved
+        sb.appendLine("### Chapter ${ch.chapterNo}: ${ch.title}")
+        if (ch.writingTaskPrompt.isNotBlank()) {
+            sb.appendLine("> **Prompt:** ${ch.writingTaskPrompt}")
+            sb.appendLine()
+        }
+        if (body.isNotBlank()) {
+            includedSections += 1
+            sb.appendLine(body.trim())
+            if (prog?.writingSupervisorApproved == true) {
+                sb.appendLine()
+                sb.appendLine("*[✓ Verified & Approved by Human Mentor]*")
+            }
+        } else {
+            sb.appendLine("*(Draft not yet written for this chapter)*")
+        }
+        sb.appendLine()
+    }
+
+    val manuscriptText = sb.toString()
+    runCatching {
+        val dir = File(context.cacheDir, "exports").apply { mkdirs() }
+        val file = File(dir, "SPARC_Manuscript_${book.id.take(8)}.md")
+        file.writeText(manuscriptText, Charsets.UTF_8)
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/markdown"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, "SPARC Research Manuscript — ${book.title}")
+            putExtra(Intent.EXTRA_TEXT, manuscriptText)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(
+            Intent.createChooser(
+                shareIntent,
+                if (lang == "en") "Export Manuscript ($includedSections sections)" else "গবেষণাপত্র এক্সপোর্ট করুন ($includedSections অধ্যায়)"
+            )
+        )
+    }
+}
+
+private fun shareOfficialWalletReceipt(
+    context: Context,
+    userName: String,
+    tx: WalletTransactionItem
+) {
+    runCatching {
+        val bmp = Bitmap.createBitmap(960, 540, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        canvas.drawRect(0f, 0f, 960f, 540f, Paint().apply { color = android.graphics.Color.parseColor("#0F172A") })
+        canvas.drawRect(0f, 0f, 960f, 16f, Paint().apply { color = android.graphics.Color.parseColor("#10B981") })
+
+        val headPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.parseColor("#34D399")
+            textSize = 28f
+            isFakeBoldText = true
+        }
+        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.WHITE
+            textSize = 44f
+            isFakeBoldText = true
+        }
+        val subPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.parseColor("#E2E8F0")
+            textSize = 28f
+        }
+        val amtLabel = if (tx.amountBdt >= 0) "+BDT ${tx.amountBdt.toInt()}" else "-BDT ${(-tx.amountBdt).toInt()}"
+        canvas.drawText("SPARC STUDY CIRCLE • OFFICIAL RECEIPT", 56f, 88f, headPaint)
+        canvas.drawText("$amtLabel  [VERIFIED]", 56f, 175f, titlePaint)
+        canvas.drawText("Member: $userName", 56f, 255f, subPaint)
+        canvas.drawText("Reference: ${tx.reference}", 56f, 320f, subPaint)
+        canvas.drawText("Details: ${tx.description.take(48)}", 56f, 385f, subPaint)
+        canvas.drawText("Issued by SPARC Finance & Admin Desk", 56f, 475f, headPaint)
+
+        val dir = File(context.cacheDir, "exports").apply { mkdirs() }
+        val receiptFile = File(dir, "sparc_receipt_${tx.id.take(8)}.png")
+        FileOutputStream(receiptFile).use { out ->
+            bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+        }
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", receiptFile)
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_TEXT, "SPARC Official Receipt • Ref: ${tx.reference} • Amount: $amtLabel (${tx.status})")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(shareIntent, "Share Official SPARC Receipt"))
+    }
+}
+
 private fun shareBrandedProgressCard(
     context: Context,
     researcherName: String,
     streakDays: Int,
-    badges: List<String>
+    badges: List<String>,
+    certificateCode: String = ""
 ) {
     runCatching {
-        val bmp = Bitmap.createBitmap(1080, 560, Bitmap.Config.ARGB_8888)
+        val bmp = Bitmap.createBitmap(1080, 600, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         val bgPaint = Paint().apply { color = android.graphics.Color.parseColor("#1D4ED8") }
-        canvas.drawRect(0f, 0f, 1080f, 560f, bgPaint)
+        canvas.drawRect(0f, 0f, 1080f, 600f, bgPaint)
 
         val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = android.graphics.Color.WHITE
-            textSize = 46f
+            textSize = 44f
             isFakeBoldText = true
         }
         val subPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = android.graphics.Color.parseColor("#DBEAFE")
-            textSize = 32f
+            textSize = 30f
         }
-        canvas.drawText("SPARC Study Circle — Researcher Milestone", 60f, 110f, titlePaint)
-        canvas.drawText(researcherName, 60f, 210f, titlePaint)
-        canvas.drawText("Reading Streak: $streakDays Days | Badges: ${badges.joinToString(", ")}", 60f, 300f, subPaint)
-        canvas.drawText("বই পড়তে পড়তে লেখা শেখা • sparc.org.bd", 60f, 460f, subPaint)
+        val codePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.parseColor("#FDE68A")
+            textSize = 32f
+            isFakeBoldText = true
+        }
+        canvas.drawText("SPARC Study Circle — Verified Certificate", 60f, 105f, titlePaint)
+        canvas.drawText(researcherName, 60f, 195f, titlePaint)
+        canvas.drawText("Reading Streak: $streakDays Days | Badges: ${badges.joinToString(", ").ifBlank { "Scholar" }}", 60f, 280f, subPaint)
+        if (certificateCode.isNotBlank()) {
+            canvas.drawText("Certificate Verification Code: $certificateCode", 60f, 370f, codePaint)
+        }
+        canvas.drawText("বই পড়তে পড়তে লেখা শেখা • Verify at SPARC Portal /verify", 60f, 510f, subPaint)
 
         val dir = File(context.cacheDir, "social_cards").apply { mkdirs() }
         val cardFile = File(dir, "sparc_progress_card.png")
@@ -815,10 +1187,11 @@ private fun shareBrandedProgressCard(
             putExtra(Intent.EXTRA_STREAM, uri)
             putExtra(
                 Intent.EXTRA_TEXT,
-                "SPARC Study Circle-এ আমার গবেষণা অগ্রগতি! 🔥 $streakDays দিনের রিডিং স্ট্রিক। #SPARC #ActionResearch"
+                "SPARC Study Circle ভেরিফায়েবল সার্টিফিকেট! 🏅 কোড: $certificateCode • 🔥 $streakDays দিনের রিডিং স্ট্রিক। #SPARC"
             )
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(shareIntent, "Share SPARC Progress Card"))
+        context.startActivity(Intent.createChooser(shareIntent, "Share SPARC Certificate"))
     }
 }
+

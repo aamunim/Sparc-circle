@@ -100,6 +100,73 @@ POINT: ১ পয়েন্ট: গবেষণার নৈতিক সম্�
 EXP: সুপারভাইজার / মানব মেন্টর উপরের ৩টি পয়েন্টের ভিত্তিতে ০–৩ নম্বর দেবেন।"""
     }
 
+    fun generateAiPrompt(lang: String = "bn", chapterNo: Int = 1, bookTitle: String = ""): String {
+        val titleHint = if (bookTitle.isNotBlank()) " ($bookTitle)" else ""
+        return if (lang == "en") {
+            """You are an Academic Curriculum Designer for SPARC Study Circle. Read the attached PDF chapter$titleHint carefully and output exercises STRICTLY in the exact format below (no extra commentary outside the format):
+
+CHAPTER_NO: $chapterNo
+CHAPTER_TITLE: Chapter $chapterNo: [Concise Chapter Title]
+CHAPTER_TYPE: STANDARD
+TOTAL_PAGES: [Page Count]
+FLASH_NOTE: [Key takeaway 1]
+FLASH_NOTE: [Key takeaway 2]
+FLASH_NOTE: [Key takeaway 3]
+OUTCOME: [Learning outcome 1]
+OUTCOME: [Learning outcome 2]
+WRITING_PROMPT: [Analytical 400-600 word writing task prompt for human mentor evaluation]
+WORD_LIMIT: 400-600
+
+# Generate 6-10 MCQs across sections A..E (mark the single correct option with OPT*)
+[MCQ | C]
+Q: [Question text]
+OPT: [Wrong option]
+OPT*: [Correct option]
+OPT: [Wrong option]
+OPT: [Wrong option]
+EXP: [1-sentence explanation]
+
+# Generate 2-4 Open-Ended analytical questions across sections F..J (0-3 rubric points)
+[OPEN | H]
+Q: [Scenario or analytical question]
+POINT: 1 pt: [Criterion 1]
+POINT: 1 pt: [Criterion 2]
+POINT: 1 pt: [Criterion 3]
+EXP: Evaluated 0-3 by human Study Circle Mentor."""
+        } else {
+            """আপনি SPARC Study Circle-এর একাডেমিক কারিকুলাম ডিজাইনার। সংযুক্ত PDF অধ্যায়টি$titleHint মনোযোগ দিয়ে পড়ে ঠিক নিচের ফরম্যাটে (অতিরিক্ত কোনো ভূমিকা ছাড়া হুবহু এই ট্যাগগুলোতে) বাংলায় ফ্ল্যাশ নোট, রাইটিং টাস্ক এবং অনুশীলনী তৈরি করে দিন:
+
+CHAPTER_NO: $chapterNo
+CHAPTER_TITLE: অধ্যায় $chapterNo: [অধ্যায়ের সংক্ষিপ্ত শিরোনাম]
+CHAPTER_TYPE: STANDARD
+TOTAL_PAGES: [পৃষ্ঠা সংখ্যা]
+FLASH_NOTE: [মূল পয়েন্ট ১]
+FLASH_NOTE: [মূল পয়েন্ট ২]
+FLASH_NOTE: [মূল পয়েন্ট ৩]
+OUTCOME: [শিখনফল ১]
+OUTCOME: [শিখনফল ২]
+WRITING_PROMPT: [এই অধ্যায়ের আলোকে ৪০০–৬০০ শব্দের বিশ্লেষণমূলক রাইটিং টাস্ক প্রম্পট, যা মানব মেন্টর মূল্যায়ন করবেন]
+WORD_LIMIT: 400-600
+
+# ৬–১০টি বহুনির্বাচনী প্রশ্ন (A..E সেকশন, সঠিক উত্তরের আগে OPT* দিন):
+[MCQ | C]
+Q: [প্রশ্ন]
+OPT: [ভুল অপশন]
+OPT*: [সঠিক অপশন]
+OPT: [ভুল অপশন]
+OPT: [ভুল অপশন]
+EXP: [১ বাক্যে ব্যাখ্যা]
+
+# ২–৪টি সৃজনশীল/বিশ্লেষণমূলক প্রশ্ন (F..J সেকশন, মেন্টরের জন্য ৩টি পয়েন্ট রুব্রিকসহ):
+[OPEN | H]
+Q: [দৃশ্যপট বা বিশ্লেষণমূলক প্রশ্ন]
+POINT: ১ পয়েন্ট: [মানদণ্ড ১]
+POINT: ১ পয়েন্ট: [মানদণ্ড ২]
+POINT: ১ পয়েন্ট: [মানদণ্ড ৩]
+EXP: মানব মেন্টর উপরের ৩টি পয়েন্টের ভিত্তিতে ০–৩ নম্বর দেবেন।"""
+        }
+    }
+
     fun parse(rawInput: String): Result<ParsedExerciseTemplate> = runCatching {
         val trimmed = rawInput.trim()
         require(trimmed.isNotBlank()) { "Template content is empty" }
