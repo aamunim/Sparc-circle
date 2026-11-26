@@ -43,8 +43,8 @@ enum class MainTab(val titleBn: String, val titleEn: String, val icon: ImageVect
     DIRECTORY("ডিরেক্টরি", "Directory", Icons.Default.People),
     LIBRARY("লাইব্রেরি", "Library", Icons.AutoMirrored.Filled.MenuBook),
     CIRCLE("সার্কেল", "Circle", Icons.Default.Explore),
-    ASSESSMENT("মূল্যায়ন", "Assess", Icons.AutoMirrored.Filled.FactCheck),
-    RESEARCH("রিসার্চ", "Research", Icons.Default.Science);
+    ASSESSMENT("পাঠ ও অনুশীলন", "Read & Practice", Icons.AutoMirrored.Filled.FactCheck),
+    RESEARCH("পাবলিশ", "Publish", Icons.Default.Science);
 
     fun label(lang: String): String = if (lang == "en") titleEn else titleBn
 }
@@ -331,7 +331,8 @@ fun SparcMainScaffold(repository: SparcRepository) {
                     MainTab.LIBRARY -> LibraryAndReaderScreen(
                         state = state,
                         repository = repository,
-                        initialSubTab = libraryInitialSubTab
+                        initialSubTab = libraryInitialSubTab,
+                        onOpenCircleHub = { currentTab = MainTab.CIRCLE }
                     )
                     MainTab.CIRCLE -> StudyCircleScreen(
                         state = state,

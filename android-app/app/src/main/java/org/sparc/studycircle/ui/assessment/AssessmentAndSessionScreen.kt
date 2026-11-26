@@ -66,12 +66,13 @@ fun AssessmentAndSessionScreen(
 
     var activeJitsiSession by remember { mutableStateOf<OnlineSessionItem?>(null) }
     var showAddQuestionSheet by remember { mutableStateOf(false) }
+    var showTemplateImportSheet by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
             SparcSegmentedPills(
                 options = listOf(
-                    tr("অনুশীলনী কুইজ", "Chapter Quiz"),
+                    tr("পাঠ অনুশীলনী", "Reading Practice"),
                     tr("লাইভ সেশন", "Live Session"),
                     tr("সুপারভাইজার ভিউ", "Supervisor View")
                 ),
@@ -88,7 +89,8 @@ fun AssessmentAndSessionScreen(
                 chapter = chapter,
                 progress = progress,
                 repository = repository,
-                onOpenAddQuestion = { showAddQuestionSheet = true }
+                onOpenAddQuestion = { showAddQuestionSheet = true },
+                onOpenTemplateImport = { showTemplateImportSheet = true }
             )
             1 -> LiveSessionAndClinicView(
                 sessions = state.sessions,
@@ -111,6 +113,15 @@ fun AssessmentAndSessionScreen(
         )
     }
 
+    if (showTemplateImportSheet) {
+        ExerciseTemplateImporterSheet(
+            book = book,
+            initialChapterNo = chapter.chapterNo,
+            repository = repository,
+            onDismiss = { showTemplateImportSheet = false }
+        )
+    }
+
     activeJitsiSession?.let { sess ->
         val jitsiBase = state.apiVault.customJitsiServerUrl.trim().trimEnd('/').ifBlank { "https://meet.jit.si" }
         InAppJitsiVideoDialog(
@@ -130,7 +141,8 @@ private fun QuizAndCalibrationView(
     chapter: ChapterItem,
     progress: ChapterProgressState,
     repository: SparcRepository,
-    onOpenAddQuestion: () -> Unit
+    onOpenAddQuestion: () -> Unit,
+    onOpenTemplateImport: () -> Unit
 ) {
     val p = LocalSparcPalette.current
     val isLocked = progress.stage.step >= ProgressStage.EXERCISES_SUBMITTED.step
@@ -180,19 +192,34 @@ private fun QuizAndCalibrationView(
                         }
                     }
                 }
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(6.dp))
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = p.cardAlt,
+                    border = BorderStroke(1.dp, p.border),
+                    modifier = Modifier.clickable { onOpenTemplateImport() }
+                ) {
+                    Text(
+                        tr("📋 টেমপ্লেট", "📋 Template"),
+                        color = p.text,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp)
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = p.primarySoft,
                     modifier = Modifier.clickable { onOpenAddQuestion() }
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
-                        Icon(Icons.Default.AddCircleOutline, contentDescription = null, tint = p.primarySoftText, modifier = Modifier.size(15.dp))
-                        Text(tr("+ প্রশ্ন যোগ করুন", "+ Add Quiz"), color = p.primarySoftText, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.AddCircleOutline, contentDescription = null, tint = p.primarySoftText, modifier = Modifier.size(14.dp))
+                        Text(tr("+ প্রশ্ন", "+ Add"), color = p.primarySoftText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -221,12 +248,12 @@ private fun QuizAndCalibrationView(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    tr("অধ্যায় ${chapter.chapterNo} • ${chapter.type.name} QUIZ", "Chapter ${chapter.chapterNo} • ${chapter.type.name} QUIZ"),
+                    tr("অধ্যায় ${chapter.chapterNo} • পাঠ অনুশীলনী", "Chapter ${chapter.chapterNo} • Guided Practice"),
                     style = MaterialTheme.typography.titleMedium,
                     color = p.primary
                 )
                 Text(
-                    tr("পাস ${chapter.type.passMarks}/${chapter.type.totalMarks}", "Pass ${chapter.type.passMarks}/${chapter.type.totalMarks}"),
+                    tr("লক্ষ্যমাত্রা ${chapter.type.passMarks}/${chapter.type.totalMarks}", "Target ${chapter.type.passMarks}/${chapter.type.totalMarks}"),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = p.muted

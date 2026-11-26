@@ -48,7 +48,7 @@ fun ResearchAndWalletScreen(
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
             SparcSegmentedPills(
                 options = listOf(
-                    tr("AI রাইটিং ও টিম", "AI Writing & Team"),
+                    tr("ড্রাফট ও পাবলিশ", "Draft & Publish"),
                     tr("ক্রেডিট ওয়ালেট", "Credit Wallet"),
                     tr("পডিয়াম ও সার্টিফিকেট", "Podium & Cert")
                 ),
@@ -85,6 +85,8 @@ private fun AiWritingAndCoAuthorView(
                 ?: if (lang == "en") defaultDraftEn else defaultDraftBn
         )
     }
+    var showAiWarningDialog by remember { mutableStateOf(false) }
+
     val wordCount = remember(draft) { draft.trim().split(Regex("\\s+")).count { it.isNotBlank() } }
     val displayWords = if (wordCount < 100) 612 else wordCount
     val toneScore = state.lastAiFeedback?.academicToneScore ?: 88
@@ -106,7 +108,7 @@ private fun AiWritingAndCoAuthorView(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("CPAR PROPOSAL • STEP 1/7", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = p.muted)
+                        Text("PUBLISH PIPELINE • STEP 1/7", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = p.muted)
                         Text("Felt-Concern Statement", style = MaterialTheme.typography.titleLarge, color = p.text)
                         if (chapter.writingTaskPrompt.isNotBlank()) {
                             Text(trContent(chapter.writingTaskPrompt), fontSize = 11.5.sp, color = p.muted)
@@ -138,18 +140,18 @@ private fun AiWritingAndCoAuthorView(
                             strokeWidth = 6.dp
                         )
                         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("✨ Gemini AI Writing Coach", fontWeight = FontWeight.Bold, fontSize = 13.5.sp, color = p.text)
+                            Text(
+                                tr("👤 মানব মেন্টর মূল্যায়ন ও প্রাথমিক AI সহায়তা", "👤 Human Mentor Evaluation & AI Draft Hint"),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = p.text
+                            )
                             val liveTone = state.lastAiFeedback?.toneFeedback?.takeIf { it.isNotBlank() }
                             if (liveTone != null) {
                                 Text("• $liveTone", fontSize = 12.sp, color = p.muted)
                             } else {
                                 Text(
-                                    tr("• Research Site ও অংশগ্রহণকারীর যুক্তি সুদৃঢ়", "• Strong alignment between Research Site & stakeholders"),
-                                    fontSize = 12.sp,
-                                    color = p.muted
-                                )
-                                Text(
-                                    tr("• ২য় অনুচ্ছেদে প্যাসিভ বাক্য সংক্ষিপ্ত করুন", "• Tighten passive phrasing in the second paragraph"),
+                                    tr("• সেরা ফলাফলের জন্য আপনার লেখাটি সুপারভাইজার / মানুষের কাছে Evaluate করতে জমা দিন", "• For authentic scholarly quality, submit your draft to a human mentor for evaluation"),
                                     fontSize = 12.sp,
                                     color = p.muted
                                 )
@@ -171,20 +173,20 @@ private fun AiWritingAndCoAuthorView(
                         shape = RoundedCornerShape(12.dp),
                         color = p.primarySoft,
                         modifier = Modifier
-                            .weight(1f)
-                            .clickable { scope.launch { repository.analyzeWritingWithAi(chapter, draft) } }
+                            .weight(0.95f)
+                            .clickable { showAiWarningDialog = true }
                     ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 12.dp)) {
-                            Text(tr("AI ফিডব্যাক নিন", "Get AI Feedback"), color = p.primarySoftText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 12.dp, horizontal = 6.dp)) {
+                            Text(tr("AI ফিডব্যাক নিন", "Get AI Feedback"), color = p.primarySoftText, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
                         }
                     }
                     Button(
-                        onClick = { repository.submitChapterWritingTask(chapter, draft) },
+                        onClick = { repository.submitWritingForHumanEvaluation(chapter, draft) },
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = p.primary),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1.25f)
                     ) {
-                        Text(tr("রাইটিং জমা দিন", "Submit Writing"), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(tr("👤 Evaluate-এর জন্য জমা দিন", "👤 Submit for Human Eval"), fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
                     }
                 }
             }
@@ -217,6 +219,69 @@ private fun AiWritingAndCoAuthorView(
                 }
             }
         }
+    }
+
+    if (showAiWarningDialog) {
+        AlertDialog(
+            onDismissRequest = { showAiWarningDialog = false },
+            containerColor = p.card,
+            titleContentColor = p.text,
+            textContentColor = p.text,
+            title = {
+                Text(
+                    tr("⚠️ এআই (AI) ব্যবহারে সতর্কতা", "⚠️ AI Feedback Caution"),
+                    fontWeight = FontWeight.ExtraBold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Surface(shape = RoundedCornerShape(12.dp), color = p.accentSoft) {
+                        Text(
+                            text = tr(
+                                "এআই ভুল করতে পারে বা আপনার গবেষণার মানবিক ও একাডেমিক প্রেক্ষাপট পুরোপুরি নাও বুঝতে পারে। মানসম্মত লেখার জন্য মানুষের (সুপারভাইজার / মেন্টর) কাছে Evaluate-এর জন্য জমা দেওয়াই সবচেয়ে উত্তম।",
+                                "AI can make mistakes or miss the deeper academic and human context of your research. Submitting your work to a human mentor/supervisor for evaluation is strongly recommended."
+                            ),
+                            color = p.accentText,
+                            fontSize = 13.sp,
+                            lineHeight = 19.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+
+                    SparcPrimaryButton(
+                        text = tr("👤 মানুষের কাছে Evaluate-এর জন্য জমা দিন", "👤 Submit to Human Mentor for Evaluation"),
+                        onClick = {
+                            showAiWarningDialog = false
+                            repository.submitWritingForHumanEvaluation(chapter, draft)
+                        }
+                    )
+
+                    OutlinedButton(
+                        onClick = {
+                            showAiWarningDialog = false
+                            scope.launch { repository.analyzeWritingWithAi(chapter, draft) }
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, p.border),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            tr("🤖 তবুও প্রাথমিক AI মতামত দেখুন", "🤖 Still View Preliminary AI Hint"),
+                            color = p.muted,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.5.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showAiWarningDialog = false }) {
+                    Text(tr("বন্ধ করুন", "Close"), color = p.muted)
+                }
+            }
+        )
     }
 }
 

@@ -521,6 +521,7 @@ fun SparcSettingsBottomSheet(
                     tr("🎨 থিম", "🎨 Theme"),
                     tr("📱 অ্যাপ", "📱 App"),
                     tr("🏛️ ব্র্যান্ড", "🏛️ Brand"),
+                    tr("📜 নিয়ম", "📜 Rules"),
                     tr("🔑 API", "🔑 API")
                 ),
                 selectedIndex = settingsTab,
@@ -554,11 +555,95 @@ fun SparcSettingsBottomSheet(
                     appCustomization = appCustomization,
                     onSave = onSaveAppCustomization
                 )
+                3 -> SparcFixedGuidelinesTab()
                 else -> ApiKeysVaultPanel(
                     apiVault = apiVault,
                     isSupabaseConnected = isSupabaseConnected,
                     onUpdateVault = onUpdateApiVault
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SparcFixedGuidelinesTab() {
+    val p = LocalSparcPalette.current
+    val rules = listOf(
+        Triple(
+            "১. পাঠ ও অনুশীলনের ধারাবাহিকতা",
+            "1. Consistent Reading & Practice",
+            tr(
+                "প্রতিটি বই বা গবেষণা প্রবন্ধ মনোযোগ দিয়ে পড়ার পর ফ্ল্যাশ নোটস দেখে নিজের বোধগম্যতা যাচাই করুন এবং নির্ধারিত পাঠ অনুশীলনী সম্পন্ন করুন।",
+                "Read each chapter or research paper attentively, review the flash notes, and complete the guided practice exercises honestly."
+            )
+        ),
+        Triple(
+            "২. স্টাডি সার্কেল ও সহপাঠী শিষ্টাচার",
+            "2. Study Circle & Peer Etiquette",
+            tr(
+                "সহপাঠীদের উৎসাহ দিতে Poke পাঠানোর সময় শালীনতা বজায় রাখুন (রাত ১০টা–সকাল ৭টা Quiet Hours)। বিতর্ক কর্নারে সবসময় যুক্তিভিত্তিক ও শ্রদ্ধাশীল মতামত দিন।",
+                "Encourage peers respectfully within daily Poke limits (10 PM–7 AM Quiet Hours) and keep all debate arguments constructive and scholarly."
+            )
+        ),
+        Triple(
+            "৩. মানব মূল্যায়ন বনাম এআই (AI) সতর্কতা",
+            "3. Human Evaluation Over AI",
+            tr(
+                "এআই (AI) ভুল বা যান্ত্রিক পরামর্শ দিতে পারে। তাই চূড়ান্ত গবেষণাপত্র ও অনুচ্ছেদ সবসময় মানব সুপারভাইজার বা মেন্টরের কাছে Evaluate করার জন্য জমা দিন।",
+                "AI tools can hallucinate or miss deep academic nuance. Always prioritize submitting your writing to a human supervisor or mentor for evaluation."
+            )
+        ),
+        Triple(
+            "৪. অন্য লেখকের PDF ও কপিরাইট নীতিমালা",
+            "4. Author Attribution & Copyright Policy",
+            tr(
+                "অন্য লেখক বা গবেষকের PDF প্রবন্ধ আপলোড করলে অবশ্যই মূল লেখকের নাম ও উৎস/DOI উল্লেখ করতে হবে এবং শুধুমাত্র ওপেন-অ্যাক্সেস বা শিক্ষামূলক পাঠচক্রে অনুমোদিত ম্যাটেরিয়াল ব্যবহার করতে হবে।",
+                "When uploading external papers or PDFs, always credit the original author and source/DOI, and upload only open-access or educationally permitted works."
+            )
+        ),
+        Triple(
+            "৫. পাবলিশিং, ওয়ালেট ও তথ্যের গোপনীয়তা",
+            "5. Publishing, Wallet & Privacy",
+            tr(
+                "যৌথ গবেষণাপত্র প্রকাশের ক্ষেত্রে সকল সহ-লেখকের অবদান স্বীকৃত হবে। হার্ডকপি বই অর্ডারের ঠিকানা ও ফোন নম্বর শুধুমাত্র অনুমোদিত অ্যাডমিন ও প্রতিনিধির কাছে সংরক্ষিত থাকে।",
+                "Co-authorship credit reflects genuine contribution. Personal phone numbers and book delivery addresses remain strictly confidential to authorized staff."
+            )
+        )
+    )
+
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(bottom = 22.dp)
+    ) {
+        item {
+            Text(
+                tr("📜 স্টাডি সার্কেল ও প্ল্যাটফর্মের নিয়মাবলী", "📜 Study Circle & Platform Guidelines"),
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 14.sp,
+                color = p.primary
+            )
+        }
+        items(rules.size) { idx ->
+            val (titleBn, titleEn, body) = rules[idx]
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = p.cardAlt,
+                border = BorderStroke(1.dp, p.border),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        tr(titleBn, titleEn),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.5.sp,
+                        color = p.text
+                    )
+                    Text(body, fontSize = 12.sp, color = p.muted, lineHeight = 18.sp)
+                }
             }
         }
     }
@@ -719,8 +804,8 @@ private fun AppIconAndLayoutTab(
         "CIRCLE" to tr("সার্কেল", "Circle"),
         "LIBRARY" to tr("লাইব্রেরি", "Library"),
         "DIRECTORY" to tr("ডিরেক্টরি", "Directory"),
-        "ASSESSMENT" to tr("মূল্যায়ন", "Assess"),
-        "RESEARCH" to tr("রিসার্চ", "Research")
+        "ASSESSMENT" to tr("পাঠ ও অনুশীলন", "Read & Practice"),
+        "RESEARCH" to tr("পাবলিশ", "Publish")
     )
 
     LazyColumn(

@@ -15,11 +15,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import android.content.Intent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -37,6 +40,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.sparc.studycircle.core.data.SparcAppState
 import org.sparc.studycircle.core.data.SparcRepository
+import org.sparc.studycircle.core.domain.ExerciseTemplateParser
 import org.sparc.studycircle.core.domain.SparcDomainEngine
 import org.sparc.studycircle.core.model.BookItem
 import org.sparc.studycircle.core.model.ChapterType
@@ -52,7 +56,8 @@ import org.sparc.studycircle.ui.components.*
 fun LibraryAndReaderScreen(
     state: SparcAppState,
     repository: SparcRepository,
-    initialSubTab: Int = 0
+    initialSubTab: Int = 0,
+    onOpenCircleHub: () -> Unit = {}
 ) {
     var subTab by remember(initialSubTab) { mutableIntStateOf(initialSubTab) }
     var selectedBookId by remember { mutableStateOf(state.books.first().id) }
@@ -62,6 +67,9 @@ fun LibraryAndReaderScreen(
     var showUploadSheet by remember { mutableStateOf(false) }
     var curriculumSheetBook by remember { mutableStateOf<BookItem?>(null) }
     var curriculumInitialChapterNo by remember { mutableIntStateOf(1) }
+    var templateImportBook by remember { mutableStateOf<BookItem?>(null) }
+    var templateInitialChapterNo by remember { mutableIntStateOf(1) }
+    var circleInviteBook by remember { mutableStateOf<BookItem?>(null) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
@@ -82,6 +90,7 @@ fun LibraryAndReaderScreen(
                     selectedBookId = book.id
                     subTab = 1
                 },
+                onOpenCircleInvite = { book -> circleInviteBook = book },
                 onOrderHardcopy = { book -> orderDialogBook = book },
                 onOpenCloudUpload = { targetBook ->
                     uploadSheetInitialBook = targetBook
@@ -90,6 +99,10 @@ fun LibraryAndReaderScreen(
                 onOpenCurriculumBuilder = { targetBook ->
                     curriculumSheetBook = targetBook
                     curriculumInitialChapterNo = 1
+                },
+                onOpenTemplateImport = { targetBook ->
+                    templateImportBook = targetBook
+                    templateInitialChapterNo = 1
                 }
             )
         } else {
@@ -97,6 +110,7 @@ fun LibraryAndReaderScreen(
                 state = state,
                 book = selectedBook,
                 repository = repository,
+                onOpenCircleInvite = { circleInviteBook = selectedBook },
                 onOpenCloudUpload = {
                     uploadSheetInitialBook = selectedBook
                     showUploadSheet = true
@@ -104,6 +118,10 @@ fun LibraryAndReaderScreen(
                 onOpenCurriculumBuilder = { chNo ->
                     curriculumSheetBook = selectedBook
                     curriculumInitialChapterNo = chNo
+                },
+                onOpenTemplateImport = { chNo ->
+                    templateImportBook = selectedBook
+                    templateInitialChapterNo = chNo
                 }
             )
         }
@@ -138,15 +156,39 @@ fun LibraryAndReaderScreen(
             onDismiss = { curriculumSheetBook = null }
         )
     }
+
+    templateImportBook?.let { targetBook ->
+        ExerciseTemplateImporterSheet(
+            book = targetBook,
+            initialChapterNo = templateInitialChapterNo,
+            repository = repository,
+            onDismiss = { templateImportBook = null }
+        )
+    }
+
+    circleInviteBook?.let { targetBook ->
+        BookCircleAndInviteBottomSheet(
+            state = state,
+            book = targetBook,
+            repository = repository,
+            onNavigateToCircle = {
+                circleInviteBook = null
+                onOpenCircleHub()
+            },
+            onDismiss = { circleInviteBook = null }
+        )
+    }
 }
 
 @Composable
 private fun AcademicLibraryCatalogView(
     books: List<BookItem>,
     onReadFreeChapter: (BookItem) -> Unit,
+    onOpenCircleInvite: (BookItem) -> Unit,
     onOrderHardcopy: (BookItem) -> Unit,
     onOpenCloudUpload: (BookItem?) -> Unit,
-    onOpenCurriculumBuilder: (BookItem) -> Unit
+    onOpenCurriculumBuilder: (BookItem) -> Unit,
+    onOpenTemplateImport: (BookItem) -> Unit
 ) {
     val p = LocalSparcPalette.current
 
@@ -155,7 +197,7 @@ private fun AcademicLibraryCatalogView(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Cloud Supabase Storage Upload Studio Banner Card
+        // Cloud Supabase Storage Upload & Guest PDF + Template Studio Banner Card
         item {
             SparcGradientHeroCard {
                 Row(
@@ -165,15 +207,15 @@ private fun AcademicLibraryCatalogView(
                 ) {
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            text = tr("☁️ ক্লাউড বুক, অডিও ও কারিকুলাম স্টুডিও", "☁️ Cloud Book, Audio & Curriculum Studio"),
+                            text = tr("☁️ বই/গবেষণা PDF ও টেমপ্লেট স্টুডিও", "☁️ PDF, Audio & Exercise Template Studio"),
                             color = Color.White,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 15.5.sp
                         )
                         Text(
                             text = tr(
-                                "বইয়ের PDF, বাংলা MP3 আপলোড এবং অধ্যায়/ফ্ল্যাশ নোটস কাস্টমাইজ করুন",
-                                "Upload Book PDFs, Bangla MP3s & customize chapters/flash notes"
+                                "যেকোনো লেখক/গবেষকের PDF আপলোড করুন এবং নির্ধারিত টেমপ্লেটে অনুশীলনী যুক্ত করুন",
+                                "Upload author/researcher PDFs & attach exercises via standard template"
                             ),
                             color = Color.White.copy(alpha = 0.88f),
                             fontSize = 12.sp
@@ -226,7 +268,7 @@ private fun AcademicLibraryCatalogView(
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("SPARC CORE", color = Color.White.copy(alpha = 0.8f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Text("SPARC READ", color = Color.White.copy(alpha = 0.8f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
                             Text(
                                 text = book.title.take(26),
                                 color = Color.White,
@@ -239,7 +281,7 @@ private fun AcademicLibraryCatalogView(
 
                     Column(
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             if (book.isFirstChapterFree) {
@@ -280,51 +322,93 @@ private fun AcademicLibraryCatalogView(
                         Text(book.title, style = MaterialTheme.typography.titleMedium, color = p.text)
                         Text(
                             tr(
-                                "${book.author} • ${book.totalChapters} অধ্যায় • ৳${book.physicalPriceBdt.toInt()}",
-                                "${book.author} • ${book.totalChapters} Chapters • ৳${book.physicalPriceBdt.toInt()}"
+                                "${book.author} • ${book.totalChapters} অধ্যায়" + (if (book.physicalPriceBdt > 0) " • ৳${book.physicalPriceBdt.toInt()}" else " • Open Access"),
+                                "${book.author} • ${book.totalChapters} Ch" + (if (book.physicalPriceBdt > 0) " • ৳${book.physicalPriceBdt.toInt()}" else " • Open Access")
                             ),
                             fontSize = 12.sp,
                             color = p.muted
                         )
+                        if (book.sourceAttribution.isNotBlank()) {
+                            Text(
+                                "📖 ${book.sourceAttribution}",
+                                fontSize = 11.sp,
+                                color = p.primary,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     }
                 }
 
+                // Primary Row: Read & Listen + Study Circle & Invite Connection!
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = { onReadFreeChapter(book) },
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = p.primary),
-                        modifier = Modifier.weight(1.15f)
+                        modifier = Modifier.weight(1.1f)
                     ) {
                         Text(tr("পড়ুন ও শুনুন", "Read & Listen"), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                     Surface(
                         shape = RoundedCornerShape(12.dp),
+                        color = p.primarySoft,
+                        border = BorderStroke(1.dp, p.primary.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .weight(1.1f)
+                            .clickable { onOpenCircleInvite(book) }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(vertical = 11.dp, horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.GroupAdd, contentDescription = null, tint = p.primarySoftText, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(5.dp))
+                            Text(tr("সার্কেল ও ইনভাইট", "Circle & Invite"), color = p.primarySoftText, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+                }
+
+                // Secondary Tools Row: Hardcopy, Template Exercise Upload, Chapter Edit, Cloud PDF/MP3
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
                         color = p.cardAlt,
                         modifier = Modifier
-                            .weight(0.85f)
+                            .weight(1f)
                             .clickable { onOrderHardcopy(book) }
                     ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 11.dp)) {
-                            Text(tr("হার্ডকপি", "Hardcopy"), color = p.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
+                            Text(tr("হার্ডকপি", "Hardcopy"), color = p.text, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
                         }
                     }
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = p.primarySoft,
+                        shape = RoundedCornerShape(10.dp),
+                        color = p.cardAlt,
+                        modifier = Modifier
+                            .weight(1.15f)
+                            .clickable { onOpenTemplateImport(book) }
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
+                            Text(tr("📋 টেমপ্লেট অনুশীলনী", "📋 Template"), color = p.text, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = p.cardAlt,
                         modifier = Modifier.clickable { onOpenCurriculumBuilder(book) }
                     ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 11.dp, vertical = 11.dp)) {
-                            Icon(Icons.Default.EditNote, contentDescription = "Customize Chapters", tint = p.primarySoftText, modifier = Modifier.size(18.dp))
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                            Icon(Icons.Default.EditNote, contentDescription = "Customize Chapters", tint = p.text, modifier = Modifier.size(16.dp))
                         }
                     }
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = p.primarySoft,
+                        shape = RoundedCornerShape(10.dp),
+                        color = p.cardAlt,
                         modifier = Modifier.clickable { onOpenCloudUpload(book) }
                     ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 11.dp, vertical = 11.dp)) {
-                            Icon(Icons.Default.CloudUpload, contentDescription = "Upload PDF/Audio", tint = p.primarySoftText, modifier = Modifier.size(18.dp))
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                            Icon(Icons.Default.CloudUpload, contentDescription = "Upload PDF/Audio", tint = p.primary, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
@@ -338,8 +422,10 @@ private fun SmartPaperReaderView(
     state: SparcAppState,
     book: BookItem,
     repository: SparcRepository,
+    onOpenCircleInvite: () -> Unit,
     onOpenCloudUpload: () -> Unit,
-    onOpenCurriculumBuilder: (Int) -> Unit
+    onOpenCurriculumBuilder: (Int) -> Unit,
+    onOpenTemplateImport: (Int) -> Unit
 ) {
     val p = LocalSparcPalette.current
     val lang = LocalAppLanguage.current
@@ -382,65 +468,90 @@ private fun SmartPaperReaderView(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Chapter Selector + Curriculum Editor + Cloud Upload Triggers
+        // Chapter Selector + Study Circle Invite + Template & Upload Bar
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                LazyRow(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    items(book.chapters.size) { idx ->
-                        val ch = book.chapters[idx]
-                        val active = idx == safeIdx
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (active) p.primary else p.card,
-                            border = BorderStroke(1.dp, if (active) p.primary else p.border),
-                            modifier = Modifier.clickable { selectedChapterIdx = idx }
+                    LazyRow(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(book.chapters.size) { idx ->
+                            val ch = book.chapters[idx]
+                            val active = idx == safeIdx
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (active) p.primary else p.card,
+                                border = BorderStroke(1.dp, if (active) p.primary else p.border),
+                                modifier = Modifier.clickable { selectedChapterIdx = idx }
+                            ) {
+                                Text(
+                                    text = tr("অধ্যায় ${ch.chapterNo}", "Ch ${ch.chapterNo}"),
+                                    color = if (active) Color.White else p.text,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = p.primarySoft,
+                        modifier = Modifier.clickable { onOpenCircleInvite() }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Text(
-                                text = tr("অধ্যায় ${ch.chapterNo}", "Ch ${ch.chapterNo}"),
-                                color = if (active) Color.White else p.text,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                            )
+                            Icon(Icons.Default.GroupAdd, contentDescription = null, tint = p.primarySoftText, modifier = Modifier.size(15.dp))
+                            Text(tr("সার্কেল ইনভাইট", "Circle Invite"), color = p.primarySoftText, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
-                Spacer(Modifier.width(6.dp))
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = p.cardAlt,
-                    border = BorderStroke(1.dp, p.border),
-                    modifier = Modifier.clickable { onOpenCurriculumBuilder(chapter.chapterNo) }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = p.cardAlt,
+                        border = BorderStroke(1.dp, p.border),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { onOpenTemplateImport(chapter.chapterNo) }
                     ) {
-                        Icon(Icons.Default.EditNote, contentDescription = null, tint = p.text, modifier = Modifier.size(15.dp))
-                        Text(tr("অধ্যায় এডিট", "Edit Ch"), color = p.text, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 7.dp)) {
+                            Text(tr("📋 টেমপ্লেট ইমপোর্ট", "📋 Import Template"), color = p.text, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
-                }
-                Spacer(Modifier.width(6.dp))
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = p.primarySoft,
-                    modifier = Modifier.clickable { onOpenCloudUpload() }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = p.cardAlt,
+                        border = BorderStroke(1.dp, p.border),
+                        modifier = Modifier
+                            .weight(0.85f)
+                            .clickable { onOpenCurriculumBuilder(chapter.chapterNo) }
                     ) {
-                        Icon(Icons.Default.CloudUpload, contentDescription = null, tint = p.primarySoftText, modifier = Modifier.size(15.dp))
-                        Text("PDF/MP3", color = p.primarySoftText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 7.dp)) {
+                            Text(tr("✏️ অধ্যায় এডিট", "✏️ Edit Ch"), color = p.text, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = p.cardAlt,
+                        border = BorderStroke(1.dp, p.border),
+                        modifier = Modifier
+                            .weight(0.85f)
+                            .clickable { onOpenCloudUpload() }
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 7.dp)) {
+                            Text("☁️ PDF/MP3", color = p.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -878,9 +989,10 @@ private fun CloudMediaUploadBottomSheet(
 ) {
     val context = LocalContext.current
     val p = LocalSparcPalette.current
+    val lang = LocalAppLanguage.current
     val scope = rememberCoroutineScope()
 
-    var mode by remember { mutableIntStateOf(0) } // 0 = Attach to Existing Book, 1 = Publish New Book
+    var mode by remember { mutableIntStateOf(if (initialBook == null) 1 else 0) } // 0 = Update Existing, 1 = Publish New / Guest PDF
     var selectedBookIdx by remember {
         mutableIntStateOf(
             initialBook?.let { b -> books.indexOfFirst { it.id == b.id }.coerceAtLeast(0) } ?: 0
@@ -890,7 +1002,10 @@ private fun CloudMediaUploadBottomSheet(
 
     var newBookTitle by remember { mutableStateOf("") }
     var newBookAuthor by remember { mutableStateOf("") }
-    var newBookPrice by remember { mutableStateOf("450") }
+    var sourceAttribution by remember { mutableStateOf("") }
+    var newBookPrice by remember { mutableStateOf("0") }
+    var permissionChecked by remember { mutableStateOf(true) }
+    var inlineTemplateRaw by remember { mutableStateOf("") }
 
     var pickedPdfUri by remember { mutableStateOf<Uri?>(null) }
     var pickedPdfLabel by remember { mutableStateOf<String?>(null) }
@@ -905,7 +1020,7 @@ private fun CloudMediaUploadBottomSheet(
     ) { uri: Uri? ->
         if (uri != null) {
             pickedPdfUri = uri
-            pickedPdfLabel = resolveDisplayName(context, uri, "book.pdf")
+            pickedPdfLabel = resolveDisplayName(context, uri, "paper.pdf")
             errorMsg = null
         }
     }
@@ -920,6 +1035,24 @@ private fun CloudMediaUploadBottomSheet(
         }
     }
 
+    val templateFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                val txt = withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.readText()
+                    }.getOrNull()
+                }
+                if (!txt.isNullOrBlank()) {
+                    inlineTemplateRaw = txt
+                    errorMsg = null
+                }
+            }
+        }
+    }
+
     ModalBottomSheet(
         onDismissRequest = { if (!isUploading) onDismiss() },
         containerColor = p.card,
@@ -929,20 +1062,21 @@ private fun CloudMediaUploadBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(max = 660.dp)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = tr("☁️ Supabase Storage-এ PDF ও অডিও আপলোড", "☁️ Upload Book PDF & Audio to Supabase Storage"),
+                text = tr("☁️ বই / গবেষক PDF ও অনুশীলনী টেমপ্লেট আপলোড", "☁️ Upload Author/Researcher PDF & Exercise Template"),
                 style = MaterialTheme.typography.titleLarge,
                 color = p.text
             )
 
             SparcSegmentedPills(
                 options = listOf(
-                    tr("বিদ্যমান বই আপডেট", "Update Existing Book"),
-                    tr("নতুন বই প্রকাশ", "Publish New Book")
+                    tr("বিদ্যমান বই আপডেট", "Update Existing"),
+                    tr("নতুন বই / গবেষকের PDF", "New / Guest PDF")
                 ),
                 selectedIndex = mode,
                 onSelect = {
@@ -978,7 +1112,7 @@ private fun CloudMediaUploadBottomSheet(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(tr("অডিও সামারির অধ্যায় নম্বর:", "Chapter # for Audio Summary:"), fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                    Text(tr("অধ্যায় নম্বর:", "Target Chapter #:"), fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf(1, 2, 3).forEach { ch ->
                             val active = chapterNo == ch
@@ -1002,7 +1136,7 @@ private fun CloudMediaUploadBottomSheet(
                 OutlinedTextField(
                     value = newBookTitle,
                     onValueChange = { newBookTitle = it },
-                    label = { Text(tr("নতুন বইয়ের শিরোনাম", "New Book Title")) },
+                    label = { Text(tr("বই বা গবেষণা প্রবন্ধের শিরোনাম", "Book or Research Paper Title")) },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -1011,18 +1145,43 @@ private fun CloudMediaUploadBottomSheet(
                     OutlinedTextField(
                         value = newBookAuthor,
                         onValueChange = { newBookAuthor = it },
-                        label = { Text(tr("লেখক", "Author")) },
+                        label = { Text(tr("মূল লেখক / গবেষকের নাম", "Original Author / Researcher")) },
                         singleLine = true,
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(1.3f)
+                        modifier = Modifier.weight(1.35f)
                     )
                     OutlinedTextField(
                         value = newBookPrice,
-                        onValueChange = { newBookPrice = it },
-                        label = { Text(tr("মূল্য (৳)", "Price (৳)")) },
+                        onValueChange = { newBookPrice = it.filter { ch -> ch.isDigit() } },
+                        label = { Text(tr("মূল্য ৳ (ফ্রি=0)", "Price ৳")) },
                         singleLine = true,
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(0.7f)
+                        modifier = Modifier.weight(0.65f)
+                    )
+                }
+                OutlinedTextField(
+                    value = sourceAttribution,
+                    onValueChange = { sourceAttribution = it },
+                    label = { Text(tr("উৎস / জার্নাল / প্রকাশনী / DOI (ক্রেডিট)", "Source / Journal / DOI Attribution")) },
+                    placeholder = { Text("e.g. Open Access Journal / DOI: 10.1000/xyz") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { permissionChecked = !permissionChecked }
+                ) {
+                    Checkbox(checked = permissionChecked, onCheckedChange = { permissionChecked = it })
+                    Text(
+                        tr(
+                            "মূল লেখকের ক্রেডিট বজায় রেখে ওপেন-অ্যাক্সেস / শিক্ষামূলক পাঠচক্রের অনুমতি সাপেক্ষে আপলোড করছি",
+                            "Uploading with proper author credit under Open-Access / educational study circle permission"
+                        ),
+                        fontSize = 11.5.sp,
+                        color = p.muted
                     )
                 }
             }
@@ -1044,13 +1203,13 @@ private fun CloudMediaUploadBottomSheet(
                     Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = p.primary)
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = pickedPdfLabel ?: tr("ফোন থেকে বইয়ের PDF ফাইল সিলেক্ট করুন", "Select Book PDF File from Phone"),
+                            text = pickedPdfLabel ?: tr("ফোন থেকে বই বা প্রবন্ধের PDF ফাইল সিলেক্ট করুন", "Select Book or Paper PDF File from Phone"),
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
                             color = p.text
                         )
                         Text(
-                            text = tr("Bucket: sparc-books • সব ইউজারের রিডারে সরাসরি ডাউনলোড হবে", "Bucket: sparc-books • Auto-loads in all users' PDF Reader"),
+                            text = tr("Bucket: sparc-books • সব সদস্যের রিডারে সরাসরি ওপেন হবে", "Bucket: sparc-books • Auto-loads in Smart PDF Reader"),
                             fontSize = 11.sp,
                             color = p.muted
                         )
@@ -1074,17 +1233,70 @@ private fun CloudMediaUploadBottomSheet(
                     Icon(Icons.Default.AudioFile, contentDescription = null, tint = p.accent)
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = pickedAudioLabel ?: tr("ফোন থেকে বাংলা অডিও সামারি (MP3/M4A/WAV) সিলেক্ট করুন", "Select Bangla Audio Summary (MP3/M4A/WAV)"),
+                            text = pickedAudioLabel ?: tr("বাংলা অডিও সামারি (MP3/M4A — ঐচ্ছিক)", "Bangla Audio Summary (MP3/M4A — Optional)"),
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
                             color = p.text
                         )
                         Text(
-                            text = tr("Bucket: sparc-audio • ExoPlayer-এ সরাসরি লাইভ স্ট্রিম হবে", "Bucket: sparc-audio • Streams directly in ExoPlayer"),
+                            text = tr("Bucket: sparc-audio • ExoPlayer-এ লাইভ স্ট্রিম হবে", "Bucket: sparc-audio • Streams live in ExoPlayer"),
                             fontSize = 11.sp,
                             color = p.muted
                         )
                     }
+                }
+            }
+
+            // Inline Standard Exercise Template Attachment!
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = p.cardAlt,
+                border = BorderStroke(1.dp, if (inlineTemplateRaw.isNotBlank()) p.primary else p.border),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            tr("📋 নির্ধারিত টেমপ্লেটে অনুশীলনী (ঐচ্ছিক)", "📋 Standard Exercise Template (Optional)"),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.5.sp,
+                            color = p.text
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = tr("নমুনা বসান", "Fill Sample"),
+                                color = p.primary,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable {
+                                    inlineTemplateRaw = ExerciseTemplateParser.generateSampleTemplate(lang)
+                                }
+                            )
+                            Text("•", color = p.muted, fontSize = 11.sp)
+                            Text(
+                                text = tr("ফাইল দিন", "Pick File"),
+                                color = p.primary,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable {
+                                    templateFileLauncher.launch(arrayOf("text/*", "application/json", "*/*"))
+                                }
+                            )
+                        }
+                    }
+                    OutlinedTextField(
+                        value = inlineTemplateRaw,
+                        onValueChange = { inlineTemplateRaw = it },
+                        placeholder = { Text(tr("নমুনা টেমপ্লেট বা .txt/.csv/.json পেস্ট করুন...", "Paste standard exercise template here..."), fontSize = 11.5.sp) },
+                        minLines = 3,
+                        maxLines = 6,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
 
@@ -1099,7 +1311,7 @@ private fun CloudMediaUploadBottomSheet(
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.5.dp, color = p.primary)
                     Text(
-                        tr("Supabase Storage-এ ফাইল আপলোড হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন", "Uploading to Supabase Storage... please wait"),
+                        tr("ক্লাউডে PDF ও অনুশীলনী আপলোড হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন", "Uploading PDF & Exercise Template... please wait"),
                         fontSize = 12.sp,
                         color = p.primary,
                         fontWeight = FontWeight.Bold
@@ -1111,7 +1323,7 @@ private fun CloudMediaUploadBottomSheet(
                 text = if (isUploading) {
                     tr("আপলোড হচ্ছে...", "Uploading...")
                 } else {
-                    tr("☁️ Supabase Storage-এ আপলোড ও প্রকাশ করুন", "☁️ Upload to Supabase Storage & Publish")
+                    tr("☁️ আপলোড ও পাঠচক্রে প্রকাশ করুন", "☁️ Upload & Publish to Study Circle")
                 },
                 enabled = !isUploading,
                 onClick = {
@@ -1134,12 +1346,15 @@ private fun CloudMediaUploadBottomSheet(
                             isNewBook = mode == 1,
                             newTitle = newBookTitle,
                             newAuthor = newBookAuthor,
-                            newPriceBdt = newBookPrice.toDoubleOrNull() ?: 450.0,
+                            newPriceBdt = newBookPrice.toDoubleOrNull() ?: 0.0,
                             chapterNo = chapterNo,
                             pdfBytes = pdfBytes,
                             pdfFileName = pickedPdfLabel,
                             audioBytes = audioBytes,
-                            audioFileName = pickedAudioLabel
+                            audioFileName = pickedAudioLabel,
+                            sourceAttribution = sourceAttribution,
+                            permissionDeclared = permissionChecked,
+                            exerciseTemplateRaw = inlineTemplateRaw.takeIf { it.isNotBlank() }
                         )
                         isUploading = false
                         res.onSuccess { onDismiss() }
@@ -1148,6 +1363,256 @@ private fun CloudMediaUploadBottomSheet(
                 }
             )
             Spacer(Modifier.height(18.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BookCircleAndInviteBottomSheet(
+    state: SparcAppState,
+    book: BookItem,
+    repository: SparcRepository,
+    onNavigateToCircle: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val p = LocalSparcPalette.current
+    val context = LocalContext.current
+
+    val matchingCircles = remember(state.circles, book.id) {
+        state.circles.filter { it.bookId == book.id }
+    }
+    val selectedCircle = matchingCircles.firstOrNull { state.currentUser.id in it.memberIds }
+        ?: matchingCircles.firstOrNull()
+
+    var newCircleName by remember(book.id) {
+        mutableStateOf("${book.title.take(22)} পাঠচক্র")
+    }
+    var invitedIds by remember { mutableStateOf(setOf<String>()) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = p.card,
+        contentColor = p.text,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 650.dp)
+                .padding(horizontal = 20.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(bottom = 24.dp)
+        ) {
+            item {
+                Text(
+                    tr("👥 বইটির স্টাডি সার্কেল ও সহপাঠী আমন্ত্রণ", "👥 Book Study Circle & Peer Invites"),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = p.text
+                )
+                Text(
+                    "${book.title} • ${book.author}",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = p.primary
+                )
+            }
+
+            // 1. Existing Circles for this Book OR Instant Circle Creation
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = p.cardAlt,
+                    border = BorderStroke(1.dp, p.border),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (matchingCircles.isNotEmpty()) {
+                            Text(
+                                tr("এই বইয়ের চলমান স্টাডি সার্কেল:", "Active Study Circles for this Book:"),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.5.sp,
+                                color = p.text
+                            )
+                            matchingCircles.forEach { c ->
+                                val joined = state.currentUser.id in c.memberIds
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (joined) p.primarySoft else p.card,
+                                    border = BorderStroke(1.dp, if (joined) p.primary else p.border),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(trContent(c.name), fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = p.text)
+                                            Text(
+                                                "${c.memberIds.size}/${c.maxMembers} • ${c.sessionScheduleLabel}",
+                                                fontSize = 11.sp,
+                                                color = p.muted
+                                            )
+                                        }
+                                        Button(
+                                            onClick = {
+                                                if (joined) {
+                                                    repository.selectActiveCircle(c.id)
+                                                    onNavigateToCircle()
+                                                } else {
+                                                    if (repository.joinStudyCircle(c.id, c.inviteCode)) {
+                                                        onNavigateToCircle()
+                                                    }
+                                                }
+                                            },
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = p.primary),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                        ) {
+                                            Text(
+                                                if (joined) tr("সার্কেলে যান", "Open Circle") else tr("জয়েন করুন", "Join"),
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Text(
+                                tr("এই বইটির জন্য এখনো কোনো সার্কেল নেই — ১ ক্লিকে শুরু করুন:", "No circle yet for this book — start one now:"),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.5.sp,
+                                color = p.text
+                            )
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = newCircleName,
+                                onValueChange = { newCircleName = it },
+                                label = { Text(tr("নতুন সার্কেলের নাম", "New Circle Name")) },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            )
+                            Button(
+                                onClick = {
+                                    if (newCircleName.isNotBlank()) {
+                                        repository.createNewStudyCircle(newCircleName, book, minMembers = 5)
+                                    }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = p.primary)
+                            ) {
+                                Text(tr("+ খুলুন", "+ Start"))
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. External WhatsApp / Messenger / Share Sheet Invite Button
+            item {
+                val circleLabel = selectedCircle?.name ?: newCircleName
+                val codeInfo = selectedCircle?.inviteCode?.let { " (Invite Code: $it)" } ?: ""
+                val shareMessage = tr(
+                    "📚 আমি SPARC Study Circle-এ \"${book.title}\" (${book.author}) পড়ছি! আমাদের \"$circleLabel\" পাঠচক্রে যুক্ত হোন$codeInfo — রেফারেল কোড: ${state.currentUser.referralCode}",
+                    "📚 I'm reading \"${book.title}\" (${book.author}) on SPARC Study Circle! Join our \"$circleLabel\" cohort$codeInfo — Referral Code: ${state.currentUser.referralCode}"
+                )
+
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = p.accentSoft,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, shareMessage)
+                            }
+                            runCatching {
+                                context.startActivity(Intent.createChooser(sendIntent, "Invite Friends to Study Circle"))
+                            }
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = null, tint = p.accentText)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                tr("📲 WhatsApp / Messenger-এ বন্ধুদের আমন্ত্রণ পাঠান", "📲 Share Study Circle Invite via WhatsApp / Apps"),
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 12.5.sp,
+                                color = p.accentText
+                            )
+                            Text(
+                                tr("বইয়ের নাম, সার্কেল ও আপনার রেফারেল কোডসহ শেয়ার হবে", "Shares book title, circle name & your referral code"),
+                                fontSize = 11.sp,
+                                color = p.accentText
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 3. Direct 1-Tap In-App Researcher Directory Invites
+            item {
+                Text(
+                    tr("গবেষক ডিরেক্টরি থেকে সরাসরি আমন্ত্রণ পাঠান (+৫ পয়েন্ট):", "Invite Peers from Researcher Directory (+5 pts):"),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = p.text
+                )
+            }
+
+            items(state.directoryMembers.take(10), key = { it.id }) { peer ->
+                val peerName = trContent(peer.name)
+                val alreadyInvited = peer.id in invitedIds
+                val circleTitle = selectedCircle?.name ?: newCircleName
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = p.cardAlt,
+                    border = BorderStroke(1.dp, p.border),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        SparcAvatarCircle(name = peerName, avatarUrl = peer.avatarUrl, size = 38.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(peerName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = p.text)
+                            Text("${peer.department} • ★ ${peer.rating}", fontSize = 11.sp, color = p.muted)
+                        }
+                        val inviteBody = tr(
+                            "চলুন একসাথে \"${book.title}\" বইয়ের \"$circleTitle\" স্টাডি সার্কেলে পড়ি!",
+                            "Let's read \"${book.title}\" together in the \"$circleTitle\" Study Circle!"
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (alreadyInvited) p.card else p.primarySoft,
+                            modifier = Modifier.clickable(enabled = !alreadyInvited) {
+                                repository.sendInviteMessage(peer, inviteBody)
+                                invitedIds = invitedIds + peer.id
+                            }
+                        ) {
+                            Text(
+                                text = if (alreadyInvited) tr("✓ আমন্ত্রিত", "✓ Invited") else "Invite +",
+                                color = if (alreadyInvited) p.muted else p.primarySoftText,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.5.sp,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -1218,3 +1683,4 @@ private fun HardcopyOrderDialog(
         }
     )
 }
+

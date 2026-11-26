@@ -479,7 +479,8 @@ class SupabaseRestClient(
                     totalChapters = o["total_chapters"]?.jsonPrimitive?.intOrNull ?: chList.size,
                     isFirstChapterFree = o["is_first_chapter_free"]?.jsonPrimitive?.booleanOrNull ?: true,
                     minMembersRequired = o["min_members_default"]?.jsonPrimitive?.intOrNull ?: 5,
-                    chapters = chList
+                    chapters = chList,
+                    sourceAttribution = o["source_attribution"]?.jsonPrimitive?.contentOrNull ?: ""
                 )
             }.ifEmpty { fallbackBooks }
 
@@ -1511,7 +1512,9 @@ class SupabaseRestClient(
         author: String,
         priceBdt: Double,
         pdfUrl: String,
-        audioUrl: String?
+        audioUrl: String?,
+        sourceAttribution: String = "",
+        permissionDeclared: Boolean = true
     ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             check(hasAuthenticatedUser)
@@ -1523,9 +1526,54 @@ class SupabaseRestClient(
                     put("p_price_bdt", priceBdt)
                     put("p_pdf_url", pdfUrl)
                     if (!audioUrl.isNullOrBlank()) put("p_audio_url", audioUrl)
+                    put("p_source_attribution", sourceAttribution.trim())
+                    put("p_permission_declared", permissionDeclared)
                 }
             ).jsonObject
             res["book_id"]?.jsonPrimitive?.content ?: ""
+        }
+    }
+
+    suspend fun importExerciseTemplateRemote(
+        bookId: String,
+        parsed: org.sparc.studycircle.core.domain.ParsedExerciseTemplate,
+        replaceQuestions: Boolean = false
+    ): Result<Int> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser && isUuid(bookId))
+            val qJson = buildJsonArray {
+                parsed.questions.forEach { q ->
+                    add(
+                        buildJsonObject {
+                            put("is_auto_scored", q.isAutoScored)
+                            put("section_code", q.sectionCode)
+                            put("prompt_bn", q.promptBn)
+                            put("options", JsonArray(q.options.map { JsonPrimitive(it) }))
+                            put("correct_answer", q.correctAnswer)
+                            put("explanation_bn", q.explanationBn)
+                            put("model_points", JsonArray(q.modelPoints.map { JsonPrimitive(it) }))
+                        }
+                    )
+                }
+            }
+            val res = postRpc(
+                "import_exercise_template_rpc",
+                buildJsonObject {
+                    put("p_book_id", bookId)
+                    put("p_chapter_no", parsed.chapterNo)
+                    put("p_title", parsed.chapterTitle)
+                    put("p_type", parsed.chapterType.name.lowercase())
+                    put("p_total_pages", parsed.totalPages)
+                    put("p_flash_notes", JsonArray(parsed.flashNotes.map { JsonPrimitive(it) }))
+                    put("p_learning_outcomes", JsonArray(parsed.learningOutcomes.map { JsonPrimitive(it) }))
+                    put("p_writing_prompt", parsed.writingPrompt)
+                    put("p_min_words", parsed.minWords)
+                    put("p_max_words", parsed.maxWords)
+                    put("p_questions", qJson)
+                    put("p_replace_questions", replaceQuestions)
+                }
+            ).jsonObject
+            res["imported_questions"]?.jsonPrimitive?.intOrNull ?: parsed.questions.size
         }
     }
 

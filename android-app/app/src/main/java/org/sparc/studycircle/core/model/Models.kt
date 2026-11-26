@@ -291,7 +291,8 @@ data class BookItem(
     val totalChapters: Int,
     val isFirstChapterFree: Boolean = true,
     val minMembersRequired: Int = 10,
-    val chapters: List<ChapterItem>
+    val chapters: List<ChapterItem>,
+    val sourceAttribution: String = ""
 )
 
 @Serializable

@@ -37,27 +37,27 @@ jobs:
           ./gradlew testDebugUnitTest assembleDebug --no-daemon \
             -PSUPABASE_URL="$SUPABASE_URL_SECRET" \
             -PSUPABASE_ANON_KEY="$SUPABASE_ANON_SECRET"
-          cp app/build/outputs/apk/debug/app-debug.apk ../SPARC-Study-Circle-v3.6.${{ github.run_number }}.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../SPARC-Study-Circle-v3.7.${{ github.run_number }}.apk
 
       - name: Upload APK Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SPARC-Study-Circle-v3.6.${{ github.run_number }}-apk
-          path: SPARC-Study-Circle-v3.6.${{ github.run_number }}.apk
+          name: SPARC-Study-Circle-v3.7.${{ github.run_number }}-apk
+          path: SPARC-Study-Circle-v3.7.${{ github.run_number }}.apk
 
       - name: Publish Fresh Latest GitHub Release with APK
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v3.6.${{ github.run_number }}"
-          APK_FILE="SPARC-Study-Circle-v3.6.${{ github.run_number }}.apk"
+          TAG="v3.7.${{ github.run_number }}"
+          APK_FILE="SPARC-Study-Circle-v3.7.${{ github.run_number }}.apk"
           gh release create "$TAG" "$APK_FILE" \
             --latest \
-            --title "SPARC Study Circle $TAG — Complete Customization Suite (Packs 1–5)" \
-            --notes "নতুন ফুল কাস্টমাইজেশন স্যুট রিলিজ ($TAG):
-          - 🏛️ **প্যাক ১ — ব্র্যান্ড, অ্যাকসেন্ট কালার ও পেমেন্ট কাস্টমাইজার:** অ্যাপের শিরোনাম, ট্যাগলাইন, স্প্ল্যাশ কোট, টপ নোটিশ ব্যানার, অফিশিয়াল bKash/Nagad/Rocket নম্বর, সুপারভিশন ফি এবং **৬টি কাস্টম অ্যাকসেন্ট কালার পিকার** সেটিংস স্টুডিও থেকে সরাসরি পরিবর্তন ও লাইভ সিঙ্ক করা যাবে।
-          - 👤 **প্যাক ২ — প্রোফাইল ফটো, বায়ো ও স্মার্ট রিডার কমফোর্ট মোড:** গ্যালারি থেকে প্রোফাইল ছবি আপলোড (`sparc-avatars` বাকেটে), বিশ্ববিদ্যালয়, বায়ো, কাস্টম স্কিলস, ডেইলি রিডিং গোল এবং স্মার্ট রিডারে ফন্ট সাইজ স্লাইডার (`14sp`–`24sp`), ৪টি পেপার থিম (*White, Warm Sepia, Soft Mint, Night Reading*) ও বিল্ট-ইন **Pomodoro ফোকাস টাইমার**।
-          - 📚 **প্যাক ৩ — ইন-অ্যাপ অধ্যায়, ফ্ল্যাশ নোট ও কুইজ বিল্ডার:** ফোন থেকেই নতুন অধ্যায় যোগ/এডিট, ফ্ল্যাশ নোটস, রাইটিং প্রম্পট/শব্দসীমা এবং কাস্টম MCQ ও সৃজনশীল প্রশ্ন (`A–J`) তৈরি ও লাইভ ডাটাবেসে সিঙ্ক করার সুবিধা।
-          - ⭕ **প্যাক ৪ — কাস্টম স্টাডি সার্কেল রুলস ও প্রাইভেসি:** পাবলিক বনাম প্রাইভেট **Invite Code** সার্কেল, কাস্টম সদস্য সীমা (`২–৩০ জন`), সাপ্তাহিক ক্লাস শিডিউল ও ডিফল্ট মিটিং লিংক কাস্টমাইজেশন।
-          - 📱 **প্যাক ৫ — ডাইনামিক লঞ্চার আইকন ও ড্যাশবোর্ড কাস্টমাইজেশন:** ফোনের হোম-স্ক্রিন অ্যাপ আইকন পরিবর্তন (*Classic Cobalt / Emerald Scholar / Royal Gold*), ডিফল্ট ওপেনিং ট্যাব এবং হোম উইজেট অন/অফ কন্ট্রোল।"
+            --title "SPARC Study Circle $TAG — Read & Practice, Circle Invites & Exercise Template Importer" \
+            --notes "নতুন একাডেমিক ইউএক্স ও অনুশীলনী টেমপ্লেট আপডেট ($TAG):
+          - 👥 **বই পড়ার সাথে স্টাডি সার্কেল ও ইনভাইট কানেকশন:** লাইব্রেরির প্রতিটি বইয়ের কার্ড এবং স্মার্ট রিডার—দুই জায়গাতেই **`👥 সার্কেল ও ইনভাইট`** বাটন থেকে ১ ক্লিকে বইটির সার্কেল সিলেক্ট/তৈরি, গবেষক ডিরেক্টরি থেকে ইনভাইট এবং WhatsApp/বাইরে লিংক শেয়ার করা যাবে।
+          - ⚠️ **AI Feedback ওয়ার্নিং ও মানব মূল্যায়নে অগ্রাধিকার:** `AI ফিডব্যাক নিন` ক্লিক করলে এআই-এর সীমাবদ্ধতার সতর্কবার্তা দেখাবে এবং প্রাইমারি অপশন হিসেবে **`👤 মানুষের কাছে Evaluate-এর জন্য জমা দিন`** অফার করবে।
+          - 🧭 **নতুন ভীতিমুক্ত নেভিগেশন নাম:** ৪র্থ ট্যাব **`পাঠ ও অনুশীলন / Read & Practice`** এবং ডানদিকের ৫ম ট্যাব **`পাবলিশ / Publish`** করা হয়েছে।
+          - 📜 **Settings-এ ফিক্সড নিয়মাবলী পেজ:** `⚙️ Settings → 📜 নিয়ম / Rules`-এ স্টাডি সার্কেল, মানব মূল্যায়ন ও কপিরাইট নীতিমালা যুক্ত হয়েছে।
+          - 📋 **অন্য লেখক/গবেষকের PDF + নির্ধারিত টেমপ্লেটে অনুশীলনী ইমপোর্ট:** মূল লেখকের ক্রেডিট ও উৎসসহ PDF আপলোড এবং ১-ক্লিক নমুনা টেমপ্লেট (`.txt` / `.csv` / `.json`) কপি/আপলোডের মাধ্যমে স্বয়ংক্রিয়ভাবে পুরো অধ্যায়ের অনুশীলনী যুক্ত করার সুবিধা।"

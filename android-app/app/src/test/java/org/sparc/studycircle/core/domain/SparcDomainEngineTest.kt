@@ -445,5 +445,48 @@ class SparcDomainEngineTest {
         assertEquals("SECRET-77", updatedCircle.inviteCode)
         assertEquals(2, updatedCircle.currentGroupChapter)
     }
+
+    @Test
+    fun `exercise template parser, bulk repository import, human evaluation flow, and v3_7 tab labels work end to end`() {
+        assertEquals("পাঠ ও অনুশীলন", org.sparc.studycircle.ui.MainTab.ASSESSMENT.label("bn"))
+        assertEquals("Read & Practice", org.sparc.studycircle.ui.MainTab.ASSESSMENT.label("en"))
+        assertEquals("পাবলিশ", org.sparc.studycircle.ui.MainTab.RESEARCH.label("bn"))
+        assertEquals("Publish", org.sparc.studycircle.ui.MainTab.RESEARCH.label("en"))
+
+        val sampleBn = ExerciseTemplateParser.generateSampleTemplate("bn")
+        val parsed = ExerciseTemplateParser.parse(sampleBn).getOrThrow()
+        assertEquals(3, parsed.questions.size)
+        assertEquals(2, parsed.flashNotes.size)
+        assertTrue(parsed.questions[0].isAutoScored)
+        assertFalse(parsed.questions[2].isAutoScored)
+
+        val csvSample = """
+            TYPE,SECTION,PROMPT,OPT1,OPT2,OPT3,CORRECT,EXPLANATION
+            MCQ,C,গুণগত গবেষণার প্রধান শক্তি কোনটি?,গভীর প্রেক্ষাপট,শুধু সংখ্যা,কোনোটিই নয়,গভীর প্রেক্ষাপট,প্রেক্ষাপট বিশ্লেষণ মূল শক্তি
+        """.trimIndent()
+        val parsedCsv = ExerciseTemplateParser.parse(csvSample).getOrThrow()
+        assertEquals(1, parsedCsv.questions.size)
+        assertEquals("গভীর প্রেক্ষাপট", parsedCsv.questions.first().correctAnswer)
+
+        val repo = org.sparc.studycircle.core.data.SparcRepository(
+            supabaseClient = org.sparc.studycircle.core.data.SupabaseRestClient("", "")
+        )
+        val book = repo.state.value.books.first()
+        val importRes = repo.importExerciseTemplate(
+            bookId = book.id,
+            overrideChapterNo = 4,
+            rawTemplate = sampleBn,
+            replaceExistingQuestions = true
+        )
+        assertTrue(importRes.isSuccess)
+        val ch4 = repo.state.value.books.first { it.id == book.id }.chapters.find { it.chapterNo == 4 }
+        assertNotNull(ch4)
+        assertEquals(3, ch4!!.questions.size)
+
+        val longDraft = (1..25).joinToString(" ") { "একাডেমিক" }
+        repo.submitWritingForHumanEvaluation(ch4, longDraft)
+        assertTrue(repo.state.value.statusBannerMessage?.contains("Evaluate") == true)
+    }
 }
+
 

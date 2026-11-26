@@ -1399,24 +1399,40 @@ class SparcRepository(
         pdfBytes: ByteArray?,
         pdfFileName: String?,
         audioBytes: ByteArray?,
-        audioFileName: String?
+        audioFileName: String?,
+        sourceAttribution: String = "",
+        permissionDeclared: Boolean = true,
+        exerciseTemplateRaw: String? = null
     ): Result<Unit> {
-        if (pdfBytes == null && audioBytes == null) {
+        if (pdfBytes == null && audioBytes == null && exerciseTemplateRaw.isNullOrBlank()) {
             return Result.failure(
                 IllegalArgumentException(
-                    msg("অনুগ্রহ করে অন্তত একটি PDF বা অডিও ফাইল সিলেক্ট করুন।", "Please select at least a PDF or an audio file.")
+                    msg("অনুগ্রহ করে অন্তত একটি PDF, অডিও বা অনুশীলনী টেমপ্লেট সিলেক্ট করুন।", "Please select at least a PDF, audio file, or exercise template.")
                 )
             )
         }
         if (isNewBook && newTitle.isBlank()) {
             return Result.failure(
                 IllegalArgumentException(
-                    msg("নতুন বইয়ের নাম লিখুন।", "Please enter the new book title.")
+                    msg("নতুন বই বা প্রবন্ধের শিরোনাম লিখুন।", "Please enter the book or paper title.")
+                )
+            )
+        }
+        if (isNewBook && !permissionDeclared) {
+            return Result.failure(
+                IllegalArgumentException(
+                    msg("কপিরাইট / ওপেন-অ্যাক্সেস পাঠচক্র সম্মতিতে টিক দিন।", "Please confirm copyright / open-access educational permission.")
                 )
             )
         }
 
-        if (!supabaseClient.hasAuthenticatedUser) {
+        val parsedTemplate = if (!exerciseTemplateRaw.isNullOrBlank()) {
+            val parseRes = org.sparc.studycircle.core.domain.ExerciseTemplateParser.parse(exerciseTemplateRaw)
+            if (parseRes.isFailure) return Result.failure(parseRes.exceptionOrNull()!!)
+            parseRes.getOrNull()
+        } else null
+
+        if (!supabaseClient.hasAuthenticatedUser && (pdfBytes != null || audioBytes != null)) {
             return Result.failure(
                 IllegalStateException(
                     msg(
@@ -1461,21 +1477,35 @@ class SparcRepository(
                 ).getOrThrow()
             }
 
-            if (isNewBook) {
+            val resolvedBookId = if (isNewBook) {
                 supabaseClient.publishNewBookWithMediaRemote(
                     title = newTitle.trim(),
-                    author = newAuthor.trim().ifBlank { "SPARC Author" },
+                    author = newAuthor.trim().ifBlank { "Guest Researcher" },
                     priceBdt = newPriceBdt,
                     pdfUrl = uploadedPdfUrl ?: "",
-                    audioUrl = uploadedAudioUrl
+                    audioUrl = uploadedAudioUrl,
+                    sourceAttribution = sourceAttribution,
+                    permissionDeclared = permissionDeclared
                 ).getOrThrow()
             } else {
                 val book = targetBook ?: _state.value.books.first()
-                supabaseClient.attachMediaToBookRemote(
-                    bookId = book.id,
-                    chapterNo = chapterNo.coerceAtLeast(1),
-                    pdfUrl = uploadedPdfUrl,
-                    audioUrl = uploadedAudioUrl
+                if (uploadedPdfUrl != null || uploadedAudioUrl != null) {
+                    supabaseClient.attachMediaToBookRemote(
+                        bookId = book.id,
+                        chapterNo = chapterNo.coerceAtLeast(1),
+                        pdfUrl = uploadedPdfUrl,
+                        audioUrl = uploadedAudioUrl
+                    ).getOrThrow()
+                }
+                book.id
+            }
+
+            if (parsedTemplate != null && resolvedBookId.isNotBlank()) {
+                val adjusted = parsedTemplate.copy(chapterNo = chapterNo.coerceAtLeast(parsedTemplate.chapterNo))
+                supabaseClient.importExerciseTemplateRemote(
+                    bookId = resolvedBookId,
+                    parsed = adjusted,
+                    replaceQuestions = isNewBook
                 ).getOrThrow()
             }
 
@@ -1483,9 +1513,120 @@ class SparcRepository(
             _state.update { s ->
                 s.copy(
                     statusBannerMessage = if (s.appLanguage == "en") {
-                        "✓ Cloud PDF/Audio uploaded to Supabase Storage & synced!"
+                        "✓ PDF/Audio & Exercise Template uploaded to Supabase & synced!"
                     } else {
-                        "✓ বইয়ের PDF / অডিও সামারি সফলভাবে Supabase Storage-এ আপলোড ও সিঙ্ক হয়েছে!"
+                        "✓ PDF / অডিও এবং অনুশীলনী টেমপ্লেট সফলভাবে আপলোড ও লাইভ সিঙ্ক হয়েছে!"
+                    }
+                )
+            }
+        }
+    }
+
+    fun importExerciseTemplate(
+        bookId: String,
+        overrideChapterNo: Int?,
+        rawTemplate: String,
+        replaceExistingQuestions: Boolean = false
+    ): Result<Int> {
+        val parsedRes = org.sparc.studycircle.core.domain.ExerciseTemplateParser.parse(rawTemplate)
+        if (parsedRes.isFailure) return Result.failure(parsedRes.exceptionOrNull()!!)
+        val baseParsed = parsedRes.getOrThrow()
+        val parsed = if (overrideChapterNo != null && overrideChapterNo >= 1) {
+            baseParsed.copy(chapterNo = overrideChapterNo)
+        } else baseParsed
+
+        _state.update { s ->
+            val updatedBooks = s.books.map { b ->
+                if (b.id != bookId) b else {
+                    val existing = b.chapters.find { it.chapterNo == parsed.chapterNo }
+                    val startNo = if (replaceExistingQuestions || existing == null) 0
+                    else (existing.questions.maxOfOrNull { it.questionNo } ?: 0)
+                    val mappedQs = parsed.questions.mapIndexed { idx, q ->
+                        AssessmentQuestion(
+                            id = UUID.randomUUID().toString(),
+                            questionNo = startNo + idx + 1,
+                            sectionCode = q.sectionCode.uppercase().take(1).ifBlank { if (q.isAutoScored) "C" else "H" },
+                            categoryLabel = if (q.isAutoScored) "MCQ" else "SCENARIO",
+                            isAutoScored = q.isAutoScored,
+                            maxMarks = if (q.isAutoScored) 1 else 3,
+                            promptBn = q.promptBn,
+                            options = q.options,
+                            lockedCorrectAnswer = if (q.isAutoScored) q.correctAnswer else null,
+                            explanationBn = q.explanationBn,
+                            supervisorModelPoints = q.modelPoints
+                        )
+                    }
+                    val finalChapter = if (existing != null) {
+                        existing.copy(
+                            title = parsed.chapterTitle.ifBlank { existing.title },
+                            type = parsed.chapterType,
+                            totalPages = parsed.totalPages,
+                            flashNotes = parsed.flashNotes.ifEmpty { existing.flashNotes },
+                            learningOutcomes = parsed.learningOutcomes.ifEmpty { existing.learningOutcomes },
+                            writingTaskPrompt = parsed.writingPrompt.ifBlank { existing.writingTaskPrompt },
+                            minWords = parsed.minWords,
+                            maxWords = parsed.maxWords,
+                            questions = if (replaceExistingQuestions) mappedQs.ifEmpty { existing.questions }
+                            else existing.questions + mappedQs
+                        )
+                    } else {
+                        ChapterItem(
+                            id = UUID.randomUUID().toString(),
+                            bookId = b.id,
+                            chapterNo = parsed.chapterNo,
+                            title = parsed.chapterTitle.ifBlank { "অধ্যায় ${parsed.chapterNo}" },
+                            type = parsed.chapterType,
+                            totalPages = parsed.totalPages,
+                            defaultReadingMinutes = parsed.totalPages * 4,
+                            audioSummaryTitle = "বাংলা অডিও সামারি (অধ্যায় ${parsed.chapterNo})",
+                            audioDurationMinutes = 6,
+                            flashNotes = parsed.flashNotes.ifEmpty { listOf("পাঠের মূল নোট") },
+                            sections = listOf(ChapterSection("s-${parsed.chapterNo}-1", "মূল আলোচনা", "1-${parsed.totalPages}", emptyList())),
+                            learningOutcomes = parsed.learningOutcomes.ifEmpty { listOf("পাঠের মূল ধারণা বিশ্লেষণ") },
+                            questions = mappedQs.ifEmpty { b.chapters.first().questions },
+                            writingTaskPrompt = parsed.writingPrompt.ifBlank { "এই পাঠের আলোকে বিশ্লেষণমূলক অনুচ্ছেদ লিখুন।" },
+                            minWords = parsed.minWords,
+                            maxWords = parsed.maxWords
+                        )
+                    }
+                    val mergedChapters = (b.chapters.filter { it.chapterNo != parsed.chapterNo } + finalChapter)
+                        .sortedBy { it.chapterNo }
+                    b.copy(
+                        totalChapters = maxOf(b.totalChapters, parsed.chapterNo),
+                        chapters = mergedChapters
+                    )
+                }
+            }
+            s.copy(
+                books = updatedBooks,
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "✓ Template imported (${parsed.questions.size} exercises & ${parsed.flashNotes.size} notes)!"
+                } else {
+                    "✓ টেমপ্লেট থেকে ${parsed.questions.size}টি অনুশীলনী ও ${parsed.flashNotes.size}টি ফ্ল্যাশ নোট যুক্ত হয়েছে!"
+                }
+            )
+        }
+
+        launchRemoteSync {
+            supabaseClient.importExerciseTemplateRemote(
+                bookId = bookId,
+                parsed = parsed,
+                replaceQuestions = replaceExistingQuestions
+            ).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
+        return Result.success(parsed.questions.size)
+    }
+
+    fun submitWritingForHumanEvaluation(chapter: ChapterItem, content: String) {
+        submitChapterWritingTask(chapter, content)
+        if (content.trim().split(Regex("\\s+")).count { it.isNotBlank() } >= 20) {
+            _state.update { s ->
+                s.copy(
+                    statusBannerMessage = if (s.appLanguage == "en") {
+                        "✓ Submitted to Human Supervisor/Mentor queue for authentic evaluation!"
+                    } else {
+                        "✓ আপনার লেখাটি মানব সুপারভাইজার/মেন্টরের কাছে Evaluate করার জন্য জমা হয়েছে!"
                     }
                 )
             }
