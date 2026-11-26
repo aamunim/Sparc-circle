@@ -80,6 +80,59 @@ object SparcDomainEngine {
         }
     }
 
+    /**
+     * Resolves the member-elected Circle Lead (Moderator) completely independently
+     * from the SPARC-appointed Mentor (supervisorId).
+     */
+    fun resolveElectedCircleLead(circle: StudyCircleGroup): String? {
+        val memberCount = circle.memberIds.distinct().size
+        if (circle.circleLeadVotes.isEmpty()) {
+            return circle.circleLeadId
+        }
+        val topEntry = circle.circleLeadVotes.values
+            .groupingBy { it }
+            .eachCount()
+            .maxByOrNull { it.value } ?: return circle.circleLeadId
+
+        return if (memberCount == 0 || topEntry.value > memberCount / 2 || circle.circleLeadId == null) {
+            topEntry.key
+        } else {
+            circle.circleLeadId
+        }
+    }
+
+    fun canUserManageCircle(user: UserProfile, circle: StudyCircleGroup): Boolean {
+        return user.role.canLeadCircle ||
+            circle.circleLeadId == user.id ||
+            circle.supervisorId == user.id ||
+            circle.initiatorId == user.id
+    }
+
+    fun resolveUserActivityBadges(
+        userId: String,
+        earnedBadges: List<String> = emptyList(),
+        activeCircle: StudyCircleGroup? = null,
+        sessions: List<OnlineSessionItem> = emptyList(),
+        coAuthorUserIds: Set<String> = emptySet(),
+        peerBuddyUserIds: Set<String> = emptySet()
+    ): List<ActivityRoleBadge> = buildList {
+        if (activeCircle?.initiatorId == userId || earnedBadges.any { it.contains("Initiator", ignoreCase = true) }) {
+            add(ActivityRoleBadge.CIRCLE_INITIATOR)
+        }
+        if (activeCircle?.circleLeadId == userId) {
+            add(ActivityRoleBadge.CIRCLE_LEAD)
+        }
+        if (sessions.any { !it.isResearchClinic && it.presenterUserId == userId }) {
+            add(ActivityRoleBadge.CHAPTER_PRESENTER)
+        }
+        if (userId in coAuthorUserIds) {
+            add(ActivityRoleBadge.CO_AUTHOR)
+        }
+        if (userId in peerBuddyUserIds) {
+            add(ActivityRoleBadge.PEER_BUDDY)
+        }
+    }
+
     // ------------------------------------------------------------------------
     // 3. Peer Motivation ('Poke') Rate-Limiter & Quiet Hours (Section 4.3)
     // ------------------------------------------------------------------------

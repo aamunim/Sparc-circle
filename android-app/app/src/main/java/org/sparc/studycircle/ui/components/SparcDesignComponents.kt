@@ -476,17 +476,77 @@ fun SparcAudioWaveformBar(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun SparcRoleBadgesRow(
+    coreRole: UserRole,
+    activityBadges: List<ActivityRoleBadge> = emptyList(),
+    onLightGradient: Boolean = false
+) {
+    val p = LocalSparcPalette.current
+    val lang = LocalAppLanguage.current
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        val roleBg = when {
+            onLightGradient -> Color.White.copy(alpha = 0.22f)
+            coreRole.isAdminLike -> Color(0xFFFEF3C7)
+            coreRole == UserRole.SUPERVISOR -> p.primarySoft
+            coreRole == UserRole.MODERATOR -> p.accentSoft
+            else -> p.cardAlt
+        }
+        val roleText = when {
+            onLightGradient -> Color.White
+            coreRole.isAdminLike -> Color(0xFF92400E)
+            coreRole == UserRole.SUPERVISOR -> p.primarySoftText
+            coreRole == UserRole.MODERATOR -> p.accentText
+            else -> p.text
+        }
+        Surface(
+            shape = RoundedCornerShape(50),
+            color = roleBg,
+            border = if (!onLightGradient) BorderStroke(0.8.dp, p.border) else null
+        ) {
+            Text(
+                text = "${coreRole.badgeEmoji} ${coreRole.shortLabel(lang)}",
+                color = roleText,
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp)
+            )
+        }
+
+        activityBadges.distinct().forEach { badge ->
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = if (onLightGradient) Color.White.copy(alpha = 0.18f) else p.primarySoft
+            ) {
+                Text(
+                    text = badge.label(lang),
+                    color = if (onLightGradient) Color.White else p.primarySoftText,
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp)
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SparcSettingsBottomSheet(
     currentTheme: SparcVisualTheme,
     currentLanguage: String = "bn",
+    currentRole: UserRole = UserRole.MEMBER,
     appCustomization: AppCustomizationConfig = AppCustomizationConfig(),
     uiCustomization: UserUiCustomization = UserUiCustomization(),
     apiVault: ApiKeyVaultConfig = ApiKeyVaultConfig(),
-    isSupabaseConnected: Boolean = false,
+    isServerConnected: Boolean = false,
     onSelectTheme: (SparcVisualTheme) -> Unit,
     onChangeLanguage: (String) -> Unit = {},
+    onSwitchRolePreview: (UserRole) -> Unit = {},
     onUpdateUiCustomization: (UserUiCustomization, String?, String?) -> Unit = { _, _, _ -> },
     onSaveAppCustomization: (AppCustomizationConfig) -> Unit = {},
     onUpdateApiVault: (ApiKeyVaultConfig, String) -> Unit = { _, _ -> },
@@ -495,7 +555,7 @@ fun SparcSettingsBottomSheet(
 ) {
     val p = LocalSparcPalette.current
     val context = LocalContext.current
-    var settingsTab by remember { mutableIntStateOf(0) } // 0 = Theme & Accent, 1 = App & Icon, 2 = Brand & Pay, 3 = API Keys
+    var settingsTab by remember { mutableIntStateOf(0) } // 0 = Theme & Accent, 1 = App & Role, 2 = Brand & Pay, 3 = Rules, 4 = API Keys
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -539,7 +599,9 @@ fun SparcSettingsBottomSheet(
                 )
                 1 -> AppIconAndLayoutTab(
                     currentLanguage = currentLanguage,
+                    currentRole = currentRole,
                     uiCustomization = uiCustomization,
+                    onSwitchRolePreview = onSwitchRolePreview,
                     onUpdateUiCustomization = { next, bn, en ->
                         if (next.launcherIconPreset != uiCustomization.launcherIconPreset) {
                             applyLauncherIconPreset(context, next.launcherIconPreset)
@@ -552,13 +614,15 @@ fun SparcSettingsBottomSheet(
                     }
                 )
                 2 -> BrandAndPaymentAdminTab(
+                    currentRole = currentRole,
                     appCustomization = appCustomization,
+                    onSwitchToAdmin = { onSwitchRolePreview(UserRole.ADMIN) },
                     onSave = onSaveAppCustomization
                 )
                 3 -> SparcFixedGuidelinesTab()
                 else -> ApiKeysVaultPanel(
                     apiVault = apiVault,
-                    isSupabaseConnected = isSupabaseConnected,
+                    isServerConnected = isServerConnected,
                     onUpdateVault = onUpdateApiVault
                 )
             }
@@ -571,43 +635,43 @@ private fun SparcFixedGuidelinesTab() {
     val p = LocalSparcPalette.current
     val rules = listOf(
         Triple(
-            "১. পাঠ ও অনুশীলনের ধারাবাহিকতা",
-            "1. Consistent Reading & Practice",
+            "১. দুই-স্তরের ইউজার রোল ও দায়িত্ব",
+            "1. Two-Tier Roles & Responsibilities",
+            tr(
+                "সিস্টেমে ৪টি মূল রোল রয়েছে: Researcher (বই পড়া ও অনুশীলনী), Circle Lead (ভোটে নির্বাচিত সেশন ও প্রেজেন্টার সমন্বয়ক), Mentor (SPARC-নিযুক্ত বিশেষজ্ঞ: F–J মূল্যায়ন, রেড-ফ্ল্যাগ ও Peer Buddy সহায়তা) এবং Admin (কপিরাইট, বই অর্ডার ও মেন্টর নিয়োগ)। পাশাপাশি অ্যাক্টিভিটি ব্যাজ হিসেবে থাকে: গ্রুপ উদ্যোক্তা (+৫০ পয়েন্ট), উপস্থাপক, সহ-লেখক ও সহপাঠী সঙ্গী।",
+                "Core roles: Researcher (reading & practice), Circle Lead (member-elected session & presenter lead), Mentor (SPARC-appointed expert for F–J grading, red-flags & Peer Buddy pairing), and Admin (copyright, book orders & mentor assignment). Dynamic badges: Circle Host (+50 pts), Presenter, Co-Author & Peer Buddy."
+            )
+        ),
+        Triple(
+            "২. পাঠ ও অনুশীলনের ধারাবাহিকতা",
+            "2. Consistent Reading & Practice",
             tr(
                 "প্রতিটি বই বা গবেষণা প্রবন্ধ মনোযোগ দিয়ে পড়ার পর ফ্ল্যাশ নোটস দেখে নিজের বোধগম্যতা যাচাই করুন এবং নির্ধারিত পাঠ অনুশীলনী সম্পন্ন করুন।",
                 "Read each chapter or research paper attentively, review the flash notes, and complete the guided practice exercises honestly."
             )
         ),
         Triple(
-            "২. স্টাডি সার্কেল ও সহপাঠী শিষ্টাচার",
-            "2. Study Circle & Peer Etiquette",
+            "৩. স্টাডি সার্কেল ও সহপাঠী শিষ্টাচার",
+            "3. Study Circle & Peer Etiquette",
             tr(
                 "সহপাঠীদের উৎসাহ দিতে Poke পাঠানোর সময় শালীনতা বজায় রাখুন (রাত ১০টা–সকাল ৭টা Quiet Hours)। বিতর্ক কর্নারে সবসময় যুক্তিভিত্তিক ও শ্রদ্ধাশীল মতামত দিন।",
                 "Encourage peers respectfully within daily Poke limits (10 PM–7 AM Quiet Hours) and keep all debate arguments constructive and scholarly."
             )
         ),
         Triple(
-            "৩. মানব মূল্যায়ন বনাম এআই (AI) সতর্কতা",
-            "3. Human Evaluation Over AI",
+            "৪. মানব মূল্যায়ন বনাম এআই (AI) সতর্কতা",
+            "4. Human Evaluation Over AI",
             tr(
-                "এআই (AI) ভুল বা যান্ত্রিক পরামর্শ দিতে পারে। তাই চূড়ান্ত গবেষণাপত্র ও অনুচ্ছেদ সবসময় মানব সুপারভাইজার বা মেন্টরের কাছে Evaluate করার জন্য জমা দিন।",
-                "AI tools can hallucinate or miss deep academic nuance. Always prioritize submitting your writing to a human supervisor or mentor for evaluation."
+                "এআই (AI) ভুল বা যান্ত্রিক পরামর্শ দিতে পারে। তাই চূড়ান্ত গবেষণাপত্র ও অনুচ্ছেদ সবসময় মানব মেন্টর বা সুপারভাইজারের কাছে Evaluate করার জন্য জমা দিন।",
+                "AI tools can hallucinate or miss deep academic nuance. Always prioritize submitting your writing to a human mentor for evaluation."
             )
         ),
         Triple(
-            "৪. অন্য লেখকের PDF ও কপিরাইট নীতিমালা",
-            "4. Author Attribution & Copyright Policy",
+            "৫. অন্য লেখকের PDF, কপিরাইট ও গোপনীয়তা",
+            "5. Copyright, Attribution & Privacy",
             tr(
                 "অন্য লেখক বা গবেষকের PDF প্রবন্ধ আপলোড করলে অবশ্যই মূল লেখকের নাম ও উৎস/DOI উল্লেখ করতে হবে এবং শুধুমাত্র ওপেন-অ্যাক্সেস বা শিক্ষামূলক পাঠচক্রে অনুমোদিত ম্যাটেরিয়াল ব্যবহার করতে হবে।",
-                "When uploading external papers or PDFs, always credit the original author and source/DOI, and upload only open-access or educationally permitted works."
-            )
-        ),
-        Triple(
-            "৫. পাবলিশিং, ওয়ালেট ও তথ্যের গোপনীয়তা",
-            "5. Publishing, Wallet & Privacy",
-            tr(
-                "যৌথ গবেষণাপত্র প্রকাশের ক্ষেত্রে সকল সহ-লেখকের অবদান স্বীকৃত হবে। হার্ডকপি বই অর্ডারের ঠিকানা ও ফোন নম্বর শুধুমাত্র অনুমোদিত অ্যাডমিন ও প্রতিনিধির কাছে সংরক্ষিত থাকে।",
-                "Co-authorship credit reflects genuine contribution. Personal phone numbers and book delivery addresses remain strictly confidential to authorized staff."
+                "Always credit original authors and DOI/source when uploading external PDFs, and share only open-access or educationally permitted works."
             )
         )
     )
@@ -792,10 +856,13 @@ private fun ThemeAndAccentTab(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AppIconAndLayoutTab(
     currentLanguage: String,
+    currentRole: UserRole,
     uiCustomization: UserUiCustomization,
+    onSwitchRolePreview: (UserRole) -> Unit,
     onUpdateUiCustomization: (UserUiCustomization, String?, String?) -> Unit,
     onLogout: () -> Unit
 ) {
@@ -812,6 +879,60 @@ private fun AppIconAndLayoutTab(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(bottom = 20.dp)
     ) {
+        // Role Switcher (Preview / Testing Mode)
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = p.cardAlt,
+                border = BorderStroke(1.dp, p.border),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        tr("🎭 রোল সুইচার (Role Preview & Permission Test)", "🎭 Role Switcher (Preview & Permission Test)"),
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 12.5.sp,
+                        color = p.primary
+                    )
+                    Text(
+                        tr(
+                            "বর্তমান সক্রিয় রোল: ${currentRole.badgeEmoji} ${currentRole.labelBn} • এক ট্যাপে যেকোনো রোলের UI ও পারমিশন পরীক্ষা করুন:",
+                            "Active role: ${currentRole.badgeEmoji} ${currentRole.labelEn} • Tap to preview role permissions:"
+                        ),
+                        fontSize = 11.5.sp,
+                        color = p.muted
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            UserRole.MEMBER,
+                            UserRole.MODERATOR,
+                            UserRole.SUPERVISOR,
+                            UserRole.ADMIN
+                        ).forEach { r ->
+                            val selected = currentRole == r || (r == UserRole.ADMIN && currentRole == UserRole.SPARC_REP)
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (selected) p.primary else p.card,
+                                border = BorderStroke(1.dp, if (selected) p.primary else p.border),
+                                modifier = Modifier.clickable { onSwitchRolePreview(r) }
+                            ) {
+                                Text(
+                                    text = "${r.badgeEmoji} ${r.shortLabel(currentLanguage)}",
+                                    color = if (selected) Color.White else p.text,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         item {
             Text(
                 tr("📱 ফোনের হোম-স্ক্রিন লঞ্চার আইকন স্টাইল:", "📱 Phone Home-Screen Launcher Icon:"),
@@ -972,10 +1093,49 @@ private fun ToggleRowItem(
 
 @Composable
 private fun BrandAndPaymentAdminTab(
+    currentRole: UserRole,
     appCustomization: AppCustomizationConfig,
+    onSwitchToAdmin: () -> Unit,
     onSave: (AppCustomizationConfig) -> Unit
 ) {
     val p = LocalSparcPalette.current
+    if (!currentRole.isAdminLike) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = p.accentSoft,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        tr("🛡️ শুধুমাত্র অ্যাডমিন (SPARC টিম) সংরক্ষিত", "🛡️ Restricted to Admin (SPARC Team)"),
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 13.5.sp,
+                        color = p.accentText
+                    )
+                    Text(
+                        tr(
+                            "গ্লোবাল ব্র্যান্ডিং, নোটিশ ব্যানার ও অফিশিয়াল পেমেন্ট নম্বর শুধুমাত্র অ্যাডমিন পরিবর্তন করতে পারেন। টেস্টিংয়ের জন্য নিচের বাটনে ট্যাপ করে Admin মোডে যেতে পারেন।",
+                            "Global branding, announcement banners, and payment merchant numbers can only be modified by Admin. Tap below to preview as Admin."
+                        ),
+                        fontSize = 12.sp,
+                        color = p.accentText
+                    )
+                }
+            }
+            SparcPrimaryButton(
+                text = tr("🛡️ Admin (Preview) রোলে সুইচ করুন", "🛡️ Switch to Admin (Preview) Role"),
+                onClick = onSwitchToAdmin
+            )
+        }
+        return
+    }
+
     var appTitle by remember(appCustomization) { mutableStateOf(appCustomization.appTitle) }
     var taglineBn by remember(appCustomization) { mutableStateOf(appCustomization.appTaglineBn) }
     var taglineEn by remember(appCustomization) { mutableStateOf(appCustomization.appTaglineEn) }
@@ -1108,7 +1268,7 @@ private fun BrandAndPaymentAdminTab(
                 OutlinedTextField(
                     value = supFee,
                     onValueChange = { supFee = it.filter { ch -> ch.isDigit() } },
-                    label = { Text(tr("সুপারভিশন ফি ৳", "Supervision Fee ৳")) },
+                    label = { Text(tr("মেন্টর ফি ৳", "Mentor Fee ৳")) },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f)
@@ -1125,7 +1285,7 @@ private fun BrandAndPaymentAdminTab(
         }
         item {
             SparcPrimaryButton(
-                text = tr("সেভ ও লাইভ সিঙ্ক করুন (Save Brand Config)", "Save & Sync Brand Config"),
+                text = tr("সেভ ও সার্ভারে সিঙ্ক করুন (Save Brand Config)", "Save & Sync Brand Config"),
                 onClick = {
                     onSave(
                         appCustomization.copy(
@@ -1153,7 +1313,7 @@ private fun BrandAndPaymentAdminTab(
 @Composable
 private fun ApiKeysVaultPanel(
     apiVault: ApiKeyVaultConfig,
-    isSupabaseConnected: Boolean,
+    isServerConnected: Boolean,
     onUpdateVault: (ApiKeyVaultConfig, String) -> Unit
 ) {
     val p = LocalSparcPalette.current
@@ -1162,8 +1322,8 @@ private fun ApiKeysVaultPanel(
     var bkashInput by remember(apiVault.bkashMerchantKey) { mutableStateOf(apiVault.bkashMerchantKey) }
     var sslInput by remember(apiVault.sslCommerzStoreId) { mutableStateOf(apiVault.sslCommerzStoreId) }
     var jitsiInput by remember(apiVault.customJitsiServerUrl) { mutableStateOf(apiVault.customJitsiServerUrl) }
-    var supaUrlInput by remember(apiVault.customSupabaseUrl) { mutableStateOf(apiVault.customSupabaseUrl) }
-    var supaAnonInput by remember(apiVault.customSupabaseAnonKey) { mutableStateOf(apiVault.customSupabaseAnonKey) }
+    var serverUrlInput by remember(apiVault.customSupabaseUrl) { mutableStateOf(apiVault.customSupabaseUrl) }
+    var serverKeyInput by remember(apiVault.customSupabaseAnonKey) { mutableStateOf(apiVault.customSupabaseAnonKey) }
 
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -1172,15 +1332,15 @@ private fun ApiKeysVaultPanel(
         item {
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = if (isSupabaseConnected) p.primarySoft else p.accentSoft,
+                color = if (isServerConnected) p.primarySoft else p.accentSoft,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = if (isSupabaseConnected)
-                        tr("✓ লাইভ Supabase ডাটাবেস সংযুক্ত আছে", "✓ Connected to Live Supabase Database")
+                    text = if (isServerConnected)
+                        tr("✓ লাইভ সার্ভার সংযুক্ত আছে", "✓ Connected to Live Server")
                     else
                         tr("ℹ বর্তমানে অফলাইন ডেমো মোড চালু আছে", "ℹ Running in Offline Demo Mode"),
-                    color = if (isSupabaseConnected) p.primarySoftText else p.accentText,
+                    color = if (isServerConnected) p.primarySoftText else p.accentText,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(10.dp)
@@ -1282,23 +1442,23 @@ private fun ApiKeysVaultPanel(
 
         item {
             ApiKeySlotEditor(
-                title = tr("Custom Supabase URL (ঐচ্ছিক ওভাররাইড)", "Custom Supabase URL (Optional Override)"),
-                placeholder = "https://xxxx.supabase.co",
+                title = tr("কাস্টম সার্ভার URL (ঐচ্ছিক ওভাররাইড)", "Custom Server URL (Optional Override)"),
+                placeholder = "https://api.sparc-server.org",
                 currentSaved = apiVault.customSupabaseUrl,
-                draftValue = supaUrlInput,
-                onDraftChange = { supaUrlInput = it },
+                draftValue = serverUrlInput,
+                onDraftChange = { serverUrlInput = it },
                 onSave = {
                     onUpdateVault(
-                        apiVault.copy(customSupabaseUrl = supaUrlInput.trim(), customSupabaseAnonKey = supaAnonInput.trim()),
-                        if (isEn) "Custom Supabase connection saved!" else "কাস্টম Supabase সংযোগ সংরক্ষিত হয়েছে!"
+                        apiVault.copy(customSupabaseUrl = serverUrlInput.trim(), customSupabaseAnonKey = serverKeyInput.trim()),
+                        if (isEn) "Custom Server connection saved!" else "কাস্টম সার্ভার সংযোগ সংরক্ষিত হয়েছে!"
                     )
                 },
                 onRemove = {
-                    supaUrlInput = ""
-                    supaAnonInput = ""
+                    serverUrlInput = ""
+                    serverKeyInput = ""
                     onUpdateVault(
                         apiVault.copy(customSupabaseUrl = "", customSupabaseAnonKey = ""),
-                        if (isEn) "Custom Supabase override removed." else "কাস্টম Supabase ওভাররাইড মুছে ফেলা হয়েছে।"
+                        if (isEn) "Custom Server override removed." else "কাস্টম সার্ভার ওভাররাইড মুছে ফেলা হয়েছে।"
                     )
                 }
             )
@@ -1306,9 +1466,9 @@ private fun ApiKeysVaultPanel(
 
         item {
             OutlinedTextField(
-                value = supaAnonInput,
-                onValueChange = { supaAnonInput = it },
-                label = { Text(tr("Custom Supabase Anon Key (ঐচ্ছিক)", "Custom Supabase Anon Key (Optional)")) },
+                value = serverKeyInput,
+                onValueChange = { serverKeyInput = it },
+                label = { Text(tr("কাস্টম সার্ভার অ্যাক্সেস কী (ঐচ্ছিক)", "Custom Server Access Key (Optional)")) },
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -1322,8 +1482,8 @@ private fun ApiKeysVaultPanel(
                     bkashInput = ""
                     sslInput = ""
                     jitsiInput = ""
-                    supaUrlInput = ""
-                    supaAnonInput = ""
+                    serverUrlInput = ""
+                    serverKeyInput = ""
                     onUpdateVault(
                         ApiKeyVaultConfig(),
                         if (isEn) "All custom API keys cleared." else "সব কাস্টম API Key মুছে ফেলা হয়েছে।"

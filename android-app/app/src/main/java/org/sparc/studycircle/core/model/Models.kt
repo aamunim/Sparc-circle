@@ -109,12 +109,45 @@ data class ApiKeyVaultConfig(
 )
 
 @Serializable
-enum class UserRole { MEMBER, SUPERVISOR, SPARC_REP, ADMIN }
+enum class UserRole(
+    val labelBn: String,
+    val labelEn: String,
+    val shortBn: String,
+    val shortEn: String,
+    val badgeEmoji: String
+) {
+    MEMBER("গবেষক (Researcher)", "Researcher", "গবেষক", "Researcher", "🔬"),
+    MODERATOR("সার্কেল লিড (Circle Lead)", "Circle Lead", "সার্কেল লিড", "Circle Lead", "⭐"),
+    SUPERVISOR("মেন্টর (Mentor)", "Mentor (Supervisor)", "মেন্টর", "Mentor", "🎓"),
+    SPARC_REP("স্পার্ক প্রতিনিধি", "SPARC Rep", "প্রতিনিধি", "SPARC Rep", "🛡️"),
+    ADMIN("অ্যাডমিন (SPARC টিম)", "Admin (SPARC Team)", "অ্যাডমিন", "Admin", "🛡️");
+
+    fun label(lang: String): String = if (lang == "en") labelEn else labelBn
+    fun shortLabel(lang: String): String = if (lang == "en") shortEn else shortBn
+    val isAdminLike: Boolean get() = this == ADMIN || this == SPARC_REP
+    val isMentorOrAdmin: Boolean get() = this == SUPERVISOR || isAdminLike
+    val canLeadCircle: Boolean get() = this == MODERATOR || isMentorOrAdmin
+}
+
+@Serializable
+enum class ActivityRoleBadge(
+    val labelBn: String,
+    val labelEn: String,
+    val emoji: String
+) {
+    CIRCLE_INITIATOR("গ্রুপ উদ্যোক্তা", "Circle Host", "🚀"),
+    CIRCLE_LEAD("সার্কেল লিড", "Circle Lead", "⭐"),
+    CHAPTER_PRESENTER("উপস্থাপক", "Presenter", "🎤"),
+    CO_AUTHOR("সহ-লেখক", "Co-Author", "✍️"),
+    PEER_BUDDY("সহপাঠী সঙ্গী", "Peer Buddy", "🤝");
+
+    fun label(lang: String): String = if (lang == "en") "$emoji $labelEn" else "$emoji $labelBn"
+}
 
 @Serializable
 enum class HighlightVisibility(val labelBn: String, val labelEn: String) {
     PRIVATE("ব্যক্তিগত (Private)", "Private"),
-    SUPERVISOR("শুধু সুপারভাইজার", "Supervisor Only"),
+    SUPERVISOR("শুধু মেন্টর", "Mentor Only"),
     GROUP("গ্রুপ সদস্য", "Group Members");
 
     fun label(lang: String): String = if (lang == "en") labelEn else labelBn
@@ -317,9 +350,12 @@ data class StudyCircleGroup(
     val minMembersRequired: Int,
     val status: CircleStatus,
     val memberIds: List<String>,
+    val initiatorId: String? = null,
     val supervisorId: String? = null,
     val supervisorAssignmentType: SupervisorAssignmentType? = null,
-    val supervisorVotes: Map<String, String> = emptyMap(), // voterId -> candidateId
+    val supervisorVotes: Map<String, String> = emptyMap(), // legacy voterId -> candidateId
+    val circleLeadId: String? = null,
+    val circleLeadVotes: Map<String, String> = emptyMap(), // voterId -> candidateId
     val currentGroupChapter: Int = 1,
     val daysSinceLastSession: Int = 4,
     val nextSessionAnnounced: Boolean = false,
@@ -382,6 +418,8 @@ data class ChapterProgressState(
     val hoursSinceFirstSubmission: Int = 0,
     val reattemptUsed: Boolean = false,
     val supervisorScore: Int? = null,
+    val openQuestionScores: Map<String, Int> = emptyMap(),
+    val peerBuddyId: String? = null,
     val supervisorOverride: Boolean = false,
     val selfRatings: List<Int> = emptyList(),
     val genuinenessPassed: Boolean = true,
@@ -403,6 +441,7 @@ data class OnlineSessionItem(
     val title: String,
     val scheduleLabel: String,
     val durationMinutes: Int = 40,
+    val presenterUserId: String? = null,
     val presenterName: String,
     val hoursUntilSession: Int,
     val slideUploaded: Boolean = false,

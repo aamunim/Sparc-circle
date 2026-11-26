@@ -68,13 +68,18 @@ fun AssessmentAndSessionScreen(
     var showAddQuestionSheet by remember { mutableStateOf(false) }
     var showTemplateImportSheet by remember { mutableStateOf(false) }
 
+    val allUsersById = remember(state.currentUser, state.directoryMembers) {
+        (listOf(state.currentUser) + state.directoryMembers).associateBy { it.id }
+    }
+    val canManageCircle = SparcDomainEngine.canUserManageCircle(state.currentUser, circle)
+
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
             SparcSegmentedPills(
                 options = listOf(
                     tr("পাঠ অনুশীলনী", "Reading Practice"),
                     tr("লাইভ সেশন", "Live Session"),
-                    tr("সুপারভাইজার ভিউ", "Supervisor View")
+                    tr("মেন্টর প্যানেল", "Mentor Panel")
                 ),
                 selectedIndex = subTab,
                 onSelect = { subTab = it }
@@ -88,19 +93,29 @@ fun AssessmentAndSessionScreen(
                 onSelectChapter = { selectedChIdx = it },
                 chapter = chapter,
                 progress = progress,
+                peerBuddyProfile = progress.peerBuddyId?.let { allUsersById[it] },
+                canEditCurriculum = state.currentUser.role.isMentorOrAdmin,
                 repository = repository,
                 onOpenAddQuestion = { showAddQuestionSheet = true },
                 onOpenTemplateImport = { showTemplateImportSheet = true }
             )
             1 -> LiveSessionAndClinicView(
                 sessions = state.sessions,
+                circleMembers = circle.memberIds.mapNotNull { allUsersById[it] }.ifEmpty { listOf(state.currentUser) + state.directoryMembers.take(4) },
+                canAssignPresenter = canManageCircle,
                 repository = repository,
                 onJoinJitsi = { activeJitsiSession = it },
                 onOpenExternal = { url ->
                     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
                 }
             )
-            2 -> SupervisorMobileGradingView()
+            2 -> MentorGradingAndPeerBuddyView(
+                state = state,
+                circle = circle,
+                chapter = chapter,
+                allUsersById = allUsersById,
+                repository = repository
+            )
         }
     }
 
@@ -140,6 +155,8 @@ private fun QuizAndCalibrationView(
     onSelectChapter: (Int) -> Unit,
     chapter: ChapterItem,
     progress: ChapterProgressState,
+    peerBuddyProfile: UserProfile?,
+    canEditCurriculum: Boolean,
     repository: SparcRepository,
     onOpenAddQuestion: () -> Unit,
     onOpenTemplateImport: () -> Unit
@@ -207,19 +224,52 @@ private fun QuizAndCalibrationView(
                         modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp)
                     )
                 }
-                Spacer(Modifier.width(6.dp))
+                if (canEditCurriculum) {
+                    Spacer(Modifier.width(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = p.primarySoft,
+                        modifier = Modifier.clickable { onOpenAddQuestion() }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Icon(Icons.Default.AddCircleOutline, contentDescription = null, tint = p.primarySoftText, modifier = Modifier.size(14.dp))
+                            Text(tr("+ প্রশ্ন", "+ Add"), color = p.primarySoftText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (peerBuddyProfile != null) {
+            item {
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(16.dp),
                     color = p.primarySoft,
-                    modifier = Modifier.clickable { onOpenAddQuestion() }
+                    border = BorderStroke(1.dp, p.primary),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(Icons.Default.AddCircleOutline, contentDescription = null, tint = p.primarySoftText, modifier = Modifier.size(14.dp))
-                        Text(tr("+ প্রশ্ন", "+ Add"), color = p.primarySoftText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                tr("🤝 আপনার সহপাঠী সঙ্গী (Peer Buddy): ${trContent(peerBuddyProfile.name)}", "🤝 Your Peer Buddy: ${trContent(peerBuddyProfile.name)}"),
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 12.5.sp,
+                                color = p.primarySoftText
+                            )
+                            Text(
+                                tr("মেন্টর আপনার পাঠ সহায়তার জন্য তাকে যুক্ত করেছেন।", "Assigned by your Mentor to support your chapter progress."),
+                                fontSize = 11.5.sp,
+                                color = p.primarySoftText.copy(alpha = 0.85f)
+                            )
+                        }
                     }
                 }
             }
@@ -368,6 +418,8 @@ private fun QuizAndCalibrationView(
 @Composable
 private fun LiveSessionAndClinicView(
     sessions: List<OnlineSessionItem>,
+    circleMembers: List<UserProfile>,
+    canAssignPresenter: Boolean,
     repository: SparcRepository,
     onJoinJitsi: (OnlineSessionItem) -> Unit,
     onOpenExternal: (String) -> Unit
@@ -410,6 +462,54 @@ private fun LiveSessionAndClinicView(
                     }
                 }
 
+                // Chapter Presenter Activity Badge & Rotation Selector
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = p.primarySoft,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "🎤 ${tr("অধ্যায়ের উপস্থাপক (Chapter Presenter)", "Chapter Presenter")}: ${trContent(mainSession.presenterName)}",
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 12.5.sp,
+                            color = p.primarySoftText
+                        )
+                        if (canAssignPresenter && circleMembers.isNotEmpty()) {
+                            Text(
+                                tr("সার্কেল লিড / মেন্টর কন্ট্রোল — পরবর্তী উপস্থাপক নির্বাচন করুন:", "Circle Lead / Mentor — Rotate Presenter:"),
+                                fontSize = 11.sp,
+                                color = p.primarySoftText.copy(alpha = 0.85f)
+                            )
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(circleMembers.size) { idx ->
+                                    val member = circleMembers[idx]
+                                    val isCurrent = mainSession.presenterUserId == member.id ||
+                                        mainSession.presenterName == member.name
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (isCurrent) p.primary else p.card,
+                                        modifier = Modifier.clickable {
+                                            repository.assignSessionPresenter(mainSession.id, member)
+                                        }
+                                    ) {
+                                        Text(
+                                            text = if (isCurrent) "🎤 ${trContent(member.name).split(" ").first()}" else trContent(member.name).split(" ").first(),
+                                            color = if (isCurrent) Color.White else p.text,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -419,11 +519,11 @@ private fun LiveSessionAndClinicView(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        VideoParticipantTile(trContent("তানভীর (Live)"), Modifier.weight(1f))
-                        VideoParticipantTile(trContent("ড. নুসরাত জাহান"), Modifier.weight(1f))
+                        VideoParticipantTile("🎤 ${trContent(mainSession.presenterName)}", Modifier.weight(1f))
+                        VideoParticipantTile("🎓 ${trContent("ড. নুসরাত জাহান")}", Modifier.weight(1f))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        VideoParticipantTile(trContent("ফারহান সাদিক"), Modifier.weight(1f))
+                        VideoParticipantTile("⭐ ${trContent("ফারহান সাদিক")}", Modifier.weight(1f))
                         VideoParticipantTile(trContent("মালিহা তাবাসসুম"), Modifier.weight(1f))
                     }
                 }
@@ -457,8 +557,8 @@ private fun LiveSessionAndClinicView(
                 Text(tr("মাসিক লাইভ রিসার্চ ক্লিনিক", "Monthly Live Research Clinic"), style = MaterialTheme.typography.titleMedium, color = p.text)
                 Text(
                     tr(
-                        "মাসের শেষ শনিবার রাত ৯:০০ • সিনিয়র গবেষকদের সাথে সরাসরি Q&A",
-                        "Last Saturday of Month, 9:00 PM • Live Q&A with Senior Researchers"
+                        "মাসের শেষ শনিবার রাত ৯:০০ • সিনিয়র গবেষক ও মেন্টরদের সাথে সরাসরি Q&A",
+                        "Last Saturday of Month, 9:00 PM • Live Q&A with Senior Mentors"
                     ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = p.muted
@@ -487,94 +587,342 @@ private fun VideoParticipantTile(name: String, modifier: Modifier = Modifier) {
             color = Color.White,
             fontSize = 10.sp,
             fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
             modifier = Modifier.align(Alignment.BottomStart)
         )
     }
 }
 
 @Composable
-private fun SupervisorMobileGradingView() {
+private fun MentorGradingAndPeerBuddyView(
+    state: SparcAppState,
+    circle: StudyCircleGroup,
+    chapter: ChapterItem,
+    allUsersById: Map<String, UserProfile>,
+    repository: SparcRepository
+) {
     val p = LocalSparcPalette.current
-    var awardedMarks by remember { mutableIntStateOf(3) }
-    var overrideApproved by remember { mutableStateOf(false) }
+    val isAuthorizedMentor = state.currentUser.role.isMentorOrAdmin || circle.supervisorId == state.currentUser.id
+
+    if (!isAuthorizedMentor) {
+        val myProg = state.myChapterProgress[chapter.chapterNo]
+        val myBuddy = myProg?.peerBuddyId?.let { allUsersById[it] }
+        val iAmBuddyFor = state.circleMemberProgress
+            .filter { it.peerBuddyId == state.currentUser.id }
+            .mapNotNull { allUsersById[it.userId] }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            item {
+                SparcScholarlyCard {
+                    Text(
+                        tr("🎓 মেন্টর মূল্যায়ন ও সহপাঠী সাপোর্ট স্ট্যাটাস", "🎓 Mentor Evaluation & Peer Buddy Status"),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = p.primary
+                    )
+                    Text(
+                        tr(
+                            "উন্মুক্ত প্রশ্ন (F–J) মূল্যায়ন, রেড-ফ্ল্যাগ পর্যবেক্ষণ এবং Peer Buddy নির্ধারণ শুধুমাত্র SPARC-নিযুক্ত মেন্টর ও অ্যাডমিন পরিচালনা করেন।",
+                            "Open-question grading (F–J), Red-Flag monitoring, and Peer Buddy pairing are managed by your SPARC Mentor & Admin."
+                        ),
+                        fontSize = 12.sp,
+                        color = p.muted
+                    )
+                    val supScoreLabel = myProg?.supervisorScore?.let { "$it" } ?: tr("মূল্যায়নাধীন", "Pending Review")
+                    Text(
+                        tr("• আপনার বর্তমান মেন্টর স্কোর: $supScoreLabel", "• Your current Mentor score: $supScoreLabel"),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.5.sp,
+                        color = p.text
+                    )
+                    if (myBuddy != null) {
+                        Text(
+                            tr("• 🤝 আপনার Peer Buddy: ${trContent(myBuddy.name)}", "• 🤝 Your Peer Buddy: ${trContent(myBuddy.name)}"),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.5.sp,
+                            color = p.primary
+                        )
+                    }
+                    if (iAmBuddyFor.isNotEmpty()) {
+                        val buddyNames = iAmBuddyFor.map { trContent(it.name) }.joinToString()
+                        Text(
+                            tr(
+                                "• 🤝 আপনি সহপাঠী সঙ্গী (Peer Buddy) হিসেবে যুক্ত আছেন: $buddyNames",
+                                "• 🤝 You are assigned as Peer Buddy for: $buddyNames"
+                            ),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.5.sp,
+                            color = p.primary
+                        )
+                    }
+                    SparcPrimaryButton(
+                        text = tr("🎓 Mentor (Preview) মোডে প্যানেল দেখুন", "🎓 Preview Mentor Panel"),
+                        onClick = { repository.switchMyRolePreview(UserRole.SUPERVISOR) }
+                    )
+                }
+            }
+        }
+        return
+    }
+
+    val openQuestions = remember(chapter.questions) { chapter.questions.filter { !it.isAutoScored } }
+    val memberCandidates = remember(circle.memberIds, allUsersById) {
+        circle.memberIds.mapNotNull { allUsersById[it] }
+            .filter { !it.role.isMentorOrAdmin }
+            .ifEmpty { state.directoryMembers }
+    }
+    var selectedStudentIdx by remember { mutableIntStateOf(0) }
+    val safeStudent = memberCandidates.getOrElse(selectedStudentIdx.coerceIn(0, (memberCandidates.size - 1).coerceAtLeast(0))) {
+        state.currentUser
+    }
+    val studentProgress = state.circleMemberProgress.find {
+        it.userId == safeStudent.id && it.chapterNo == chapter.chapterNo
+    } ?: ChapterProgressState(
+        id = "temp-${safeStudent.id}",
+        circleId = circle.id,
+        userId = safeStudent.id,
+        chapterNo = chapter.chapterNo,
+        stage = state.memberStageByUserId[safeStudent.id] ?: ProgressStage.READING_IN_PROGRESS,
+        autoScore = 18
+    )
+
+    var draftOpenScores by remember(safeStudent.id, chapter.id, studentProgress.openQuestionScores) {
+        mutableStateOf(
+            openQuestions.associate { q ->
+                q.id to (studentProgress.openQuestionScores[q.id] ?: 2)
+            }
+        )
+    }
+    val aheadPeers = remember(memberCandidates, state.memberStageByUserId, safeStudent.id) {
+        memberCandidates.filter { cand ->
+            cand.id != safeStudent.id &&
+                (state.memberStageByUserId[cand.id]?.step ?: 3) >= ProgressStage.EXERCISES_SUBMITTED.step
+        }.ifEmpty { memberCandidates.filter { it.id != safeStudent.id } }
+    }
+    var selectedBuddyId by remember(safeStudent.id, studentProgress.peerBuddyId) {
+        mutableStateOf(studentProgress.peerBuddyId ?: aheadPeers.firstOrNull()?.id)
+    }
+    val strugglingRows = remember(state.circleMemberProgress) {
+        state.circleMemberProgress.filter { it.needsSupport || it.redFlagIndicators.isNotEmpty() || it.calibrationFlags.isNotEmpty() }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        item {
-            SparcScholarlyCard(borderColor = SparcCrimson.copy(alpha = 0.5f)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+        // 1. Red-Flag Alerts & Peer Buddy Support Card
+        if (strugglingRows.isNotEmpty()) {
+            item {
+                SparcScholarlyCard(borderColor = SparcCrimson.copy(alpha = 0.5f)) {
                     Text(
-                        tr("Needs Support (≥৩ রেড ফ্ল্যাগ)", "Needs Support (≥3 Red Flags)"),
+                        tr("🚨 রেড-ফ্ল্যাগ অ্যালার্ট ও Peer Buddy সহায়তা (${strugglingRows.size})", "🚨 Red-Flag Alerts & Peer Buddy Support (${strugglingRows.size})"),
                         style = MaterialTheme.typography.titleMedium,
                         color = SparcCrimson
                     )
-                    Surface(shape = RoundedCornerShape(50), color = SparcCrimson.copy(alpha = 0.15f)) {
-                        Text(
-                            trContent("সাদিয়া ইসলাম"),
-                            color = SparcCrimson,
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                        )
+                    strugglingRows.forEach { row ->
+                        val uName = allUsersById[row.userId]?.name?.let { trContent(it) } ?: "Researcher"
+                        val currentBuddyName = row.peerBuddyId?.let { allUsersById[it]?.name }?.let { trContent(it) }
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = p.cardAlt,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("⚠️ $uName", fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = SparcCrimson)
+                                    val idxInList = memberCandidates.indexOfFirst { it.id == row.userId }
+                                    if (idxInList >= 0) {
+                                        Text(
+                                            tr("মূল্যায়ন করুন ›", "Select ›"),
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = p.primary,
+                                            modifier = Modifier.clickable { selectedStudentIdx = idxInList }
+                                        )
+                                    }
+                                }
+                                row.redFlagIndicators.forEach { rf ->
+                                    Text("• ${trContent(rf)}", fontSize = 11.5.sp, color = p.muted)
+                                }
+                                if (currentBuddyName != null) {
+                                    Text(
+                                        tr("🤝 যুক্ত Peer Buddy: $currentBuddyName", "🤝 Assigned Peer Buddy: $currentBuddyName"),
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = p.primary
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
-                Text(
-                    tr(
-                        "• ক্যালিব্রেশন: Over-confident (Self 4.5 • Score 38%)\n• প্রাপ্ত Poke সংখ্যা: ৫টি (বার্তা গোপন রাখা হয়েছে)",
-                        "• Calibration: Over-confident (Self 4.5 • Score 38%)\n• Pokes received: 5 (message bodies hidden for privacy)"
-                    ),
-                    fontSize = 12.sp,
-                    color = p.muted
-                )
             }
         }
 
+        // 2. Select Researcher to Grade (F–J 0–3), Assign Peer Buddy & Unlock Chapter
         item {
             SparcScholarlyCard {
-                Text(tr("সুপারভাইজার ম্যানুয়াল স্কোরিং [F–J]", "Supervisor Manual Scoring [F–J]"), style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(
+                    tr("🎓 মেন্টর মূল্যায়ন ও সাপোর্ট কনসোল (অধ্যায় ${chapter.chapterNo})", "🎓 Mentor Grading & Support Console (Ch ${chapter.chapterNo})"),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = p.text
+                )
+                Text(tr("গবেষক নির্বাচন করুন:", "Select Researcher:"), fontSize = 12.sp, color = p.muted)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(memberCandidates.size) { idx ->
+                        val m = memberCandidates[idx]
+                        val active = idx == selectedStudentIdx
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (active) p.primary else p.cardAlt,
+                            modifier = Modifier.clickable { selectedStudentIdx = idx }
+                        ) {
+                            Text(
+                                trContent(m.name),
+                                color = if (active) Color.White else p.text,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                            )
+                        }
+                    }
+                }
+
                 Text(
                     tr(
-                        "“Sayings, Doings ও Relatings বিশ্লেষণ করে বিভাগে অংশগ্রহণমূলক সংলাপ তৈরি করা সম্ভব।”",
-                        "“Analyzing Sayings, Doings, and Relatings enables inclusive participatory dialogue across the department.”"
+                        "ধাপ: ${studentProgress.stage.labelBn} • অটো স্কোর: ${studentProgress.autoScore} • মেন্টর স্কোর: ${studentProgress.supervisorScore ?: 0}",
+                        "Stage: ${studentProgress.stage.labelEn} • Auto: ${studentProgress.autoScore} • Mentor: ${studentProgress.supervisorScore ?: 0}"
                     ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = p.muted
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = p.primary
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    (0..3).forEach { m ->
-                        val active = awardedMarks == m
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (active) p.primary else p.cardAlt,
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { awardedMarks = m }
-                        ) {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 10.dp)) {
+
+                // Open Questions [F–J] 0–3 Grading
+                openQuestions.forEach { oq ->
+                    val ansText = studentProgress.submittedAnswers[oq.id]
+                        ?: tr("(এখনো উত্তর জমা দেয়নি — ডেমো উত্তর মূল্যায়ন করতে পারেন)", "(Answer not yet submitted)")
+                    val currentMark = draftOpenScores[oq.id] ?: 2
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = p.cardAlt,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("[${oq.sectionCode}] ${trContent(oq.promptBn)}", fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = p.text)
+                            Text("📝 $ansText", fontSize = 12.sp, color = p.muted)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                (0..3).forEach { m ->
+                                    val chosen = currentMark == m
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (chosen) p.primary else p.card,
+                                        border = BorderStroke(1.dp, if (chosen) p.primary else p.border),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable { draftOpenScores = draftOpenScores + (oq.id to m) }
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
+                                            Text("$m / 3", color = if (chosen) Color.White else p.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (studentProgress.writingContent.isNotBlank()) {
+                    Surface(shape = RoundedCornerShape(12.dp), color = p.cardAlt, modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(tr("✍️ জমাকৃত রাইটিং টাস্ক:", "✍️ Submitted Writing Draft:"), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = p.primary)
+                            Text(studentProgress.writingContent.take(220), fontSize = 11.5.sp, color = p.text)
+                        }
+                    }
+                }
+
+                // Peer Buddy Pairing Selector
+                if (aheadPeers.isNotEmpty()) {
+                    Text(
+                        tr("🤝 সহপাঠী সঙ্গী (Peer Buddy) যুক্ত করুন:", "🤝 Assign a Peer Buddy:"),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.5.sp,
+                        color = p.text
+                    )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(aheadPeers.size) { bIdx ->
+                            val buddy = aheadPeers[bIdx]
+                            val picked = selectedBuddyId == buddy.id
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (picked) p.primarySoft else p.cardAlt,
+                                border = BorderStroke(1.dp, if (picked) p.primary else p.border),
+                                modifier = Modifier.clickable { selectedBuddyId = buddy.id }
+                            ) {
                                 Text(
-                                    "$m pt",
-                                    color = if (active) Color.White else p.text,
+                                    text = "🤝 ${trContent(buddy.name)}",
+                                    color = if (picked) p.primarySoftText else p.text,
+                                    fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 )
                             }
                         }
                     }
                 }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            repository.mentorEvaluateAndSupport(
+                                circleId = circle.id,
+                                targetUserId = safeStudent.id,
+                                chapter = chapter,
+                                extendDays = 3
+                            )
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(tr("⏳ +৩ দিন ডেডলাইন", "⏳ +3d Deadline"), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            repository.mentorEvaluateAndSupport(
+                                circleId = circle.id,
+                                targetUserId = safeStudent.id,
+                                chapter = chapter,
+                                manualUnlock = true,
+                                approveWriting = true
+                            )
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(tr("🔓 অধ্যায় আনলক", "🔓 Manual Unlock"), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
                 SparcPrimaryButton(
-                    text = if (overrideApproved) {
-                        tr("✓ স্কোর সংরক্ষিত ও Override সক্রিয়", "✓ Score Saved & Override Active")
-                    } else {
-                        tr("স্কোর সংরক্ষণ ও Override অনুমোদন", "Save Score & Approve Override")
-                    },
-                    onClick = { overrideApproved = true }
+                    text = tr("✓ নম্বর, রাইটিং অনুমোদন ও Peer Buddy সেভ করুন", "✓ Save Grades, Writing Approval & Peer Buddy"),
+                    onClick = {
+                        repository.mentorEvaluateAndSupport(
+                            circleId = circle.id,
+                            targetUserId = safeStudent.id,
+                            chapter = chapter,
+                            openScores = draftOpenScores,
+                            peerBuddyId = selectedBuddyId,
+                            approveWriting = studentProgress.writingSubmitted
+                        )
+                    }
                 )
             }
         }

@@ -36,6 +36,8 @@ data class SparcAppState(
     val debateComments: List<DebateComment>,
     val memberStageByUserId: Map<String, ProgressStage>,
     val myChapterProgress: Map<Int, ChapterProgressState>,
+    val circleMemberProgress: List<ChapterProgressState> = emptyList(),
+    val coAuthorUserIds: Set<String> = emptySet(),
     val sessions: List<OnlineSessionItem>,
     val supervisionDeals: List<SupervisionDeal>,
     val walletHistory: List<WalletTransactionItem>,
@@ -149,6 +151,8 @@ class SparcRepository(
                     activeCircleId = chosenCircleId,
                     memberStageByUserId = snap.memberStageByUserId.ifEmpty { s.memberStageByUserId },
                     myChapterProgress = if (snap.myChapterProgress.isNotEmpty()) snap.myChapterProgress else s.myChapterProgress,
+                    circleMemberProgress = snap.circleMemberProgress.ifEmpty { s.circleMemberProgress },
+                    coAuthorUserIds = snap.coAuthorUserIds.ifEmpty { s.coAuthorUserIds },
                     pokesToday = if (snap.pokesToday.isNotEmpty() || snap.peers.isNotEmpty()) snap.pokesToday else s.pokesToday,
                     activeMuteScope = snap.activeMuteScope,
                     polls = snap.polls.ifEmpty { s.polls },
@@ -161,7 +165,7 @@ class SparcRepository(
                     sessions = snap.sessions.ifEmpty { s.sessions },
                     supervisionDeals = snap.supervisionDeals.ifEmpty { s.supervisionDeals },
                     statusBannerMessage = if (!silent) {
-                        if (s.appLanguage == "en") "✓ Synced live with Supabase" else "✓ লাইভ Supabase ডাটা সিঙ্ক হয়েছে"
+                        if (s.appLanguage == "en") "✓ Synced with Server" else "✓ সার্ভারের সাথে সিঙ্ক সম্পন্ন হয়েছে"
                     } else s.statusBannerMessage
                 )
             }
@@ -730,19 +734,30 @@ class SparcRepository(
                 maxMembers = maxMembers.coerceAtLeast(minMembers.coerceAtLeast(2)),
                 status = CircleStatus.FORMING,
                 memberIds = listOf(s.currentUser.id),
+                initiatorId = s.currentUser.id,
+                circleLeadId = s.currentUser.id,
                 isPrivate = isPrivate,
                 inviteCode = resolvedCode,
                 sessionScheduleLabel = scheduleLabel.ifBlank { "শুক্রবার রাত ৮:৩০" },
                 defaultMeetingUrl = meetingUrl.ifBlank { "https://meet.jit.si/SPARC_Circle_Live" },
                 circleRules = rules.ifBlank { "নিয়মিত অধ্যায় পড়া ও সহপাঠীদের প্রতি শ্রদ্ধাশীল থেকে আলোচনায় অংশ নেওয়া।" }
             )
+            val updatedBadges = if ("Circle Initiator" in s.currentUser.earnedBadges) {
+                s.currentUser.earnedBadges
+            } else {
+                s.currentUser.earnedBadges + "Circle Initiator"
+            }
             s.copy(
                 circles = s.circles + newCircle,
                 activeCircleId = localId,
+                currentUser = s.currentUser.copy(
+                    gamificationPoints = s.currentUser.gamificationPoints + 50,
+                    earnedBadges = updatedBadges
+                ),
                 statusBannerMessage = if (s.appLanguage == "en") {
-                    "Created Study Circle: ${name.trim()}" + (if (resolvedCode != null) " (Code: $resolvedCode)" else "")
+                    "🚀 Created Study Circle: ${name.trim()} (+50 Host Points!)" + (if (resolvedCode != null) " • Code: $resolvedCode" else "")
                 } else {
-                    "নতুন স্টাডি সার্কেল তৈরি হয়েছে: ${name.trim()}" + (if (resolvedCode != null) " (কোড: $resolvedCode)" else "")
+                    "🚀 নতুন স্টাডি সার্কেল তৈরি হয়েছে: ${name.trim()} (+৫০ উদ্যোক্তা পয়েন্ট!)" + (if (resolvedCode != null) " • কোড: $resolvedCode" else "")
                 }
             )
         }
@@ -782,19 +797,25 @@ class SparcRepository(
                 ?: ("SPARC-" + UUID.randomUUID().toString().take(5).uppercase())
         } else null
 
+        var finalMin = minMembers.coerceIn(2, 30)
         _state.update { s ->
             val updated = s.circles.map { c ->
-                if (c.id != circleId) c else c.copy(
-                    name = name.trim().ifBlank { c.name },
-                    minMembersRequired = minMembers.coerceIn(2, 30),
-                    maxMembers = maxMembers.coerceAtLeast(minMembers.coerceAtLeast(2)),
-                    isPrivate = isPrivate,
-                    inviteCode = resolvedCode,
-                    sessionScheduleLabel = scheduleLabel.trim().ifBlank { c.sessionScheduleLabel },
-                    defaultMeetingUrl = meetingUrl.trim().ifBlank { c.defaultMeetingUrl },
-                    circleRules = rules.trim().ifBlank { c.circleRules },
-                    currentGroupChapter = currentGroupChapter.coerceAtLeast(1)
-                )
+                if (c.id != circleId) c else {
+                    // Only Admin (SPARC Team) can modify minimum required members; preserve existing otherwise
+                    val allowedMin = if (s.currentUser.role.isAdminLike) finalMin else c.minMembersRequired
+                    finalMin = allowedMin
+                    c.copy(
+                        name = name.trim().ifBlank { c.name },
+                        minMembersRequired = allowedMin,
+                        maxMembers = maxMembers.coerceAtLeast(allowedMin.coerceAtLeast(2)),
+                        isPrivate = isPrivate,
+                        inviteCode = resolvedCode,
+                        sessionScheduleLabel = scheduleLabel.trim().ifBlank { c.sessionScheduleLabel },
+                        defaultMeetingUrl = meetingUrl.trim().ifBlank { c.defaultMeetingUrl },
+                        circleRules = rules.trim().ifBlank { c.circleRules },
+                        currentGroupChapter = currentGroupChapter.coerceAtLeast(1)
+                    )
+                }
             }
             s.copy(
                 circles = updated,
@@ -809,7 +830,7 @@ class SparcRepository(
             supabaseClient.updateCircleCustomizationRemote(
                 circleId = circleId,
                 name = name,
-                minMembers = minMembers,
+                minMembers = finalMin,
                 maxMembers = maxMembers,
                 isPrivate = isPrivate,
                 inviteCode = resolvedCode,
@@ -877,25 +898,261 @@ class SparcRepository(
     }
 
     fun voteForSupervisor(circleId: String, candidateId: String) {
+        voteForCircleLead(circleId, candidateId)
+    }
+
+    fun voteForCircleLead(circleId: String, candidateId: String) {
         _state.update { s ->
             val updatedCircles = s.circles.map { c ->
                 if (c.id != circleId) c else {
-                    val votes = c.supervisorVotes + (s.currentUser.id to candidateId)
-                    val withVotes = c.copy(supervisorVotes = votes)
-                    val (winner, assignType) = SparcDomainEngine.resolveElectedSupervisor(withVotes)
-                    withVotes.copy(supervisorId = winner, supervisorAssignmentType = assignType)
+                    val votes = c.circleLeadVotes + (s.currentUser.id to candidateId)
+                    val withVotes = c.copy(circleLeadVotes = votes)
+                    val winner = SparcDomainEngine.resolveElectedCircleLead(withVotes)
+                    withVotes.copy(circleLeadId = winner)
                 }
             }
             s.copy(
                 circles = updatedCircles,
-                statusBannerMessage = if (s.appLanguage == "en") "Supervisor vote recorded." else "সুপারভাইজার নির্বাচনের ভোট রেকর্ড করা হয়েছে।"
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "⭐ Circle Lead vote recorded!"
+                } else {
+                    "⭐ সার্কেল লিড নির্বাচনের ভোট সংরক্ষিত হয়েছে!"
+                }
             )
         }
         launchRemoteSync {
-            supabaseClient.voteSupervisorRemote(circleId, candidateId).getOrThrow()
+            supabaseClient.voteCircleLeadRemote(circleId, candidateId).getOrThrow()
             syncFromSupabaseNow(silent = true)
         }
     }
+
+    fun assignSessionPresenter(sessionId: String, presenter: UserProfile) {
+        _state.update { s ->
+            s.copy(
+                sessions = s.sessions.map { sess ->
+                    if (sess.id == sessionId) {
+                        sess.copy(presenterUserId = presenter.id, presenterName = presenter.name)
+                    } else sess
+                },
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "🎤 ${presenter.name} assigned as Chapter Presenter!"
+                } else {
+                    "🎤 ${presenter.name}-কে অধ্যায়ের উপস্থাপক (Presenter) নির্ধারণ করা হয়েছে!"
+                }
+            )
+        }
+        launchRemoteSync {
+            supabaseClient.assignSessionPresenterRemote(sessionId, presenter.id).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
+    }
+
+    fun switchMyRolePreview(newRole: UserRole) {
+        _state.update { s ->
+            val lang = s.appLanguage
+            s.copy(
+                currentUser = s.currentUser.copy(role = newRole),
+                statusBannerMessage = if (lang == "en") {
+                    "${newRole.badgeEmoji} Switched active role to: ${newRole.labelEn}"
+                } else {
+                    "${newRole.badgeEmoji} সক্রিয় রোল পরিবর্তন করা হয়েছে: ${newRole.labelBn}"
+                }
+            )
+        }
+        launchRemoteSync {
+            supabaseClient.switchMyRolePreviewRemote(newRole).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
+    }
+
+    fun mentorEvaluateAndSupport(
+        circleId: String,
+        targetUserId: String,
+        chapter: ChapterItem,
+        openScores: Map<String, Int>? = null,
+        peerBuddyId: String? = null,
+        extendDays: Int = 0,
+        manualUnlock: Boolean? = null,
+        approveWriting: Boolean? = null
+    ) {
+        val computedSupScore = openScores?.values?.sum()
+        _state.update { s ->
+            if (!s.currentUser.role.isMentorOrAdmin &&
+                s.circles.find { it.id == circleId }?.supervisorId != s.currentUser.id
+            ) {
+                return@update s.copy(
+                    statusBannerMessage = if (s.appLanguage == "en") {
+                        "Only Mentor or Admin can grade open questions and assign Peer Buddies."
+                    } else {
+                        "শুধুমাত্র মেন্টর বা অ্যাডমিন নম্বর প্রদান ও Peer Buddy যুক্ত করতে পারেন।"
+                    }
+                )
+            }
+
+            fun updateProg(p: ChapterProgressState): ChapterProgressState {
+                val mergedOpen = if (openScores != null) p.openQuestionScores + openScores else p.openQuestionScores
+                val nextSupScore = computedSupScore ?: p.supervisorScore ?: 0
+                val nextBase = p.copy(
+                    supervisorScore = nextSupScore,
+                    openQuestionScores = mergedOpen,
+                    peerBuddyId = peerBuddyId ?: p.peerBuddyId,
+                    expectedCompletionDaysFromToday = p.expectedCompletionDaysFromToday + extendDays,
+                    supervisorOverride = manualUnlock ?: p.supervisorOverride,
+                    writingSubmitted = if (approveWriting == true) true else p.writingSubmitted,
+                    writingSupervisorApproved = approveWriting ?: p.writingSupervisorApproved
+                )
+                return SparcDomainEngine.evaluateProgressVerification(nextBase, chapter.type)
+            }
+
+            val existingPeerList = s.circleMemberProgress
+            val foundTarget = existingPeerList.find { it.userId == targetUserId && it.chapterNo == chapter.chapterNo }
+            val updatedTarget = updateProg(
+                foundTarget ?: ChapterProgressState(
+                    id = UUID.randomUUID().toString(),
+                    circleId = circleId,
+                    userId = targetUserId,
+                    chapterNo = chapter.chapterNo,
+                    stage = s.memberStageByUserId[targetUserId] ?: ProgressStage.EXERCISES_SUBMITTED,
+                    autoScore = 20
+                )
+            )
+            val nextCircleList = existingPeerList
+                .filterNot { it.userId == targetUserId && it.chapterNo == chapter.chapterNo } + updatedTarget
+
+            val nextMyMap = if (targetUserId == s.currentUser.id) {
+                s.myChapterProgress + (chapter.chapterNo to updatedTarget)
+            } else s.myChapterProgress
+
+            s.copy(
+                circleMemberProgress = nextCircleList,
+                myChapterProgress = nextMyMap,
+                memberStageByUserId = s.memberStageByUserId + (targetUserId to updatedTarget.stage),
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "🎓 Mentor evaluation & Peer Buddy support saved!"
+                } else {
+                    "🎓 মেন্টর মূল্যায়ন ও সহপাঠী সাপোর্ট সফলভাবে সংরক্ষিত হয়েছে!"
+                }
+            )
+        }
+        launchRemoteSync {
+            supabaseClient.mentorEvaluateAndSupportRemote(
+                circleId = circleId,
+                targetUserId = targetUserId,
+                chapterNo = chapter.chapterNo,
+                supervisorScore = computedSupScore,
+                openScores = openScores,
+                peerBuddyId = peerBuddyId,
+                extendDays = extendDays,
+                supervisorOverride = manualUnlock,
+                approveWriting = approveWriting
+            ).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
+    }
+
+    fun adminAssignUserRole(targetUserId: String, newRole: UserRole) {
+        _state.update { s ->
+            if (!s.currentUser.role.isAdminLike) {
+                return@update s.copy(
+                    statusBannerMessage = if (s.appLanguage == "en") "Admin permission required." else "শুধুমাত্র অ্যাডমিন রোল পরিবর্তন করতে পারেন।"
+                )
+            }
+            val updatedMe = if (targetUserId == s.currentUser.id) s.currentUser.copy(role = newRole) else s.currentUser
+            val updatedDir = s.directoryMembers.map { if (it.id == targetUserId) it.copy(role = newRole) else it }
+            s.copy(
+                currentUser = updatedMe,
+                directoryMembers = updatedDir,
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "🛡️ Updated member role to ${newRole.labelEn}!"
+                } else {
+                    "🛡️ সদস্যের রোল '${newRole.labelBn}' হিসেবে আপডেট করা হয়েছে!"
+                }
+            )
+        }
+        launchRemoteSync {
+            supabaseClient.adminManageRolesAndOrdersRemote(targetUserId = targetUserId, newRole = newRole).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
+    }
+
+    fun adminAssignCircleMentorAndMinMembers(circleId: String, mentorId: String?, minMembers: Int?) {
+        _state.update { s ->
+            if (!s.currentUser.role.isAdminLike) return@update s
+            val updatedCircles = s.circles.map { c ->
+                if (c.id != circleId) c else {
+                    val grown = c.copy(
+                        supervisorId = mentorId ?: c.supervisorId,
+                        supervisorAssignmentType = if (mentorId != null) SupervisorAssignmentType.ADMIN_ASSIGNED else c.supervisorAssignmentType,
+                        minMembersRequired = minMembers?.coerceIn(2, 30) ?: c.minMembersRequired
+                    )
+                    grown.copy(status = SparcDomainEngine.evaluateCircleActivation(grown))
+                }
+            }
+            s.copy(
+                circles = updatedCircles,
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "🛡️ Circle Mentor & minimum member threshold updated by Admin!"
+                } else {
+                    "🛡️ সার্কেলের মেন্টর ও সর্বনিম্ন সদস্য সংখ্যা অ্যাডমিন কর্তৃক আপডেট হয়েছে!"
+                }
+            )
+        }
+        launchRemoteSync {
+            supabaseClient.adminManageRolesAndOrdersRemote(
+                circleId = circleId,
+                mentorId = mentorId,
+                minMembers = minMembers
+            ).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
+    }
+
+    fun adminUpdateBookOrderStatus(orderId: String, newStatus: String) {
+        _state.update { s ->
+            if (!s.currentUser.role.isAdminLike) return@update s
+            s.copy(
+                bookOrders = s.bookOrders.map {
+                    if (it.id == orderId) it.copy(status = newStatus.replaceFirstChar { ch -> ch.uppercase() }) else it
+                },
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "📦 Physical book order marked as $newStatus!"
+                } else {
+                    "📦 ফিজিক্যাল বইয়ের অর্ডার স্ট্যাটাস '$newStatus' করা হয়েছে!"
+                }
+            )
+        }
+        launchRemoteSync {
+            supabaseClient.adminManageRolesAndOrdersRemote(
+                bookOrderId = orderId,
+                bookOrderStatus = newStatus
+            ).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
+    }
+
+    fun adminVerifyWalletTx(txId: String, newStatus: String) {
+        _state.update { s ->
+            if (!s.currentUser.role.isAdminLike) return@update s
+            s.copy(
+                walletHistory = s.walletHistory.map {
+                    if (it.id == txId) it.copy(status = newStatus.replaceFirstChar { ch -> ch.uppercase() }) else it
+                },
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "💳 Wallet transaction marked as $newStatus!"
+                } else {
+                    "💳 ওয়ালেট ট্রানজেকশন '$newStatus' করা হয়েছে!"
+                }
+            )
+        }
+        launchRemoteSync {
+            supabaseClient.adminManageRolesAndOrdersRemote(
+                walletTxId = txId,
+                walletTxStatus = newStatus
+            ).getOrThrow()
+            syncFromSupabaseNow(silent = true)
+        }
+    }
+
 
     // Section 4.3: Rate-Limited Poke, Mute & 1-Tap Quick Reply + Poll & Debate
     fun sendPokeToMember(circleId: String, receiver: UserProfile, presetMessage: String, currentDhakaHour: Int = 15) {
@@ -1436,8 +1693,8 @@ class SparcRepository(
             return Result.failure(
                 IllegalStateException(
                     msg(
-                        "ক্লাউড স্টোরেজে আপলোড করতে আগে নিজের ইমেইল দিয়ে লগইন/সাইন-আপ করুন।",
-                        "Please sign in with your email account to upload files to Supabase Storage."
+                        "সার্ভারে ফাইল আপলোড করতে আগে নিজের ইমেইল দিয়ে লগইন/সাইন-আপ করুন।",
+                        "Please sign in with your email account to upload files to the Server."
                     )
                 )
             )
@@ -1513,9 +1770,9 @@ class SparcRepository(
             _state.update { s ->
                 s.copy(
                     statusBannerMessage = if (s.appLanguage == "en") {
-                        "✓ PDF/Audio & Exercise Template uploaded to Supabase & synced!"
+                        "✓ PDF/Audio & Exercise Template uploaded to Server & synced!"
                     } else {
-                        "✓ PDF / অডিও এবং অনুশীলনী টেমপ্লেট সফলভাবে আপলোড ও লাইভ সিঙ্ক হয়েছে!"
+                        "✓ PDF / অডিও এবং অনুশীলনী টেমপ্লেট সার্ভারে আপলোড ও সিঙ্ক হয়েছে!"
                     }
                 )
             }
@@ -2030,9 +2287,12 @@ class SparcRepository(
                 minMembersRequired = 5,
                 status = CircleStatus.ACTIVE,
                 memberIds = listOf(me.id, "u-sup-1", "u-2", "u-3", "u-4", "u-5"),
+                initiatorId = me.id,
                 supervisorId = "u-sup-1",
-                supervisorAssignmentType = SupervisorAssignmentType.MEMBER_VOTED,
-                supervisorVotes = mapOf(me.id to "u-sup-1", "u-2" to "u-sup-1", "u-3" to "u-sup-1", "u-4" to "u-sup-1"),
+                supervisorAssignmentType = SupervisorAssignmentType.ADMIN_ASSIGNED,
+                supervisorVotes = mapOf(me.id to "u-2", "u-3" to "u-2", "u-4" to "u-2"),
+                circleLeadId = "u-2",
+                circleLeadVotes = mapOf(me.id to "u-2", "u-3" to "u-2", "u-4" to "u-2"),
                 currentGroupChapter = 1,
                 daysSinceLastSession = 6
             )
@@ -2056,6 +2316,42 @@ class SparcRepository(
                 targetDays = 8,
                 dailyTargetPages = 4,
                 checkedSectionIds = setOf("s1", "s2")
+            )
+
+            val peerProgressSeed = listOf(
+                myCh1Progress,
+                ChapterProgressState(
+                    id = "prog-ch1-u2",
+                    circleId = circle.id,
+                    userId = "u-2",
+                    chapterNo = 1,
+                    stage = ProgressStage.EXERCISES_SUBMITTED,
+                    autoScore = 22,
+                    submittedAnswers = mapOf(
+                        "q3" to "Sayings দিয়ে সেমিনার সংস্কৃতি, Doings দিয়ে সময়সূচি এবং Relatings দিয়ে শিক্ষক-শিক্ষার্থী সমতা বিশ্লেষণ করা যায়।"
+                    ),
+                    selfRatings = listOf(4, 4, 4),
+                    writingSubmitted = true,
+                    writingContent = "আমাদের সমাজবিজ্ঞান বিভাগে শিক্ষার্থীদের সেমিনারে অংশগ্রহণ বৃদ্ধির জন্য একটি Communicative Space গঠন জরুরি..."
+                ),
+                ChapterProgressState(
+                    id = "prog-ch1-u5",
+                    circleId = circle.id,
+                    userId = "u-5",
+                    chapterNo = 1,
+                    stage = ProgressStage.READING_STARTED,
+                    expectedCompletionDaysFromToday = -8,
+                    autoScore = 10,
+                    supervisorScore = 8,
+                    genuinenessPassed = false,
+                    redFlagIndicators = listOf(
+                        "নির্ধারিত সময়ের চেয়ে ৭ দিনের বেশি দেরি",
+                        "মূল্যায়নে ৫০%-এর কম বা রেড-ফ্ল্যাগ নম্বর",
+                        "রিডিং-জেনুইননেস প্রশ্নে ভুল উত্তর"
+                    ),
+                    needsSupport = true,
+                    peerBuddyId = "u-4"
+                )
             )
 
             return SparcAppState(
@@ -2125,6 +2421,8 @@ class SparcRepository(
                 ),
                 memberStageByUserId = stageMap,
                 myChapterProgress = mapOf(1 to myCh1Progress),
+                circleMemberProgress = peerProgressSeed,
+                coAuthorUserIds = setOf(me.id, "u-2", "u-4"),
                 sessions = listOf(
                     OnlineSessionItem(
                         id = "sess-1",
@@ -2133,6 +2431,7 @@ class SparcRepository(
                         partNo = 1,
                         title = "অধ্যায় ১ (পর্ব ১/২): Practice Architectures অনলাইন সেশন",
                         scheduleLabel = "শুক্রবার, রাত ৮:৩০ • ৪০ মিনিট",
+                        presenterUserId = me.id,
                         presenterName = me.name,
                         hoursUntilSession = 36,
                         videoProvider = VideoProvider.JITSI_IN_APP,

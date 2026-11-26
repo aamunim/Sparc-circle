@@ -760,9 +760,9 @@ private fun SmartPaperReaderView(
                 Surface(shape = RoundedCornerShape(12.dp), color = p.cardAlt) {
                     Row(modifier = Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         listOf(
-                            HighlightVisibility.PRIVATE to "Private",
-                            HighlightVisibility.SUPERVISOR to "Supervisor",
-                            HighlightVisibility.GROUP to "Group"
+                            HighlightVisibility.PRIVATE to tr("ব্যক্তিগত", "Private"),
+                            HighlightVisibility.SUPERVISOR to tr("মেন্টর", "Mentor"),
+                            HighlightVisibility.GROUP to tr("গ্রুপ", "Group")
                         ).forEach { (vis, label) ->
                             val active = selectedPrivacy == vis
                             Box(

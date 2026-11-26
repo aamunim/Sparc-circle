@@ -29,6 +29,8 @@ data class LiveWorkspaceSnapshot(
     val activeCircleId: String?,
     val memberStageByUserId: Map<String, ProgressStage>,
     val myChapterProgress: Map<Int, ChapterProgressState>,
+    val circleMemberProgress: List<ChapterProgressState> = emptyList(),
+    val coAuthorUserIds: Set<String> = emptySet(),
     val pokesToday: List<PokeItem>,
     val activeMuteScope: MuteScope?,
     val polls: List<ChapterPoll>,
@@ -230,7 +232,7 @@ class SupabaseRestClient(
         password: String
     ): Result<SupabaseAuthSession> = withContext(Dispatchers.IO) {
         runCatching {
-            check(isConfigured) { "Supabase URL not configured" }
+            check(isConfigured) { "Server URL not configured" }
             val body = buildJsonObject {
                 put("email", email.trim())
                 put("password", password)
@@ -268,7 +270,7 @@ class SupabaseRestClient(
         referralCode: String
     ): Result<SupabaseAuthSession> = withContext(Dispatchers.IO) {
         runCatching {
-            check(isConfigured) { "Supabase URL not configured" }
+            check(isConfigured) { "Server URL not configured" }
             if (password.length < 6) {
                 error("পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে (Password must be at least 6 characters)")
             }
@@ -365,7 +367,7 @@ class SupabaseRestClient(
         fallbackBooks: List<BookItem>
     ): Result<LiveWorkspaceSnapshot> = withContext(Dispatchers.IO) {
         runCatching {
-            check(hasAuthenticatedUser) { "Not signed into live Supabase" }
+            check(hasAuthenticatedUser) { "Not signed into live Server" }
             val myUid = currentSession!!.userId
 
             // Ensure current user is enrolled in default cohort if not yet enrolled
@@ -486,10 +488,11 @@ class SupabaseRestClient(
 
             val bookTitleById = liveBooks.associate { it.id to it.title }
 
-            // 3. Study Circles, Members & Supervisor Votes
+            // 3. Study Circles, Members, Circle Lead Votes & Mentor Assignments
             val circlesArr = getJsonArray("study_circles?select=*&order=created_at.asc")
             val membersArr = getJsonArray("study_circle_members?select=*&invite_status=eq.joined")
             val supVotesArr = getJsonArray("supervisor_votes?select=*")
+            val leadVotesArr = runCatching { getJsonArray("circle_lead_votes?select=*") }.getOrElse { supVotesArr }
 
             val memberIdsByCircle = membersArr.mapNotNull { el ->
                 val o = el.jsonObject
@@ -506,12 +509,21 @@ class SupabaseRestClient(
                 cid to (voter to cand)
             }.groupBy({ it.first }, { it.second }).mapValues { (_, list) -> list.toMap() }
 
+            val leadVotesByCircle = leadVotesArr.mapNotNull { el ->
+                val o = el.jsonObject
+                val cid = o["circle_id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                val voter = o["voter_id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                val cand = o["candidate_id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                cid to (voter to cand)
+            }.groupBy({ it.first }, { it.second }).mapValues { (_, list) -> list.toMap() }
+
             val liveCircles = circlesArr.mapNotNull { el ->
                 val o = el.jsonObject
                 val cid = o["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
                 val bid = o["book_id"]?.jsonPrimitive?.contentOrNull ?: liveBooks.first().id
                 val statusStr = o["status"]?.jsonPrimitive?.contentOrNull ?: "active"
                 val assignStr = o["supervisor_assignment_type"]?.jsonPrimitive?.contentOrNull
+                val createdBy = o["created_by"]?.jsonPrimitive?.contentOrNull
                 StudyCircleGroup(
                     id = cid,
                     name = o["name"]?.jsonPrimitive?.contentOrNull ?: "Study Circle",
@@ -524,6 +536,7 @@ class SupabaseRestClient(
                         else -> CircleStatus.ACTIVE
                     },
                     memberIds = memberIdsByCircle[cid] ?: emptyList(),
+                    initiatorId = createdBy,
                     supervisorId = o["supervisor_id"]?.jsonPrimitive?.contentOrNull,
                     supervisorAssignmentType = when (assignStr) {
                         "admin_assigned" -> SupervisorAssignmentType.ADMIN_ASSIGNED
@@ -531,6 +544,8 @@ class SupabaseRestClient(
                         else -> null
                     },
                     supervisorVotes = votesByCircle[cid] ?: emptyMap(),
+                    circleLeadId = o["circle_lead_id"]?.jsonPrimitive?.contentOrNull ?: createdBy,
+                    circleLeadVotes = leadVotesByCircle[cid] ?: (votesByCircle[cid] ?: emptyMap()),
                     currentGroupChapter = o["current_group_chapter"]?.jsonPrimitive?.intOrNull ?: 1,
                     nextSessionAnnounced = o["next_session_announced_at"] != null && o["next_session_announced_at"] !is JsonNull,
                     maxMembers = o["max_members"]?.jsonPrimitive?.intOrNull ?: 25,
@@ -545,7 +560,7 @@ class SupabaseRestClient(
             val myJoinedCircle = liveCircles.firstOrNull { myUid in it.memberIds } ?: liveCircles.firstOrNull()
             val activeCircleId = myJoinedCircle?.id
 
-            // 4. Public Group Progress Stages + My Detailed Chapter Progress + Submitted Answers + Writing
+            // 4. Public Group Progress Stages + Detailed Progress (RLS returns own for Researcher, circle-wide for Mentor/Admin)
             val publicProgArr = if (activeCircleId != null) {
                 getJsonArray("group_chapter_progress_public?circle_id=eq.${enc(activeCircleId)}")
             } else JsonArray(emptyList())
@@ -557,14 +572,17 @@ class SupabaseRestClient(
                 uid to st
             }.toMap()
 
-            val myProgArr = getJsonArray("chapter_progress?user_id=eq.${enc(myUid)}")
-            val myWritingArr = getJsonArray("writing_submissions?user_id=eq.${enc(myUid)}")
-            val writingByProgId = myWritingArr.associate { el ->
+            val visibleProgArr = getJsonArray("chapter_progress?select=*")
+            val visibleWritingArr = getJsonArray("writing_submissions?select=*")
+            val writingByProgId = visibleWritingArr.associate { el ->
                 val o = el.jsonObject
-                (o["progress_id"]?.jsonPrimitive?.contentOrNull ?: "") to (o["content"]?.jsonPrimitive?.contentOrNull ?: "")
+                (o["progress_id"]?.jsonPrimitive?.contentOrNull ?: "") to (
+                    (o["content"]?.jsonPrimitive?.contentOrNull ?: "") to
+                        (o["supervisor_approved"]?.jsonPrimitive?.booleanOrNull ?: false)
+                )
             }
-            val mySubArr = getJsonArray("exercise_submissions?select=*")
-            val answersByProgId = mySubArr.mapNotNull { el ->
+            val visibleSubArr = getJsonArray("exercise_submissions?select=*")
+            val answersByProgId = visibleSubArr.mapNotNull { el ->
                 val o = el.jsonObject
                 val pid = o["progress_id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
                 val qid = o["question_id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
@@ -574,16 +592,20 @@ class SupabaseRestClient(
                 pid to (qid to ans)
             }.groupBy({ it.first }, { it.second }).mapValues { (_, pairs) -> pairs.toMap() }
 
-            val myProgressByCh = myProgArr.mapNotNull { el ->
+            val allParsedProgress = visibleProgArr.mapNotNull { el ->
                 val o = el.jsonObject
                 val pid = o["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
                 val cid = o["circle_id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                if (activeCircleId != null && cid != activeCircleId) return@mapNotNull null
+                val uid = o["user_id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
                 val chNo = o["chapter_no"]?.jsonPrimitive?.intOrNull ?: 1
-                chNo to ChapterProgressState(
+                val openScores = o["open_question_scores"]?.jsonObject?.entries?.mapNotNull { (k, v) ->
+                    v.jsonPrimitive.intOrNull?.let { k to it }
+                }?.toMap() ?: emptyMap()
+                val wrPair = writingByProgId[pid]
+                ChapterProgressState(
                     id = pid,
                     circleId = cid,
-                    userId = myUid,
+                    userId = uid,
                     chapterNo = chNo,
                     stage = parseProgressStage(o["status"]?.jsonPrimitive?.contentOrNull),
                     dateModifiedCount = o["date_modified_count"]?.jsonPrimitive?.intOrNull ?: 0,
@@ -595,15 +617,23 @@ class SupabaseRestClient(
                     autoScore = o["auto_score"]?.jsonPrimitive?.intOrNull ?: 0,
                     reattemptUsed = o["reattempt_used"]?.jsonPrimitive?.booleanOrNull ?: false,
                     supervisorScore = o["supervisor_score"]?.jsonPrimitive?.intOrNull,
+                    openQuestionScores = openScores,
+                    peerBuddyId = o["peer_buddy_id"]?.jsonPrimitive?.contentOrNull,
                     supervisorOverride = o["supervisor_override"]?.jsonPrimitive?.booleanOrNull ?: false,
                     selfRatings = o["self_ratings"]?.jsonArray?.mapNotNull { it.jsonPrimitive.intOrNull } ?: emptyList(),
                     genuinenessPassed = o["genuineness_passed"]?.jsonPrimitive?.booleanOrNull ?: true,
                     redFlagIndicators = o["red_flag_indicators"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),
                     needsSupport = o["needs_support"]?.jsonPrimitive?.booleanOrNull ?: false,
                     writingSubmitted = o["writing_task_submitted"]?.jsonPrimitive?.booleanOrNull ?: false,
-                    writingContent = writingByProgId[pid] ?: ""
+                    writingContent = wrPair?.first ?: "",
+                    writingSupervisorApproved = wrPair?.second ?: false
                 )
-            }.toMap()
+            }
+
+            val myProgressByCh = allParsedProgress
+                .filter { it.userId == myUid && (activeCircleId == null || it.circleId == activeCircleId) }
+                .associateBy { it.chapterNo }
+            val liveCircleProgress = allParsedProgress.filter { activeCircleId == null || it.circleId == activeCircleId }
 
             // 5. Pokes & Mute Settings
             val pokesArr = getJsonArray("pokes?select=*&order=created_at.desc&limit=50")
@@ -780,6 +810,7 @@ class SupabaseRestClient(
                     title = o["title"]?.jsonPrimitive?.contentOrNull ?: "Live Session",
                     scheduleLabel = o["scheduled_at"]?.jsonPrimitive?.contentOrNull?.take(16)?.replace('T', ' ') ?: "Scheduled",
                     durationMinutes = o["duration_minutes"]?.jsonPrimitive?.intOrNull ?: 40,
+                    presenterUserId = pUid,
                     presenterName = pUid?.let { profilesById[it]?.name } ?: "SPARC Presenter",
                     hoursUntilSession = 36,
                     slideUploaded = !slideUrl.isNullOrBlank(),
@@ -791,6 +822,9 @@ class SupabaseRestClient(
             }
 
             val rgArr = getJsonArray("research_groups?select=*&order=created_at.asc&limit=10")
+            val rgMembersArr = runCatching { getJsonArray("research_group_members?select=user_id") }.getOrElse { JsonArray(emptyList()) }
+            val liveCoAuthorIds = rgMembersArr.mapNotNull { it.jsonObject["user_id"]?.jsonPrimitive?.contentOrNull }.toSet()
+
             val liveDeals = rgArr.mapNotNull { el ->
                 val o = el.jsonObject
                 val id = o["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
@@ -817,6 +851,8 @@ class SupabaseRestClient(
                 activeCircleId = activeCircleId,
                 memberStageByUserId = stageMap,
                 myChapterProgress = myProgressByCh,
+                circleMemberProgress = liveCircleProgress,
+                coAuthorUserIds = liveCoAuthorIds,
                 pokesToday = livePokes,
                 activeMuteScope = muteScope,
                 polls = livePolls,
@@ -835,7 +871,7 @@ class SupabaseRestClient(
 
     suspend fun fetchPublicAppCustomization(): Result<AppCustomizationConfig> = withContext(Dispatchers.IO) {
         runCatching {
-            check(isConfigured) { "Supabase not configured" }
+            check(isConfigured) { "Server not configured" }
             val arr = getJsonArray("app_customization?id=eq.global&limit=1")
             val obj = arr.firstOrNull()?.jsonObject ?: error("No global customization row")
             parseAppCustomization(obj)
@@ -1462,7 +1498,7 @@ class SupabaseRestClient(
         contentType: String
     ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
-            check(hasAuthenticatedUser) { "Please sign in first to upload to Supabase Storage" }
+            check(hasAuthenticatedUser) { "Please sign in first to upload to Server Storage" }
             val cleanBase = activeSupabaseUrl.trimEnd('/')
             val uploadUrl = "$cleanBase/storage/v1/object/$bucket/$objectPath"
             val body = bytes.toRequestBody(contentType.toMediaType())
@@ -1666,7 +1702,7 @@ Target Word Range: $minWords-$maxWords words (Current: $wordCount words)."""
                 }
             }
 
-            check(isConfigured) { "No Gemini key or Supabase URL configured" }
+            check(isConfigured) { "No Gemini key or Server URL configured" }
             val payload = buildJsonObject {
                 put("chapter_no", chapterNo)
                 put("prompt", prompt)
@@ -1695,6 +1731,117 @@ Target Word Range: $minWords-$maxWords words (Current: $wordCount words)."""
                 structureSuggestions = obj["structure_feedback"]?.jsonArray
                     ?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
             )
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // v3.8 Two-Tier Role System, Mentor Grading, Peer Buddy & Admin RPCs
+    // ------------------------------------------------------------------------
+    suspend fun voteCircleLeadRemote(circleId: String, candidateId: String): Result<String?> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser && isUuid(circleId) && isUuid(candidateId))
+            val res = postRpc(
+                "vote_circle_lead_rpc",
+                buildJsonObject {
+                    put("p_circle_id", circleId)
+                    put("p_candidate_id", candidateId)
+                }
+            ).jsonObject
+            res["circle_lead_id"]?.jsonPrimitive?.contentOrNull
+        }
+    }
+
+    suspend fun assignSessionPresenterRemote(sessionId: String, presenterUserId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser && isUuid(sessionId) && isUuid(presenterUserId))
+            postRpc(
+                "assign_session_presenter_rpc",
+                buildJsonObject {
+                    put("p_session_id", sessionId)
+                    put("p_presenter_user_id", presenterUserId)
+                }
+            )
+            Unit
+        }
+    }
+
+    suspend fun mentorEvaluateAndSupportRemote(
+        circleId: String,
+        targetUserId: String,
+        chapterNo: Int,
+        supervisorScore: Int? = null,
+        openScores: Map<String, Int>? = null,
+        peerBuddyId: String? = null,
+        extendDays: Int = 0,
+        supervisorOverride: Boolean? = null,
+        approveWriting: Boolean? = null
+    ): Result<JsonObject> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser && isUuid(circleId) && isUuid(targetUserId))
+            postRpc(
+                "mentor_evaluate_and_support_rpc",
+                buildJsonObject {
+                    put("p_circle_id", circleId)
+                    put("p_target_user_id", targetUserId)
+                    put("p_chapter_no", chapterNo)
+                    if (supervisorScore != null) put("p_supervisor_score", supervisorScore)
+                    if (openScores != null) {
+                        put("p_open_scores", buildJsonObject {
+                            openScores.forEach { (k, v) -> put(k, v) }
+                        })
+                    }
+                    if (!peerBuddyId.isNullOrBlank() && isUuid(peerBuddyId)) {
+                        put("p_peer_buddy_id", peerBuddyId)
+                    }
+                    if (extendDays > 0) put("p_extend_days", extendDays)
+                    if (supervisorOverride != null) put("p_supervisor_override", supervisorOverride)
+                    if (approveWriting != null) put("p_approve_writing", approveWriting)
+                }
+            ).jsonObject
+        }
+    }
+
+    suspend fun adminManageRolesAndOrdersRemote(
+        targetUserId: String? = null,
+        newRole: UserRole? = null,
+        circleId: String? = null,
+        mentorId: String? = null,
+        minMembers: Int? = null,
+        bookOrderId: String? = null,
+        bookOrderStatus: String? = null,
+        walletTxId: String? = null,
+        walletTxStatus: String? = null
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser)
+            postRpc(
+                "admin_manage_roles_and_orders_rpc",
+                buildJsonObject {
+                    if (!targetUserId.isNullOrBlank() && isUuid(targetUserId)) put("p_target_user_id", targetUserId)
+                    if (newRole != null) put("p_new_role", newRole.name.lowercase())
+                    if (!circleId.isNullOrBlank() && isUuid(circleId)) put("p_circle_id", circleId)
+                    if (!mentorId.isNullOrBlank() && isUuid(mentorId)) put("p_mentor_id", mentorId)
+                    if (minMembers != null) put("p_min_members", minMembers)
+                    if (!bookOrderId.isNullOrBlank() && isUuid(bookOrderId)) put("p_book_order_id", bookOrderId)
+                    if (!bookOrderStatus.isNullOrBlank()) put("p_book_order_status", bookOrderStatus.lowercase())
+                    if (!walletTxId.isNullOrBlank() && isUuid(walletTxId)) put("p_wallet_tx_id", walletTxId)
+                    if (!walletTxStatus.isNullOrBlank()) put("p_wallet_tx_status", walletTxStatus.lowercase())
+                }
+            )
+            Unit
+        }
+    }
+
+    suspend fun switchMyRolePreviewRemote(role: UserRole): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser)
+            postRpc(
+                "switch_my_role_preview_rpc",
+                buildJsonObject {
+                    put("p_role", role.name.lowercase())
+                }
+            )
+            Unit
         }
     }
 }

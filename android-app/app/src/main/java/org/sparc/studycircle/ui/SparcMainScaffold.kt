@@ -116,10 +116,11 @@ fun SparcMainScaffold(repository: SparcRepository) {
                                 }
                         ) {
                             Text(
-                                text = state.appCustomization.appTitle,
+                                text = "${state.appCustomization.appTitle} • ${state.currentUser.role.badgeEmoji} ${state.currentUser.role.shortLabel(state.appLanguage)}",
                                 fontSize = 11.sp,
-                                color = Color.White.copy(alpha = 0.85f),
-                                fontWeight = FontWeight.SemiBold
+                                color = Color.White.copy(alpha = 0.88f),
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1
                             )
                             Text(
                                 text = displayUserName,
@@ -162,7 +163,7 @@ fun SparcMainScaffold(repository: SparcRepository) {
                             )
                         }
                         IconButton(onClick = { scope.launch { repository.syncFromSupabaseNow(silent = false) } }) {
-                            Icon(Icons.Default.Sync, contentDescription = "Live Sync", tint = Color.White)
+                            Icon(Icons.Default.Sync, contentDescription = tr("সার্ভার সিঙ্ক", "Server Sync"), tint = Color.White)
                         }
                         IconButton(onClick = { showSettingsSheet = true }) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings & Customization", tint = Color.White)
@@ -204,10 +205,11 @@ fun SparcMainScaffold(repository: SparcRepository) {
                                 style = MaterialTheme.typography.titleMedium,
                                 color = p.text
                             )
+                            val rolePill = "${state.currentUser.role.badgeEmoji} ${state.currentUser.role.shortLabel(state.appLanguage)}"
                             val subInfo = if (state.currentUser.institution.isNotBlank()) {
-                                "${state.currentUser.department} • ${state.currentUser.institution}"
+                                "$rolePill • ${state.currentUser.department}"
                             } else {
-                                "${state.currentUser.department} • ★ ${state.currentUser.rating}"
+                                "$rolePill • ${state.currentUser.department} • ★ ${state.currentUser.rating}"
                             }
                             Text(
                                 text = subInfo,
@@ -251,7 +253,7 @@ fun SparcMainScaffold(repository: SparcRepository) {
                             )
                         }
                         IconButton(onClick = { scope.launch { repository.syncFromSupabaseNow(silent = false) } }) {
-                            Icon(Icons.Default.Sync, contentDescription = "Live Sync", tint = p.primary)
+                            Icon(Icons.Default.Sync, contentDescription = tr("সার্ভার সিঙ্ক", "Server Sync"), tint = p.primary)
                         }
                         IconButton(onClick = { showSettingsSheet = true }) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings & Customization", tint = p.text)
@@ -416,12 +418,14 @@ fun SparcMainScaffold(repository: SparcRepository) {
         SparcSettingsBottomSheet(
             currentTheme = state.visualTheme,
             currentLanguage = state.appLanguage,
+            currentRole = state.currentUser.role,
             appCustomization = state.appCustomization,
             uiCustomization = state.uiCustomization,
             apiVault = state.apiVault,
-            isSupabaseConnected = state.isSupabaseConnected,
+            isServerConnected = state.isSupabaseConnected,
             onSelectTheme = { chosen -> repository.setVisualTheme(chosen) },
             onChangeLanguage = { lang -> repository.setAppLanguage(lang) },
+            onSwitchRolePreview = { role -> repository.switchMyRolePreview(role) },
             onUpdateUiCustomization = { newUi, bnMsg, enMsg ->
                 repository.updateUiCustomization(newUi, bnMsg, enMsg)
             },

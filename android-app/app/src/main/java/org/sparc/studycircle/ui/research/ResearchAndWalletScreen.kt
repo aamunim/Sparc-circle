@@ -195,7 +195,7 @@ private fun AiWritingAndCoAuthorView(
         item {
             SparcScholarlyCard {
                 Text(
-                    tr("স্মার্ট কো-অথর ম্যাচমেকিং (৪ সদস্যের টিম)", "Smart Co-Author Matchmaking (4-Member Team)"),
+                    tr("✍️ স্মার্ট সহ-লেখক (Co-Author) ম্যাচমেকিং (৪ সদস্যের টিম)", "✍️ Smart Co-Author Matchmaking (4-Member Team)"),
                     style = MaterialTheme.typography.titleMedium,
                     color = p.text
                 )
@@ -208,9 +208,9 @@ private fun AiWritingAndCoAuthorView(
                             color = if (idx % 2 == 0) p.primarySoft else p.accentSoft
                         ) {
                             Text(
-                                text = "$firstName • $skillLabel",
+                                text = "✍️ $firstName (${tr("সহ-লেখক", "Co-Author")}) • $skillLabel",
                                 color = if (idx % 2 == 0) p.primarySoftText else p.accentText,
-                                fontSize = 12.sp,
+                                fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
                             )

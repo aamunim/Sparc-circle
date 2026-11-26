@@ -126,7 +126,7 @@ fun NativePdfBookViewerCard(
                 )
                 Text(
                     text = if (isDownloadingCloud) {
-                        tr("ক্লাউড স্টোরেজ থেকে বই ডাউনলোড হচ্ছে...", "Downloading book from Supabase Storage...")
+                        tr("সার্ভার থেকে বই ডাউনলোড হচ্ছে...", "Downloading book from Server...")
                     } else {
                         tr(
                             "পৃষ্ঠা ${pageIndex + 1} / $totalPageCount • Pinch-to-Zoom সাপোর্টেড",

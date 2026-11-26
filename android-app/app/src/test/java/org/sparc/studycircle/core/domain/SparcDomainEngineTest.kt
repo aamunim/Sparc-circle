@@ -487,6 +487,90 @@ class SparcDomainEngineTest {
         repo.submitWritingForHumanEvaluation(ch4, longDraft)
         assertTrue(repo.state.value.statusBannerMessage?.contains("Evaluate") == true)
     }
+
+    @Test
+    fun `v3_8 two-tier role system separates Circle Lead from Mentor, awards Host +50 pts, pairs Peer Buddy, and enforces Admin rules`() {
+        val repo = org.sparc.studycircle.core.data.SparcRepository(
+            supabaseClient = org.sparc.studycircle.core.data.SupabaseRestClient("", "")
+        )
+
+        // 1. Default user is Researcher (MEMBER)
+        assertEquals(UserRole.MEMBER, repo.state.value.currentUser.role)
+        assertEquals("গবেষক", UserRole.MEMBER.shortLabel("bn"))
+        assertEquals("Researcher", UserRole.MEMBER.shortLabel("en"))
+        assertEquals("মেন্টর", UserRole.SUPERVISOR.shortLabel("bn"))
+        assertEquals("সার্কেল লিড", UserRole.MODERATOR.shortLabel("bn"))
+
+        // 2. Creating a study circle awards +50 Host points & Circle Initiator badge
+        val beforePts = repo.state.value.currentUser.gamificationPoints
+        val book = repo.state.value.books.first()
+        repo.createNewStudyCircle("Urban Policy Cohort", book, minMembers = 6)
+        assertEquals(beforePts + 50, repo.state.value.currentUser.gamificationPoints)
+        assertTrue("Circle Initiator" in repo.state.value.currentUser.earnedBadges)
+        val newCircle = repo.state.value.circles.last()
+        assertEquals(repo.state.value.currentUser.id, newCircle.initiatorId)
+
+        // 3. Voting elects Circle Lead WITHOUT overwriting SPARC-assigned Mentor (supervisorId)
+        val seededCircle = repo.state.value.circles.first()
+        assertEquals("u-sup-1", seededCircle.supervisorId)
+        repo.voteForCircleLead(seededCircle.id, "u-3")
+        val afterVote = repo.state.value.circles.first()
+        assertEquals("u-sup-1", afterVote.supervisorId)
+        assertEquals("u-3", afterVote.circleLeadVotes[repo.state.value.currentUser.id])
+
+        // 4. Non-Admin cannot change minMembersRequired on an existing circle
+        repo.updateStudyCircleCustomization(
+            circleId = seededCircle.id,
+            name = seededCircle.name,
+            minMembers = 15,
+            maxMembers = 25,
+            isPrivate = false,
+            inviteCode = null,
+            scheduleLabel = seededCircle.sessionScheduleLabel,
+            meetingUrl = seededCircle.defaultMeetingUrl,
+            rules = seededCircle.circleRules,
+            currentGroupChapter = 1
+        )
+        assertEquals(5, repo.state.value.circles.first().minMembersRequired)
+
+        // 5. Switch to Mentor -> grade open question (0-3) & assign Peer Buddy
+        repo.switchMyRolePreview(UserRole.SUPERVISOR)
+        assertEquals(UserRole.SUPERVISOR, repo.state.value.currentUser.role)
+        val ch1 = book.chapters.first()
+        repo.mentorEvaluateAndSupport(
+            circleId = seededCircle.id,
+            targetUserId = "u-5",
+            chapter = ch1,
+            openScores = mapOf("q3" to 3),
+            peerBuddyId = "u-2",
+            manualUnlock = true
+        )
+        val u5Prog = repo.state.value.circleMemberProgress.first { it.userId == "u-5" && it.chapterNo == 1 }
+        assertEquals("u-2", u5Prog.peerBuddyId)
+        assertEquals(3, u5Prog.supervisorScore)
+
+        // 6. Switch to Admin -> assign Mentor, minMembers & promote user role
+        repo.switchMyRolePreview(UserRole.ADMIN)
+        repo.adminAssignUserRole("u-2", UserRole.MODERATOR)
+        assertEquals(UserRole.MODERATOR, repo.state.value.directoryMembers.first { it.id == "u-2" }.role)
+        repo.adminAssignCircleMentorAndMinMembers(seededCircle.id, mentorId = "u-sup-1", minMembers = 12)
+        assertEquals(12, repo.state.value.circles.first().minMembersRequired)
+
+        // 7. Resolve dynamic ActivityRoleBadges accurately
+        val sess = repo.state.value.sessions.first()
+        val farhan = repo.state.value.directoryMembers.first { it.id == "u-2" }
+        repo.assignSessionPresenter(sess.id, farhan)
+        val farhanBadges = SparcDomainEngine.resolveUserActivityBadges(
+            userId = "u-2",
+            earnedBadges = farhan.earnedBadges,
+            activeCircle = repo.state.value.circles.first(),
+            sessions = repo.state.value.sessions,
+            coAuthorUserIds = repo.state.value.coAuthorUserIds,
+            peerBuddyUserIds = setOf("u-2")
+        )
+        assertTrue(ActivityRoleBadge.CIRCLE_LEAD in farhanBadges)
+        assertTrue(ActivityRoleBadge.CHAPTER_PRESENTER in farhanBadges)
+        assertTrue(ActivityRoleBadge.CO_AUTHOR in farhanBadges)
+        assertTrue(ActivityRoleBadge.PEER_BUDDY in farhanBadges)
+    }
 }
-
-

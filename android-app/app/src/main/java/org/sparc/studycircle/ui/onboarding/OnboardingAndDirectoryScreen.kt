@@ -166,8 +166,19 @@ fun OnboardingAndDirectoryScreen(
                     }
                 }
 
+                val activeCircle = state.circles.find { it.id == state.activeCircleId } ?: state.circles.firstOrNull()
+                val peerBuddyUserIds = state.circleMemberProgress.mapNotNull { it.peerBuddyId }.toSet()
+
                 items(filteredMembers, key = { it.id }) { member ->
                     val memberName = trContent(member.name)
+                    val activityBadges = SparcDomainEngine.resolveUserActivityBadges(
+                        userId = member.id,
+                        earnedBadges = member.earnedBadges,
+                        activeCircle = activeCircle,
+                        sessions = state.sessions,
+                        coAuthorUserIds = state.coAuthorUserIds,
+                        peerBuddyUserIds = peerBuddyUserIds
+                    )
                     SparcScholarlyCard(compact = state.uiCustomization.compactHomeCards) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             SparcAvatarCircle(
@@ -199,6 +210,11 @@ fun OnboardingAndDirectoryScreen(
                                 )
                             }
                         }
+
+                        SparcRoleBadgesRow(
+                            coreRole = member.role,
+                            activityBadges = activityBadges
+                        )
 
                         if (member.bio.isNotBlank()) {
                             Text(member.bio, fontSize = 12.sp, color = p.muted)

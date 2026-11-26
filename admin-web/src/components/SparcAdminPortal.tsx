@@ -105,8 +105,8 @@ export default function SparcAdminPortal() {
             <p className="text-xs text-emerald-100 mt-0.5">
               বই পড়তে পড়তে লেখা শেখা •{" "}
               {isSupabaseConfigured
-                ? "Connected to Live Supabase PostgreSQL"
-                : "Interactive Sandbox Mode (Configure .env.local for Live Supabase)"}
+                ? "Connected to Live Server"
+                : "Interactive Sandbox Mode (Configure .env.local for Live Server)"}
             </p>
           </div>
 
@@ -584,11 +584,11 @@ export default function SparcAdminPortal() {
                       setNewBookAuthor("");
                       if (pdfInput) pdfInput.value = "";
                       if (audioInput) audioInput.value = "";
-                      notify("নতুন বই ও ক্লাউড মিডিয়া সফলভাবে Supabase Storage-এ যুক্ত হয়েছে!");
+                      notify("নতুন বই ও ক্লাউড মিডিয়া সফলভাবে ক্লাউড সার্ভারে যুক্ত হয়েছে!");
                     }}
                     className="bg-[#0F5132] text-white rounded-lg px-4 py-3 text-sm font-semibold"
                   >
-                    ☁️ Supabase-এ বই ও মিডিয়া প্রকাশ করুন
+                    ☁️ সার্ভারে বই ও মিডিয়া প্রকাশ করুন
                   </button>
                 </div>
               </div>

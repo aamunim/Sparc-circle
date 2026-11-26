@@ -61,13 +61,22 @@ fun StudyCircleScreen(
         .filter { it.id != state.currentUser.id }
         .ifEmpty { state.directoryMembers.take(5) }
 
-    val electedSupervisorName = circle.supervisorId?.let { allUsersById[it]?.name }
+    val assignedMentorName = circle.supervisorId?.let { allUsersById[it]?.name }
         ?.let { trContent(it) }
         ?: tr("ড. নুসরাত জাহান", "Dr. Nusrat Jahan")
+    val electedLeadName = circle.circleLeadId?.let { allUsersById[it]?.name }
+        ?.let { trContent(it) }
+        ?: trContent((circlePeers.firstOrNull() ?: state.currentUser).name)
+    val initiatorName = circle.initiatorId?.let { allUsersById[it]?.name }?.let { trContent(it) }
+    val canManageCircle = SparcDomainEngine.canUserManageCircle(state.currentUser, circle)
+    val peerBuddyUserIds = remember(state.circleMemberProgress) {
+        state.circleMemberProgress.mapNotNull { it.peerBuddyId }.toSet()
+    }
 
     var pokeTarget by remember { mutableStateOf<UserProfile?>(null) }
     var showCreateCircleSheet by remember { mutableStateOf(false) }
     var showCustomizeCircleSheet by remember { mutableStateOf(false) }
+    var showAdminConsoleSheet by remember { mutableStateOf(false) }
     var privateCircleToJoin by remember { mutableStateOf<StudyCircleGroup?>(null) }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -88,7 +97,7 @@ fun StudyCircleScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 14.dp)
             ) {
-                // Live Circle Switcher + Private/Public Join + Create Circle Row
+                // Live Circle Switcher + Private/Public Join + Create Circle (+50 Host Points) Row
                 item {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(state.circles, key = { it.id }) { c ->
@@ -139,7 +148,7 @@ fun StudyCircleScreen(
                                 modifier = Modifier.clickable { showCreateCircleSheet = true }
                             ) {
                                 Text(
-                                    text = tr("+ নতুন সার্কেল", "+ New Circle"),
+                                    text = tr("🚀 + নতুন সার্কেল (+50 pts)", "🚀 + New Circle (+50 pts)"),
                                     color = p.primarySoftText,
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
@@ -150,7 +159,53 @@ fun StudyCircleScreen(
                     }
                 }
 
-                // Sleek Gradient Hero Cohort Card with Privacy Badge, Schedule & Customize Trigger
+                // Admin (SPARC Team) Quick Control Console Card
+                if (state.currentUser.role.isAdminLike) {
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = p.primarySoft,
+                            border = BorderStroke(1.2.dp, p.primary),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showAdminConsoleSheet = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        tr("🛡️ অ্যাডমিন কন্ট্রোল প্যানেল (SPARC টিম)", "🛡️ Admin Control Panel (SPARC Team)"),
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 13.5.sp,
+                                        color = p.primarySoftText
+                                    )
+                                    Text(
+                                        tr(
+                                            "মেন্টর নিয়োগ, ইউজার রোল পরিবর্তন, সর্বনিম্ন সদস্য সংখ্যা ও ফিজিক্যাল বই অর্ডার প্রসেস করুন",
+                                            "Assign Mentors, manage user roles, set min circle members & process physical book orders"
+                                        ),
+                                        fontSize = 11.5.sp,
+                                        color = p.primarySoftText.copy(alpha = 0.85f)
+                                    )
+                                }
+                                Surface(shape = RoundedCornerShape(10.dp), color = p.primary) {
+                                    Text(
+                                        tr("খুলুন ›", "Open ›"),
+                                        color = Color.White,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Sleek Gradient Hero Cohort Card with Mentor, Circle Lead & Host Badges
                 item {
                     SparcGradientHeroCard {
                         Row(
@@ -193,24 +248,33 @@ fun StudyCircleScreen(
                                     fontWeight = FontWeight.ExtraBold
                                 )
                                 Text(
-                                    text = "${tr("সুপারভাইজার", "Supervisor")}: $electedSupervisorName • ${tr("অধ্যায়", "Ch")} ${circle.currentGroupChapter}",
-                                    color = Color.White.copy(alpha = 0.88f),
-                                    fontSize = 12.sp
+                                    text = "🎓 ${tr("মেন্টর", "Mentor")}: $assignedMentorName • ⭐ ${tr("সার্কেল লিড", "Circle Lead")}: $electedLeadName",
+                                    color = Color.White.copy(alpha = 0.92f),
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                val hostSuffix = if (initiatorName != null) " • 🚀 ${tr("উদ্যোক্তা", "Host")}: $initiatorName" else ""
+                                Text(
+                                    text = "${tr("অধ্যায়", "Chapter")} ${circle.currentGroupChapter} • ${tr("ন্যূনতম", "Min")} ${circle.minMembersRequired}${hostSuffix}",
+                                    color = Color.White.copy(alpha = 0.82f),
+                                    fontSize = 11.sp
                                 )
                             }
                             Spacer(Modifier.width(10.dp))
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = Color.White.copy(alpha = 0.20f),
-                                modifier = Modifier.clickable { showCustomizeCircleSheet = true }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            if (canManageCircle) {
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = Color.White.copy(alpha = 0.20f),
+                                    modifier = Modifier.clickable { showCustomizeCircleSheet = true }
                                 ) {
-                                    Icon(Icons.Default.Tune, contentDescription = "Customize Circle", tint = Color.White, modifier = Modifier.size(16.dp))
-                                    Text(tr("সেটআপ", "Rules"), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(Icons.Default.Tune, contentDescription = "Customize Circle", tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Text(tr("সেটআপ", "Setup"), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
@@ -356,6 +420,15 @@ fun StudyCircleScreen(
                                 items(circlePeers, key = { it.id }) { peer ->
                                     val peerDisplayName = trContent(peer.name)
                                     val stg = state.memberStageByUserId[peer.id] ?: ProgressStage.READING_STARTED
+                                    val peerBadges = SparcDomainEngine.resolveUserActivityBadges(
+                                        userId = peer.id,
+                                        earnedBadges = peer.earnedBadges,
+                                        activeCircle = circle,
+                                        sessions = state.sessions,
+                                        coAuthorUserIds = state.coAuthorUserIds,
+                                        peerBuddyUserIds = peerBuddyUserIds
+                                    )
+                                    val topEmoji = peerBadges.firstOrNull()?.emoji ?: peer.role.badgeEmoji
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         modifier = Modifier.clickable {
@@ -371,7 +444,12 @@ fun StudyCircleScreen(
                                             bgColor = if (stg.step < ProgressStage.EXERCISES_SUBMITTED.step) p.accent else p.primary
                                         )
                                         Spacer(Modifier.height(4.dp))
-                                        Text(peerDisplayName.split(" ").first(), fontSize = 11.sp, color = p.text, fontWeight = FontWeight.SemiBold)
+                                        Text(
+                                            "$topEmoji ${peerDisplayName.split(" ").first()}",
+                                            fontSize = 11.sp,
+                                            color = p.text,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
                                     }
                                 }
                             }
@@ -380,7 +458,7 @@ fun StudyCircleScreen(
                 }
             }
         } else {
-            // Sub-tab 1: Supervisor Voting, Poke Quiet Hours/Mute/1-Tap Reply & Poll/Debate
+            // Sub-tab 1: Circle Lead Voting (Member-Elected), Poke Quiet Hours/Mute/1-Tap Reply & Poll/Debate
             val pokesSentToday = state.pokesToday.count { it.senderId == state.currentUser.id }
             val remainingPokes = (3 - pokesSentToday).coerceAtLeast(0)
             var debateComment by remember { mutableStateOf("") }
@@ -398,15 +476,25 @@ fun StudyCircleScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
-                                Text(tr("সুপারভাইজার ইলেকশন", "Supervisor Election"), fontSize = 11.5.sp, color = p.muted)
-                                Text(electedSupervisorName, style = MaterialTheme.typography.titleMedium, color = p.text)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    tr("⭐ সার্কেল লিড নির্বাচন (সদস্যদের ভোটে)", "⭐ Circle Lead Election (Member Vote)"),
+                                    fontSize = 11.5.sp,
+                                    color = p.muted
+                                )
+                                Text(electedLeadName, style = MaterialTheme.typography.titleMedium, color = p.text)
+                                Text(
+                                    tr("🎓 SPARC নিযুক্ত মেন্টর: $assignedMentorName", "🎓 SPARC Assigned Mentor: $assignedMentorName"),
+                                    fontSize = 11.sp,
+                                    color = p.primary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             }
                             Surface(shape = RoundedCornerShape(12.dp), color = p.primarySoft) {
                                 Text(
                                     text = tr(
-                                        "${circle.supervisorVotes.size}/${circle.memberIds.size.coerceAtLeast(1)} ভোট",
-                                        "${circle.supervisorVotes.size}/${circle.memberIds.size.coerceAtLeast(1)} votes"
+                                        "${circle.circleLeadVotes.size}/${circle.memberIds.size.coerceAtLeast(1)} ভোট",
+                                        "${circle.circleLeadVotes.size}/${circle.memberIds.size.coerceAtLeast(1)} votes"
                                     ),
                                     color = p.primarySoftText,
                                     fontSize = 11.5.sp,
@@ -417,12 +505,12 @@ fun StudyCircleScreen(
                         }
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(circlePeers.take(5), key = { it.id }) { cand ->
-                                val myVote = circle.supervisorVotes[state.currentUser.id] == cand.id
+                                val myVote = circle.circleLeadVotes[state.currentUser.id] == cand.id
                                 Surface(
                                     shape = RoundedCornerShape(10.dp),
                                     color = if (myVote) p.primary else p.cardAlt,
                                     modifier = Modifier.clickable {
-                                        repository.voteForSupervisor(circle.id, cand.id)
+                                        repository.voteForCircleLead(circle.id, cand.id)
                                     }
                                 ) {
                                     Text(
@@ -607,6 +695,7 @@ fun StudyCircleScreen(
     if (showCreateCircleSheet) {
         CircleCustomizationBottomSheet(
             isCreateMode = true,
+            isAdmin = state.currentUser.role.isAdminLike,
             books = state.books,
             existingCircle = null,
             onDismiss = { showCreateCircleSheet = false },
@@ -631,6 +720,7 @@ fun StudyCircleScreen(
     if (showCustomizeCircleSheet) {
         CircleCustomizationBottomSheet(
             isCreateMode = false,
+            isAdmin = state.currentUser.role.isAdminLike,
             books = state.books,
             existingCircle = circle,
             onDismiss = { showCustomizeCircleSheet = false },
@@ -650,6 +740,15 @@ fun StudyCircleScreen(
                 )
                 showCustomizeCircleSheet = false
             }
+        )
+    }
+
+    if (showAdminConsoleSheet && state.currentUser.role.isAdminLike) {
+        AdminRoleAndCircleControlSheet(
+            state = state,
+            activeCircle = circle,
+            repository = repository,
+            onDismiss = { showAdminConsoleSheet = false }
         )
     }
 
@@ -733,10 +832,290 @@ fun StudyCircleScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun AdminRoleAndCircleControlSheet(
+    state: SparcAppState,
+    activeCircle: StudyCircleGroup,
+    repository: SparcRepository,
+    onDismiss: () -> Unit
+) {
+    val p = LocalSparcPalette.current
+    val lang = LocalAppLanguage.current
+    var adminTab by remember { mutableIntStateOf(0) } // 0 = Circle Mentor & Min, 1 = User Roles, 2 = Orders & Wallet
+    var minMembersDraft by remember(activeCircle.minMembersRequired) { mutableIntStateOf(activeCircle.minMembersRequired) }
+    val allMembers = remember(state.currentUser, state.directoryMembers) {
+        listOf(state.currentUser) + state.directoryMembers
+    }
+    val mentorCandidates = remember(allMembers) {
+        allMembers.filter { it.role.isMentorOrAdmin }.ifEmpty { allMembers }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = p.card,
+        contentColor = p.text,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 650.dp)
+                .padding(horizontal = 18.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                tr("🛡️ অ্যাডমিন কন্ট্রোল প্যানেল (SPARC টিম)", "🛡️ Admin Control Panel (SPARC Team)"),
+                style = MaterialTheme.typography.titleLarge,
+                color = p.text
+            )
+            SparcSegmentedPills(
+                options = listOf(
+                    tr("🎓 মেন্টর ও সীমা", "🎓 Mentor & Min"),
+                    tr("👥 রোল ম্যানেজার", "👥 User Roles"),
+                    tr("📦 অর্ডার ও ওয়ালেট", "📦 Orders & Wallet")
+                ),
+                selectedIndex = adminTab,
+                onSelect = { adminTab = it }
+            )
+
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 24.dp)
+            ) {
+                when (adminTab) {
+                    0 -> {
+                        item {
+                            Text(
+                                tr("সার্কেল: ${trContent(activeCircle.name)}", "Circle: ${trContent(activeCircle.name)}"),
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 13.5.sp,
+                                color = p.primary
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                tr("১. SPARC মেন্টর (Supervisor) নিযুক্ত করুন:", "1. Assign SPARC Mentor (Supervisor):"),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.5.sp,
+                                color = p.text
+                            )
+                        }
+                        items(mentorCandidates, key = { it.id }) { cand ->
+                            val isAssigned = activeCircle.supervisorId == cand.id
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (isAssigned) p.primarySoft else p.cardAlt,
+                                border = BorderStroke(1.dp, if (isAssigned) p.primary else p.border),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        repository.adminAssignCircleMentorAndMinMembers(
+                                            circleId = activeCircle.id,
+                                            mentorId = cand.id,
+                                            minMembers = minMembersDraft
+                                        )
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            "${cand.role.badgeEmoji} ${trContent(cand.name)}",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = p.text
+                                        )
+                                        Text(cand.department, fontSize = 11.5.sp, color = p.muted)
+                                    }
+                                    Text(
+                                        if (isAssigned) tr("✓ নিযুক্ত মেন্টর", "✓ Assigned") else tr("নিযুক্ত করুন", "Assign"),
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 11.5.sp,
+                                        color = if (isAssigned) p.primarySoftText else p.primary
+                                    )
+                                }
+                            }
+                        }
+                        item {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                tr("২. সার্কেলের সর্বনিম্ন সদস্য সংখ্যা: $minMembersDraft জন", "2. Minimum Circle Members: $minMembersDraft"),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.5.sp,
+                                color = p.text
+                            )
+                            Slider(
+                                value = minMembersDraft.toFloat(),
+                                onValueChange = { minMembersDraft = it.toInt().coerceIn(2, 25) },
+                                valueRange = 2f..25f
+                            )
+                            SparcPrimaryButton(
+                                text = tr("সর্বনিম্ন সদস্য সংখ্যা ($minMembersDraft) সংরক্ষণ করুন", "Save Minimum Members ($minMembersDraft)"),
+                                onClick = {
+                                    repository.adminAssignCircleMentorAndMinMembers(
+                                        circleId = activeCircle.id,
+                                        mentorId = null,
+                                        minMembers = minMembersDraft
+                                    )
+                                }
+                            )
+                        }
+                    }
+                    1 -> {
+                        items(allMembers, key = { it.id }) { member ->
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = p.cardAlt,
+                                border = BorderStroke(1.dp, p.border),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        "${member.role.badgeEmoji} ${trContent(member.name)} (${member.department})",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = p.text
+                                    )
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        listOf(
+                                            UserRole.MEMBER,
+                                            UserRole.MODERATOR,
+                                            UserRole.SUPERVISOR,
+                                            UserRole.ADMIN
+                                        ).forEach { r ->
+                                            val active = member.role == r
+                                            Surface(
+                                                shape = RoundedCornerShape(10.dp),
+                                                color = if (active) p.primary else p.card,
+                                                border = BorderStroke(1.dp, if (active) p.primary else p.border),
+                                                modifier = Modifier.clickable {
+                                                    repository.adminAssignUserRole(member.id, r)
+                                                }
+                                            ) {
+                                                Text(
+                                                    "${r.badgeEmoji} ${r.shortLabel(lang)}",
+                                                    color = if (active) Color.White else p.text,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else -> {
+                        item {
+                            Text(
+                                tr("📦 ফিজিক্যাল বইয়ের অর্ডারসমূহ (${state.bookOrders.size})", "📦 Physical Book Orders (${state.bookOrders.size})"),
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 13.sp,
+                                color = p.primary
+                            )
+                        }
+                        if (state.bookOrders.isEmpty()) {
+                            item {
+                                Text(tr("বর্তমানে কোনো পেন্ডিং বইয়ের অর্ডার নেই।", "No physical book orders placed yet."), fontSize = 12.sp, color = p.muted)
+                            }
+                        } else {
+                            items(state.bookOrders, key = { it.id }) { ord ->
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = p.cardAlt,
+                                    border = BorderStroke(1.dp, p.border),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("${ord.bookTitle} (${ord.orderMode} • ৳${ord.amountBdt.toInt()})", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                                        Text("📍 ${ord.address} • 📞 ${ord.phone} • Status: ${ord.status}", fontSize = 11.5.sp, color = p.muted)
+                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            listOf("approved", "dispatched", "delivered").forEach { st ->
+                                                OutlinedButton(
+                                                    onClick = { repository.adminUpdateBookOrderStatus(ord.id, st) },
+                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                                ) {
+                                                    Text(st.replaceFirstChar { it.uppercase() }, fontSize = 11.sp)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        val pendingTx = state.walletHistory.filter { it.status.equals("Pending", ignoreCase = true) }
+                        item {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                tr("💳 ম্যানুয়াল ওয়ালেট TrxID যাচাই (${pendingTx.size})", "💳 Pending Manual Wallet TrxIDs (${pendingTx.size})"),
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 13.sp,
+                                color = p.primary
+                            )
+                        }
+                        if (pendingTx.isEmpty()) {
+                            item {
+                                Text(tr("কোনো পেন্ডিং ওয়ালেট ট্রানজেকশন নেই।", "No pending manual wallet transactions."), fontSize = 12.sp, color = p.muted)
+                            }
+                        } else {
+                            items(pendingTx, key = { it.id }) { tx ->
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = p.cardAlt,
+                                    border = BorderStroke(1.dp, p.border),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("৳${tx.amountBdt.toInt()} • ${tx.reference}", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                                            Text(tx.description, fontSize = 11.sp, color = p.muted)
+                                        }
+                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Button(
+                                                onClick = { repository.adminVerifyWalletTx(tx.id, "verified") },
+                                                colors = ButtonDefaults.buttonColors(containerColor = p.primary),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                            ) {
+                                                Text(tr("অনুমোদন", "Approve"), fontSize = 11.sp)
+                                            }
+                                            OutlinedButton(
+                                                onClick = { repository.adminVerifyWalletTx(tx.id, "rejected") },
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                            ) {
+                                                Text(tr("বাতিল", "Reject"), fontSize = 11.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CircleCustomizationBottomSheet(
     isCreateMode: Boolean,
+    isAdmin: Boolean = false,
     books: List<BookItem>,
     existingCircle: StudyCircleGroup?,
     onDismiss: () -> Unit,
@@ -776,7 +1155,7 @@ private fun CircleCustomizationBottomSheet(
         ) {
             item {
                 Text(
-                    text = if (isCreateMode) tr("⭕ নতুন কাস্টম স্টাডি সার্কেল তৈরি করুন", "⭕ Create Custom Study Circle")
+                    text = if (isCreateMode) tr("⭕ নতুন স্টাডি সার্কেল তৈরি করুন (+৫০ পয়েন্ট)", "⭕ Create Study Circle (+50 Host Pts)")
                     else tr("⚙️ স্টাডি সার্কেল রুলস ও শিডিউল কাস্টমাইজ করুন", "⚙️ Customize Circle Rules & Schedule"),
                     style = MaterialTheme.typography.titleLarge,
                     color = p.text
@@ -864,14 +1243,22 @@ private fun CircleCustomizationBottomSheet(
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.5.sp
                 )
-                Slider(
-                    value = minMembers.toFloat(),
-                    onValueChange = {
-                        minMembers = it.toInt().coerceIn(2, 20)
-                        if (maxMembers < minMembers) maxMembers = minMembers
-                    },
-                    valueRange = 2f..20f
-                )
+                if (isAdmin || isCreateMode) {
+                    Slider(
+                        value = minMembers.toFloat(),
+                        onValueChange = {
+                            minMembers = it.toInt().coerceIn(2, 20)
+                            if (maxMembers < minMembers) maxMembers = minMembers
+                        },
+                        valueRange = 2f..20f
+                    )
+                } else {
+                    Text(
+                        tr("🛡️ সর্বনিম্ন সদস্য সংখ্যা ($minMembers জন) শুধুমাত্র SPARC অ্যাডমিন পরিবর্তন করতে পারেন।", "🛡️ Minimum required members ($minMembers) is managed by SPARC Admin."),
+                        fontSize = 11.sp,
+                        color = p.muted
+                    )
+                }
                 Slider(
                     value = maxMembers.toFloat(),
                     onValueChange = { maxMembers = it.toInt().coerceIn(minMembers, 30) },
@@ -915,7 +1302,7 @@ private fun CircleCustomizationBottomSheet(
 
             item {
                 SparcPrimaryButton(
-                    text = if (isCreateMode) tr("কাস্টম সার্কেল তৈরি করুন", "Create Custom Circle")
+                    text = if (isCreateMode) tr("🚀 কাস্টম সার্কেল তৈরি করুন (+৫০ পয়েন্ট)", "🚀 Create Study Circle (+50 Pts)")
                     else tr("সার্কেল সেটিংস সংরক্ষণ করুন", "Save Circle Customization"),
                     enabled = name.isNotBlank(),
                     onClick = {
