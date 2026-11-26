@@ -13,8 +13,8 @@ android {
         applicationId = "org.sparc.studycircle"
         minSdk = 26
         targetSdk = 35
-        versionCode = 380
-        versionName = "3.8.0"
+        versionCode = 390
+        versionName = "3.9.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -30,9 +30,26 @@ android {
         )
     }
 
+    // Production signing: keystore is supplied ONLY via environment variables
+    // (GitHub Secrets in CI). It is never committed to the repository.
+    val releaseKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+    signingConfigs {
+        if (!releaseKeystorePath.isNullOrBlank()) {
+            create("release") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = true
+            // Unsigned if no keystore is provided (never falls back to the debug key).
+            signingConfig = signingConfigs.findByName("release")
+            // R8 kept off for the first production release (risk-free); enable later after testing.
+            isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

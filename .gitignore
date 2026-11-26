@@ -18,3 +18,11 @@ admin-web/out/
 # OS / IDE
 .DS_Store
 .idea/
+
+# Signing keys — never commit
+*.jks
+*.keystore
+KEYSTORE_PASSWORDS.txt
+
+# Kotlin compiler cache
+.kotlin/
