@@ -10,21 +10,14 @@ const notoBn = Noto_Sans_Bengali({
 });
 
 export const metadata: Metadata = {
-  title: "SPARC Study Circle — Admin & Supervisor Portal (v2.0)",
-  description:
-    "বই পড়তে পড়তে লেখা শেখা — SPARC Study Circle একাডেমিক অ্যাডমিন, সুপারভাইজার ও প্রতিনিধি প্যানেল",
+  title: "SPARC Study Circle — অ্যাডমিন ও মেন্টর পোর্টাল",
+  description: "বই পড়তে পড়তে লেখা শেখা — SPARC Study Circle একাডেমিক অ্যাডমিন, মেন্টর ও প্রতিনিধি পোর্টাল",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="bn">
-      <body className={`${inter.variable} ${notoBn.variable} font-sans antialiased`}>
-        {children}
-      </body>
+      <body className={`${inter.variable} ${notoBn.variable} font-sans antialiased`}>{children}</body>
     </html>
   );
 }
