@@ -7,14 +7,19 @@ plugins {
 
 android {
     namespace = "org.sparc.studycircle"
-    compileSdk = 35
+    compileSdk = 36
+
+    val ciNdkPath = System.getenv("ANDROID_NDK_PATH")?.takeIf { it.isNotBlank() && file(it).exists() }
+    if (ciNdkPath != null) {
+        ndkPath = ciNdkPath
+    }
 
     defaultConfig {
         applicationId = "org.sparc.studycircle"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 390
-        versionName = "3.9.0"
+        targetSdk = 36
+        versionCode = 391
+        versionName = "3.9.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -48,8 +53,14 @@ android {
         release {
             // Unsigned if no keystore is provided (never falls back to the debug key).
             signingConfig = signingConfigs.findByName("release")
-            // R8 kept off for the first production release (risk-free); enable later after testing.
-            isMinifyEnabled = false
+            // R8 enabled: shrinks APK/AAB and automatically embeds proguard.map in AAB for Play Console.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            if (ciNdkPath != null) {
+                ndk {
+                    debugSymbolLevel = "FULL"
+                }
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -99,7 +110,7 @@ dependencies {
     // Media3 ExoPlayer for Chapter Audio Summaries
     implementation("androidx.media3:media3-exoplayer:1.4.1")
 
-    // Networking & JSON Serialization for Supabase REST, Auth, Realtime & Edge Functions
+    // Networking & JSON Serialization for Server REST, Auth, Realtime & Edge Functions
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
