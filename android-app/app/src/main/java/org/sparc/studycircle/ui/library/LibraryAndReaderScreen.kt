@@ -60,8 +60,8 @@ fun LibraryAndReaderScreen(
     onOpenCircleHub: () -> Unit = {}
 ) {
     var subTab by remember(initialSubTab) { mutableIntStateOf(initialSubTab) }
-    var selectedBookId by remember { mutableStateOf(state.books.first().id) }
-    val selectedBook = state.books.find { it.id == selectedBookId } ?: state.books.first()
+    var selectedBookId by remember { mutableStateOf(state.books.firstOrNull()?.id.orEmpty()) }
+    val selectedBook = state.books.find { it.id == selectedBookId } ?: state.books.firstOrNull()
     var orderDialogBook by remember { mutableStateOf<BookItem?>(null) }
     var uploadSheetInitialBook by remember { mutableStateOf<BookItem?>(null) }
     var showUploadSheet by remember { mutableStateOf(false) }
@@ -105,7 +105,7 @@ fun LibraryAndReaderScreen(
                     templateInitialChapterNo = 1
                 }
             )
-        } else {
+        } else if (selectedBook != null && selectedBook.chapters.isNotEmpty()) {
             SmartPaperReaderView(
                 state = state,
                 book = selectedBook,
@@ -124,6 +124,30 @@ fun LibraryAndReaderScreen(
                     templateInitialChapterNo = chNo
                 }
             )
+        } else {
+            Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                SparcScholarlyCard {
+                    Text(
+                        tr("📖 এখনো কোনো বই বা অধ্যায় যুক্ত হয়নি", "📖 No Book or Chapter Available Yet"),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        tr(
+                            "পড়া শুরু করতে আগে ডিজিটাল লাইব্রেরি থেকে নতুন বই/PDF ও অনুশীলনী টেমপ্লেট আপলোড করুন।",
+                            "Upload a book/PDF and exercise template from the Digital Library to begin reading."
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LocalSparcPalette.current.muted
+                    )
+                    SparcPrimaryButton(
+                        text = tr("☁️ নতুন বই / PDF আপলোড করুন", "☁️ Upload New Book / PDF"),
+                        onClick = {
+                            uploadSheetInitialBook = null
+                            showUploadSheet = true
+                        }
+                    )
+                }
+            }
         }
     }
 
@@ -241,6 +265,26 @@ private fun AcademicLibraryCatalogView(
                             )
                         }
                     }
+                }
+            }
+        }
+
+        if (books.isEmpty()) {
+            item {
+                SparcScholarlyCard {
+                    Text(
+                        tr("📚 লাইব্রেরিতে এখনো কোনো বই নেই", "📚 Digital Library Is Currently Empty"),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = p.text
+                    )
+                    Text(
+                        tr(
+                            "উপরের 'আপলোড' বাটন বা ওয়েব অ্যাডমিন পোর্টাল থেকে প্রথম বই/প্রবন্ধের PDF ও অনুশীলনী টেমপ্লেট যুক্ত করুন।",
+                            "Use the Upload button above or the Web Admin Portal to publish your first book/PDF and exercise template."
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = p.muted
+                    )
                 }
             }
         }
@@ -992,7 +1036,7 @@ private fun CloudMediaUploadBottomSheet(
     val lang = LocalAppLanguage.current
     val scope = rememberCoroutineScope()
 
-    var mode by remember { mutableIntStateOf(if (initialBook == null) 1 else 0) } // 0 = Update Existing, 1 = Publish New / Guest PDF
+    var mode by remember { mutableIntStateOf(if (initialBook == null || books.isEmpty()) 1 else 0) } // 0 = Update Existing, 1 = Publish New / Guest PDF
     var selectedBookIdx by remember {
         mutableIntStateOf(
             initialBook?.let { b -> books.indexOfFirst { it.id == b.id }.coerceAtLeast(0) } ?: 0
@@ -1340,7 +1384,7 @@ private fun CloudMediaUploadBottomSheet(
                                 context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                             }
                         }
-                        val targetBook = books.getOrElse(selectedBookIdx) { books.first() }
+                        val targetBook = books.getOrNull(selectedBookIdx)
                         val res = repository.uploadBookPdfAndAudio(
                             targetBook = targetBook,
                             isNewBook = mode == 1,

@@ -48,9 +48,80 @@ fun StudyCircleScreen(
     val compact = state.uiCustomization.compactHomeCards
 
     var subTab by remember { mutableIntStateOf(0) }
-    val circle = state.circles.find { it.id == state.activeCircleId } ?: state.circles.first()
-    val circleBook = state.books.find { it.id == circle.bookId } ?: state.books.first()
-    val chapter = circleBook.chapters.find { it.chapterNo == circle.currentGroupChapter } ?: circleBook.chapters.first()
+    var pokeTarget by remember { mutableStateOf<UserProfile?>(null) }
+    var showCreateCircleSheet by remember { mutableStateOf(false) }
+    var showCustomizeCircleSheet by remember { mutableStateOf(false) }
+    var showAdminConsoleSheet by remember { mutableStateOf(false) }
+    var privateCircleToJoin by remember { mutableStateOf<StudyCircleGroup?>(null) }
+
+    val circle = state.circles.find { it.id == state.activeCircleId } ?: state.circles.firstOrNull()
+    val circleBook = circle?.let { c -> state.books.find { it.id == c.bookId } } ?: state.books.firstOrNull()
+    val chapter = circleBook?.let { b ->
+        b.chapters.find { it.chapterNo == circle?.currentGroupChapter } ?: b.chapters.firstOrNull()
+    }
+
+    if (circle == null || circleBook == null || chapter == null) {
+        Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            SparcScholarlyCard {
+                Text(
+                    tr("👥 এখনো কোনো সক্রিয় স্টাডি সার্কেল নেই", "👥 No Active Study Circle Yet"),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = p.text
+                )
+                Text(
+                    if (state.books.isEmpty()) {
+                        tr(
+                            "আগে লাইব্রেরিতে একটি বই বা প্রবন্ধের PDF যুক্ত করুন, তারপর সেটি নিয়ে নতুন স্টাডি সার্কেল শুরু করুন।",
+                            "First upload a book or research PDF in the Library, then start a Study Circle around it."
+                        )
+                    } else {
+                        tr(
+                            "লাইব্রেরির যেকোনো বই নির্বাচন করে নতুন স্টাডি সার্কেল গঠন করুন এবং সহপাঠীদের আমন্ত্রণ জানান (+৫০ পয়েন্ট)।",
+                            "Create a new Study Circle for any book in the Library and invite fellow researchers (+50 pts)."
+                        )
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = p.muted
+                )
+                SparcPrimaryButton(
+                    text = if (state.books.isEmpty()) {
+                        tr("📚 লাইব্রেরিতে গিয়ে বই যুক্ত করুন", "📚 Go to Library to Add a Book")
+                    } else {
+                        tr("➕ নতুন স্টাডি সার্কেল তৈরি করুন (+৫০ পয়েন্ট)", "➕ Create Study Circle (+50 Pts)")
+                    },
+                    onClick = {
+                        if (state.books.isEmpty()) onContinueReading() else showCreateCircleSheet = true
+                    }
+                )
+            }
+        }
+        if (showCreateCircleSheet && state.books.isNotEmpty()) {
+            CircleCustomizationBottomSheet(
+                isCreateMode = true,
+                isAdmin = state.currentUser.role.isAdminLike,
+                books = state.books,
+                existingCircle = null,
+                onDismiss = { showCreateCircleSheet = false },
+                onSaveCreate = { name, book, minM, maxM, priv, code, sched, url, rules ->
+                    repository.createNewStudyCircle(
+                        name = name,
+                        book = book,
+                        minMembers = minM,
+                        maxMembers = maxM,
+                        isPrivate = priv,
+                        inviteCode = code,
+                        scheduleLabel = sched,
+                        meetingUrl = url,
+                        rules = rules
+                    )
+                    showCreateCircleSheet = false
+                },
+                onSaveUpdate = { _, _, _, _, _, _, _, _, _ -> showCreateCircleSheet = false }
+            )
+        }
+        return
+    }
+
     val myProgress = state.myChapterProgress[chapter.chapterNo]
         ?: ChapterProgressState("p-init", circle.id, state.currentUser.id, chapter.chapterNo)
 
@@ -59,11 +130,10 @@ fun StudyCircleScreen(
     }
     val circlePeers = circle.memberIds.mapNotNull { allUsersById[it] }
         .filter { it.id != state.currentUser.id }
-        .ifEmpty { state.directoryMembers.take(5) }
 
     val assignedMentorName = circle.supervisorId?.let { allUsersById[it]?.name }
         ?.let { trContent(it) }
-        ?: tr("ড. নুসরাত জাহান", "Dr. Nusrat Jahan")
+        ?: tr("নিয়োগ বাকি", "Unassigned")
     val electedLeadName = circle.circleLeadId?.let { allUsersById[it]?.name }
         ?.let { trContent(it) }
         ?: trContent((circlePeers.firstOrNull() ?: state.currentUser).name)
@@ -72,12 +142,6 @@ fun StudyCircleScreen(
     val peerBuddyUserIds = remember(state.circleMemberProgress) {
         state.circleMemberProgress.mapNotNull { it.peerBuddyId }.toSet()
     }
-
-    var pokeTarget by remember { mutableStateOf<UserProfile?>(null) }
-    var showCreateCircleSheet by remember { mutableStateOf(false) }
-    var showCustomizeCircleSheet by remember { mutableStateOf(false) }
-    var showAdminConsoleSheet by remember { mutableStateOf(false) }
-    var privateCircleToJoin by remember { mutableStateOf<StudyCircleGroup?>(null) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
@@ -595,37 +659,45 @@ fun StudyCircleScreen(
                 }
 
                 item {
-                    val poll = state.polls.first()
-                    val totalVotes = poll.votesByUser.size.coerceAtLeast(1)
+                    val poll = state.polls.firstOrNull()
                     SparcScholarlyCard {
                         Text(tr("কুইক পোল ও ডিবেট কর্নার", "Quick Poll & Debate Corner"), style = MaterialTheme.typography.titleMedium, color = p.text)
-                        Text(trContent(poll.question), style = MaterialTheme.typography.bodyMedium, color = p.muted)
+                        if (poll == null) {
+                            Text(
+                                tr("এই সার্কেলে এখনো কোনো পোল তৈরি হয়নি।", "No poll has been posted in this circle yet."),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = p.muted
+                            )
+                        } else {
+                            val totalVotes = poll.votesByUser.size.coerceAtLeast(1)
+                            Text(trContent(poll.question), style = MaterialTheme.typography.bodyMedium, color = p.muted)
 
-                        poll.options.forEachIndexed { idx, opt ->
-                            val count = poll.votesByUser.values.count { it == idx }
-                            val pct = ((count.toFloat() / totalVotes.toFloat()) * 100).toInt()
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { repository.voteInPoll(poll.id, idx) },
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(trContent(opt), fontSize = 12.5.sp, color = p.text, modifier = Modifier.weight(1f))
-                                    Text("$pct%", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = p.primary)
-                                }
-                                LinearProgressIndicator(
-                                    progress = { (pct / 100f).coerceIn(0.08f, 1f) },
-                                    color = if (idx % 2 == 0) p.primary else p.accent,
-                                    trackColor = p.cardAlt,
+                            poll.options.forEachIndexed { idx, opt ->
+                                val count = poll.votesByUser.values.count { it == idx }
+                                val pct = ((count.toFloat() / totalVotes.toFloat()) * 100).toInt()
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(8.dp)
-                                        .clip(RoundedCornerShape(50))
-                                )
+                                        .clickable { repository.voteInPoll(poll.id, idx) },
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(trContent(opt), fontSize = 12.5.sp, color = p.text, modifier = Modifier.weight(1f))
+                                        Text("$pct%", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = p.primary)
+                                    }
+                                    LinearProgressIndicator(
+                                        progress = { (pct / 100f).coerceIn(0.08f, 1f) },
+                                        color = if (idx % 2 == 0) p.primary else p.accent,
+                                        trackColor = p.cardAlt,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(8.dp)
+                                            .clip(RoundedCornerShape(50))
+                                    )
+                                }
                             }
                         }
 
@@ -1304,12 +1376,13 @@ private fun CircleCustomizationBottomSheet(
                 SparcPrimaryButton(
                     text = if (isCreateMode) tr("🚀 কাস্টম সার্কেল তৈরি করুন (+৫০ পয়েন্ট)", "🚀 Create Study Circle (+50 Pts)")
                     else tr("সার্কেল সেটিংস সংরক্ষণ করুন", "Save Circle Customization"),
-                    enabled = name.isNotBlank(),
+                    enabled = name.isNotBlank() && (!isCreateMode || books.getOrNull(selectedBookIdx) != null),
                     onClick = {
                         if (isCreateMode) {
+                            val chosenBook = books.getOrNull(selectedBookIdx) ?: return@SparcPrimaryButton
                             onSaveCreate(
                                 name,
-                                books[selectedBookIdx],
+                                chosenBook,
                                 minMembers,
                                 maxMembers,
                                 isPrivate,

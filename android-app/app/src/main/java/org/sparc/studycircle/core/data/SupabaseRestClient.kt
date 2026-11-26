@@ -455,9 +455,7 @@ class SupabaseRestClient(
                     flashNotes = liveFlashNotes,
                     sections = parsedSections,
                     learningOutcomes = outcomes,
-                    questions = questionsByChapterId[chId]?.ifEmpty {
-                        fallbackBooks.first().chapters.first().questions
-                    } ?: fallbackBooks.first().chapters.first().questions,
+                    questions = questionsByChapterId[chId].orEmpty(),
                     writingTaskPrompt = o["writing_task_prompt"]?.jsonPrimitive?.contentOrNull ?: "",
                     minWords = o["writing_min_words"]?.jsonPrimitive?.intOrNull ?: 500,
                     maxWords = o["writing_max_words"]?.jsonPrimitive?.intOrNull ?: 700
@@ -467,9 +465,7 @@ class SupabaseRestClient(
             val liveBooks = booksArr.mapNotNull { el ->
                 val o = el.jsonObject
                 val bId = o["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                val chList = chaptersByBookId[bId]?.ifEmpty {
-                    fallbackBooks.first().chapters
-                } ?: fallbackBooks.first().chapters
+                val chList = chaptersByBookId[bId].orEmpty()
                 BookItem(
                     id = bId,
                     title = o["title"]?.jsonPrimitive?.contentOrNull ?: "Book",
@@ -477,14 +473,14 @@ class SupabaseRestClient(
                     author = o["author"]?.jsonPrimitive?.contentOrNull ?: "",
                     category = o["category"]?.jsonPrimitive?.contentOrNull ?: "",
                     pdfUrl = o["pdf_url"]?.jsonPrimitive?.contentOrNull ?: "",
-                    physicalPriceBdt = o["physical_price_bdt"]?.jsonPrimitive?.doubleOrNull ?: 450.0,
+                    physicalPriceBdt = o["physical_price_bdt"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
                     totalChapters = o["total_chapters"]?.jsonPrimitive?.intOrNull ?: chList.size,
                     isFirstChapterFree = o["is_first_chapter_free"]?.jsonPrimitive?.booleanOrNull ?: true,
                     minMembersRequired = o["min_members_default"]?.jsonPrimitive?.intOrNull ?: 5,
                     chapters = chList,
                     sourceAttribution = o["source_attribution"]?.jsonPrimitive?.contentOrNull ?: ""
                 )
-            }.ifEmpty { fallbackBooks }
+            }
 
             val bookTitleById = liveBooks.associate { it.id to it.title }
 
@@ -520,7 +516,7 @@ class SupabaseRestClient(
             val liveCircles = circlesArr.mapNotNull { el ->
                 val o = el.jsonObject
                 val cid = o["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                val bid = o["book_id"]?.jsonPrimitive?.contentOrNull ?: liveBooks.first().id
+                val bid = o["book_id"]?.jsonPrimitive?.contentOrNull ?: liveBooks.firstOrNull()?.id.orEmpty()
                 val statusStr = o["status"]?.jsonPrimitive?.contentOrNull ?: "active"
                 val assignStr = o["supervisor_assignment_type"]?.jsonPrimitive?.contentOrNull
                 val createdBy = o["created_by"]?.jsonPrimitive?.contentOrNull
@@ -528,7 +524,7 @@ class SupabaseRestClient(
                     id = cid,
                     name = o["name"]?.jsonPrimitive?.contentOrNull ?: "Study Circle",
                     bookId = bid,
-                    bookTitle = bookTitleById[bid] ?: liveBooks.first().title,
+                    bookTitle = bookTitleById[bid] ?: liveBooks.firstOrNull()?.title.orEmpty(),
                     minMembersRequired = o["min_members_required"]?.jsonPrimitive?.intOrNull ?: 5,
                     status = when (statusStr) {
                         "forming" -> CircleStatus.FORMING

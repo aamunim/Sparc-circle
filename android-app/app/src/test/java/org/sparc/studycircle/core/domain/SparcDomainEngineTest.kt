@@ -312,7 +312,8 @@ class SparcDomainEngineTest {
     @Test
     fun `repository supports creating and switching live study circles and book orders`() {
         val repo = org.sparc.studycircle.core.data.SparcRepository(
-            supabaseClient = org.sparc.studycircle.core.data.SupabaseRestClient("", "")
+            supabaseClient = org.sparc.studycircle.core.data.SupabaseRestClient("", ""),
+            useSeedFixtures = true
         )
         val initialCount = repo.state.value.circles.size
         val book = repo.state.value.books.first()
@@ -332,6 +333,7 @@ class SparcDomainEngineTest {
         var persistedUi: UserUiCustomization? = null
         val repo = org.sparc.studycircle.core.data.SparcRepository(
             supabaseClient = org.sparc.studycircle.core.data.SupabaseRestClient("", ""),
+            useSeedFixtures = true,
             onPersistAppCustomization = { persistedBrand = it },
             onPersistUiCustomization = { persistedUi = it }
         )
@@ -469,7 +471,8 @@ class SparcDomainEngineTest {
         assertEquals("গভীর প্রেক্ষাপট", parsedCsv.questions.first().correctAnswer)
 
         val repo = org.sparc.studycircle.core.data.SparcRepository(
-            supabaseClient = org.sparc.studycircle.core.data.SupabaseRestClient("", "")
+            supabaseClient = org.sparc.studycircle.core.data.SupabaseRestClient("", ""),
+            useSeedFixtures = true
         )
         val book = repo.state.value.books.first()
         val importRes = repo.importExerciseTemplate(
@@ -491,7 +494,8 @@ class SparcDomainEngineTest {
     @Test
     fun `v3_8 two-tier role system separates Circle Lead from Mentor, awards Host +50 pts, pairs Peer Buddy, and enforces Admin rules`() {
         val repo = org.sparc.studycircle.core.data.SparcRepository(
-            supabaseClient = org.sparc.studycircle.core.data.SupabaseRestClient("", "")
+            supabaseClient = org.sparc.studycircle.core.data.SupabaseRestClient("", ""),
+            useSeedFixtures = true
         )
 
         // 1. Default user is Researcher (MEMBER)
@@ -572,5 +576,23 @@ class SparcDomainEngineTest {
         assertTrue(ActivityRoleBadge.CHAPTER_PRESENTER in farhanBadges)
         assertTrue(ActivityRoleBadge.CO_AUTHOR in farhanBadges)
         assertTrue(ActivityRoleBadge.PEER_BUDDY in farhanBadges)
+    }
+
+    @Test
+    fun `production repository starts completely clean with zero demo users books circles or credits`() {
+        val prodRepo = org.sparc.studycircle.core.data.SparcRepository(
+            supabaseClient = org.sparc.studycircle.core.data.SupabaseRestClient("", "")
+        )
+        val st = prodRepo.state.value
+        assertTrue(st.directoryMembers.isEmpty())
+        assertTrue(st.books.isEmpty())
+        assertTrue(st.circles.isEmpty())
+        assertTrue(st.polls.isEmpty())
+        assertTrue(st.debateComments.isEmpty())
+        assertTrue(st.sessions.isEmpty())
+        assertTrue(st.walletHistory.isEmpty())
+        assertTrue(st.supervisionDeals.isEmpty())
+        assertEquals(0.0, st.currentUser.walletBalanceBdt, 0.001)
+        assertEquals(0, st.currentUser.gamificationPoints)
     }
 }

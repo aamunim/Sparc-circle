@@ -74,22 +74,37 @@ private fun AiWritingAndCoAuthorView(
     val p = LocalSparcPalette.current
     val lang = LocalAppLanguage.current
     val scope = rememberCoroutineScope()
-    val chapter = state.books.first().chapters.first()
+    val chapter = state.books.firstOrNull()?.chapters?.firstOrNull()
+    if (chapter == null) {
+        Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            SparcScholarlyCard {
+                Text(
+                    tr("✍️ এখনো কোনো রাইটিং অধ্যায় সক্রিয় নেই", "✍️ No Active Writing Chapter Yet"),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = p.text
+                )
+                Text(
+                    tr(
+                        "একাডেমিক রাইটিং ও পাবলিশ পাইপলাইন শুরু করতে আগে লাইব্রেরিতে একটি বই ও অধ্যায় যুক্ত করুন।",
+                        "Publish a book and chapter in the Library first to begin your scholarly writing pipeline."
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = p.muted
+                )
+            }
+        }
+        return
+    }
     val progress = state.myChapterProgress[chapter.chapterNo]
-    val defaultDraftBn = "বিশ্ববিদ্যালয়ের সমাজবিজ্ঞান বিভাগে শিক্ষার্থীদের সক্রিয় গবেষণা অংশগ্রহণ বাড়াতে এই Research Site ও Felt-concern নির্ধারণ করা হয়েছে। শ্রেণিকক্ষের সংলাপ সংস্কৃতি (Relatings) ও পাঠদানের সময়সূচি (Doings) যৌথভাবে পর্যালোচনার মাধ্যমে পরিবর্তন আনা সম্ভব।"
-    val defaultDraftEn = "This Research Site and Felt-concern have been selected to strengthen active student inquiry in the Sociology department. Collaboratively reviewing classroom dialogue norms (Relatings) and seminar schedules (Doings) can foster sustainable academic transformation."
 
     var draft by remember(progress?.writingContent, lang) {
-        mutableStateOf(
-            progress?.writingContent?.ifBlank { null }
-                ?: if (lang == "en") defaultDraftEn else defaultDraftBn
-        )
+        mutableStateOf(progress?.writingContent.orEmpty())
     }
     var showAiWarningDialog by remember { mutableStateOf(false) }
 
     val wordCount = remember(draft) { draft.trim().split(Regex("\\s+")).count { it.isNotBlank() } }
-    val displayWords = if (wordCount < 100) 612 else wordCount
-    val toneScore = state.lastAiFeedback?.academicToneScore ?: 88
+    val displayWords = wordCount
+    val toneScore = state.lastAiFeedback?.academicToneScore ?: 0
 
     val coAuthors = remember(state.currentUser, state.directoryMembers) {
         SparcDomainEngine.suggestCoAuthorTeam(state.currentUser, state.directoryMembers, desiredTeamSize = 4)
@@ -423,32 +438,34 @@ private fun CreditWalletAndSupervisionView(
             }
         }
 
-        item {
-            val deal = state.supervisionDeals.first()
-            SparcScholarlyCard {
-                Text(tr("পেইড সুপারভিশন ও নেগোসিয়েশন", "Paid Supervision & Negotiation"), style = MaterialTheme.typography.titleMedium, color = p.text)
-                Text(
-                    "${deal.researchGroupName} • ${tr("সুপারভাইজার", "Supervisor")}: ${trContent(deal.supervisorName)}",
-                    color = p.muted,
-                    fontSize = 12.5.sp
-                )
-                Text(
-                    tr(
-                        "${deal.agreedSessions} সেশন চূড়ান্ত • চুক্তি ফি: ৳${deal.agreedFeeBdt.toInt()} (স্ট্যান্ডার্ড হার: ৳${cfg.defaultSupervisionFeeBdt.toInt()}/সেশন)",
-                        "${deal.agreedSessions} sessions • Fee: ৳${deal.agreedFeeBdt.toInt()} (Base rate: ৳${cfg.defaultSupervisionFeeBdt.toInt()}/session)"
-                    ),
-                    fontWeight = FontWeight.Bold,
-                    color = p.text
-                )
-                SparcPrimaryButton(
-                    text = if (deal.isPaidViaWallet) {
-                        tr("✓ ওয়ালেট থেকে পরিশোধিত", "✓ Settled via Wallet")
-                    } else {
-                        tr("ওয়ালেট ক্রেডিট থেকে পরিশোধ করুন", "Pay via Wallet Credits")
-                    },
-                    enabled = !deal.isPaidViaWallet,
-                    onClick = { repository.paySupervisionViaWallet(deal.id) }
-                )
+        val deal = state.supervisionDeals.firstOrNull()
+        if (deal != null) {
+            item {
+                SparcScholarlyCard {
+                    Text(tr("পেইড সুপারভিশন ও নেগোসিয়েশন", "Paid Supervision & Negotiation"), style = MaterialTheme.typography.titleMedium, color = p.text)
+                    Text(
+                        "${deal.researchGroupName} • ${tr("সুপারভাইজার", "Supervisor")}: ${trContent(deal.supervisorName)}",
+                        color = p.muted,
+                        fontSize = 12.5.sp
+                    )
+                    Text(
+                        tr(
+                            "${deal.agreedSessions} সেশন চূড়ান্ত • চুক্তি ফি: ৳${deal.agreedFeeBdt.toInt()} (স্ট্যান্ডার্ড হার: ৳${cfg.defaultSupervisionFeeBdt.toInt()}/সেশন)",
+                            "${deal.agreedSessions} sessions • Fee: ৳${deal.agreedFeeBdt.toInt()} (Base rate: ৳${cfg.defaultSupervisionFeeBdt.toInt()}/session)"
+                        ),
+                        fontWeight = FontWeight.Bold,
+                        color = p.text
+                    )
+                    SparcPrimaryButton(
+                        text = if (deal.isPaidViaWallet) {
+                            tr("✓ ওয়ালেট থেকে পরিশোধিত", "✓ Settled via Wallet")
+                        } else {
+                            tr("ওয়ালেট ক্রেডিট থেকে পরিশোধ করুন", "Pay via Wallet Credits")
+                        },
+                        enabled = !deal.isPaidViaWallet,
+                        onClick = { repository.paySupervisionViaWallet(deal.id) }
+                    )
+                }
             }
         }
 
@@ -484,6 +501,13 @@ private fun CreditWalletAndSupervisionView(
         item {
             SparcScholarlyCard {
                 Text(tr("💳 লাইভ ওয়ালেট ট্রানজেকশন লেজার", "💳 Live Wallet Ledger"), style = MaterialTheme.typography.titleMedium, color = p.text)
+                if (state.walletHistory.isEmpty()) {
+                    Text(
+                        tr("এখনো কোনো ওয়ালেট লেনদেন হয়নি।", "No wallet transactions yet."),
+                        fontSize = 12.5.sp,
+                        color = p.muted
+                    )
+                }
                 state.walletHistory.take(6).forEach { tx ->
                     val isCredit = tx.amountBdt >= 0
                     Row(

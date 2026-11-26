@@ -56,6 +56,7 @@ class SparcRepository(
     initialSession: SupabaseAuthSession? = null,
     initialAppCustomization: AppCustomizationConfig = AppCustomizationConfig(),
     initialUiCustomization: UserUiCustomization = UserUiCustomization(),
+    private val useSeedFixtures: Boolean = false,
     private val onPersistTheme: (SparcVisualTheme) -> Unit = {},
     private val onPersistAuth: (Boolean, String, String) -> Unit = { _, _, _ -> },
     private val onPersistLanguage: (String) -> Unit = {},
@@ -67,13 +68,13 @@ class SparcRepository(
     private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _state = MutableStateFlow(
-        createInitialSeededState().let { seeded ->
-            val updatedUser = seeded.currentUser.copy(
-                id = initialSession?.userId?.takeIf { it.isNotBlank() } ?: seeded.currentUser.id,
-                name = initialUserName?.takeIf { it.isNotBlank() } ?: seeded.currentUser.name,
-                department = initialUserDept?.takeIf { it.isNotBlank() } ?: seeded.currentUser.department
+        (if (useSeedFixtures) createInitialSeededState() else createCleanEmptyState()).let { base ->
+            val updatedUser = base.currentUser.copy(
+                id = initialSession?.userId?.takeIf { it.isNotBlank() } ?: base.currentUser.id,
+                name = initialUserName?.takeIf { it.isNotBlank() } ?: base.currentUser.name,
+                department = initialUserDept?.takeIf { it.isNotBlank() } ?: base.currentUser.department
             )
-            seeded.copy(
+            base.copy(
                 isAuthenticated = initialAuthenticated,
                 appLanguage = initialLanguage,
                 visualTheme = initialTheme,
@@ -81,7 +82,7 @@ class SparcRepository(
                 uiCustomization = initialUiCustomization,
                 apiVault = initialApiVault,
                 isSupabaseConnected = supabaseClient.isConfigured,
-                activeCircleId = seeded.circles.firstOrNull()?.id,
+                activeCircleId = base.circles.firstOrNull()?.id,
                 currentUser = updatedUser
             )
         }
@@ -99,6 +100,9 @@ class SparcRepository(
                 supabaseClient.fetchPublicAppCustomization().onSuccess { liveCustom ->
                     onPersistAppCustomization(liveCustom)
                     _state.update { it.copy(appCustomization = liveCustom) }
+                }
+                if (supabaseClient.hasAuthenticatedUser) {
+                    syncFromSupabaseNow(silent = true)
                 }
             }
         }
@@ -124,46 +128,40 @@ class SparcRepository(
         if (!silent) {
             _state.update { it.copy(isSyncingLive = true) }
         }
-        val fallbackBooks = _state.value.books
-        val snapRes = supabaseClient.fetchLiveWorkspaceSnapshot(fallbackBooks)
+        val snapRes = supabaseClient.fetchLiveWorkspaceSnapshot(emptyList())
         snapRes.onSuccess { snap ->
             _state.update { s ->
                 val liveMe = snap.me ?: s.currentUser
                 onPersistAuth(s.isAuthenticated, liveMe.name, liveMe.department)
                 snap.appCustomization?.let { onPersistAppCustomization(it) }
-                val mergedPeers = if (snap.peers.isNotEmpty()) {
-                    snap.peers
-                } else {
-                    s.directoryMembers
-                }
                 val chosenCircleId = s.activeCircleId?.takeIf { id -> snap.circles.any { it.id == id } }
                     ?: snap.activeCircleId
-                    ?: s.circles.firstOrNull()?.id
+                    ?: snap.circles.firstOrNull()?.id
 
                 s.copy(
                     isSyncingLive = false,
                     isSupabaseConnected = supabaseClient.isConfigured,
                     appCustomization = snap.appCustomization ?: s.appCustomization,
                     currentUser = liveMe,
-                    directoryMembers = mergedPeers,
-                    books = snap.books.ifEmpty { s.books },
-                    circles = snap.circles.ifEmpty { s.circles },
+                    directoryMembers = snap.peers,
+                    books = snap.books,
+                    circles = snap.circles,
                     activeCircleId = chosenCircleId,
-                    memberStageByUserId = snap.memberStageByUserId.ifEmpty { s.memberStageByUserId },
-                    myChapterProgress = if (snap.myChapterProgress.isNotEmpty()) snap.myChapterProgress else s.myChapterProgress,
-                    circleMemberProgress = snap.circleMemberProgress.ifEmpty { s.circleMemberProgress },
-                    coAuthorUserIds = snap.coAuthorUserIds.ifEmpty { s.coAuthorUserIds },
-                    pokesToday = if (snap.pokesToday.isNotEmpty() || snap.peers.isNotEmpty()) snap.pokesToday else s.pokesToday,
+                    memberStageByUserId = snap.memberStageByUserId,
+                    myChapterProgress = snap.myChapterProgress,
+                    circleMemberProgress = snap.circleMemberProgress,
+                    coAuthorUserIds = snap.coAuthorUserIds,
+                    pokesToday = snap.pokesToday,
                     activeMuteScope = snap.activeMuteScope,
-                    polls = snap.polls.ifEmpty { s.polls },
-                    activeDebateThreadId = snap.activeDebateThreadId ?: s.activeDebateThreadId,
-                    debateComments = snap.debateComments.ifEmpty { s.debateComments },
-                    messages = snap.messages.ifEmpty { s.messages },
-                    highlights = snap.highlights.ifEmpty { s.highlights },
+                    polls = snap.polls,
+                    activeDebateThreadId = snap.activeDebateThreadId,
+                    debateComments = snap.debateComments,
+                    messages = snap.messages,
+                    highlights = snap.highlights,
                     bookOrders = snap.bookOrders,
-                    walletHistory = snap.walletHistory.ifEmpty { s.walletHistory },
-                    sessions = snap.sessions.ifEmpty { s.sessions },
-                    supervisionDeals = snap.supervisionDeals.ifEmpty { s.supervisionDeals },
+                    walletHistory = snap.walletHistory,
+                    sessions = snap.sessions,
+                    supervisionDeals = snap.supervisionDeals,
                     statusBannerMessage = if (!silent) {
                         if (s.appLanguage == "en") "✓ Synced with Server" else "✓ সার্ভারের সাথে সিঙ্ক সম্পন্ন হয়েছে"
                     } else s.statusBannerMessage
@@ -336,7 +334,22 @@ class SparcRepository(
     fun logout() {
         supabaseClient.clearSession()
         onPersistAuth(false, "", "")
-        _state.update { it.copy(isAuthenticated = false, statusBannerMessage = null) }
+        _state.update { s ->
+            if (useSeedFixtures) {
+                s.copy(isAuthenticated = false, statusBannerMessage = null)
+            } else {
+                createCleanEmptyState().copy(
+                    isAuthenticated = false,
+                    appLanguage = s.appLanguage,
+                    visualTheme = s.visualTheme,
+                    appCustomization = s.appCustomization,
+                    uiCustomization = s.uiCustomization,
+                    apiVault = s.apiVault,
+                    isSupabaseConnected = supabaseClient.isConfigured,
+                    statusBannerMessage = null
+                )
+            }
+        }
     }
 
     fun dismissBanner() {
@@ -605,7 +618,7 @@ class SparcRepository(
         if (selectedText.isBlank()) return
         val chapterId = _state.value.books.find { it.id == bookId }
             ?.chapters?.find { it.chapterNo == chapterNo }?.id
-            ?: _state.value.books.first().chapters.first().id
+            ?: _state.value.books.firstOrNull()?.chapters?.firstOrNull()?.id.orEmpty()
 
         _state.update { s ->
             val hl = ReadingHighlight(
@@ -638,17 +651,19 @@ class SparcRepository(
                 }
             )
         }
-        launchRemoteSync {
-            supabaseClient.saveHighlightAndLogReadingRemote(
-                bookId = bookId,
-                chapterId = chapterId,
-                pageNo = pageNo,
-                selectedText = selectedText,
-                note = note,
-                isUnderline = isUnderline,
-                visibility = visibility
-            ).getOrThrow()
-            syncFromSupabaseNow(silent = true)
+        if (chapterId.isNotBlank()) {
+            launchRemoteSync {
+                supabaseClient.saveHighlightAndLogReadingRemote(
+                    bookId = bookId,
+                    chapterId = chapterId,
+                    pageNo = pageNo,
+                    selectedText = selectedText,
+                    note = note,
+                    isUnderline = isUnderline,
+                    visibility = visibility
+                ).getOrThrow()
+                syncFromSupabaseNow(silent = true)
+            }
         }
     }
 
@@ -1274,7 +1289,7 @@ class SparcRepository(
 
     // Section 5: 6-Stage Chapter State Machine Actions
     fun startChapterReading(chapter: ChapterItem, targetDays: Int) {
-        val circleId = _state.value.activeCircleId ?: _state.value.circles.first().id
+        val circleId = _state.value.activeCircleId ?: _state.value.circles.firstOrNull()?.id.orEmpty()
         val dailyPages = SparcDomainEngine.calculateDailyPageTarget(chapter.totalPages, targetDays)
         _state.update { s ->
             val existing = s.myChapterProgress[chapter.chapterNo] ?: ChapterProgressState(
@@ -1299,16 +1314,18 @@ class SparcRepository(
                 }
             )
         }
-        launchRemoteSync {
-            supabaseClient.upsertChapterStageRemote(
-                circleId = circleId,
-                chapterId = chapter.id,
-                chapterNo = chapter.chapterNo,
-                statusLabel = "Reading Started",
-                dailyPages = dailyPages,
-                targetDays = targetDays
-            ).getOrThrow()
-            syncFromSupabaseNow(silent = true)
+        if (circleId.isNotBlank()) {
+            launchRemoteSync {
+                supabaseClient.upsertChapterStageRemote(
+                    circleId = circleId,
+                    chapterId = chapter.id,
+                    chapterNo = chapter.chapterNo,
+                    statusLabel = "Reading Started",
+                    dailyPages = dailyPages,
+                    targetDays = targetDays
+                ).getOrThrow()
+                syncFromSupabaseNow(silent = true)
+            }
         }
     }
 
@@ -1340,7 +1357,7 @@ class SparcRepository(
     }
 
     fun toggleChapterSection(chapter: ChapterItem, sectionId: String) {
-        val circleId = _state.value.activeCircleId ?: _state.value.circles.first().id
+        val circleId = _state.value.activeCircleId ?: _state.value.circles.firstOrNull()?.id.orEmpty()
         var nextSections: Set<String> = emptySet()
         _state.update { s ->
             val existing = s.myChapterProgress[chapter.chapterNo] ?: return@update s
@@ -1360,19 +1377,21 @@ class SparcRepository(
                 memberStageByUserId = s.memberStageByUserId + (s.currentUser.id to updated.stage)
             )
         }
-        launchRemoteSync {
-            supabaseClient.upsertChapterStageRemote(
-                circleId = circleId,
-                chapterId = chapter.id,
-                chapterNo = chapter.chapterNo,
-                statusLabel = "Reading in Progress",
-                completedSections = nextSections
-            ).getOrThrow()
+        if (circleId.isNotBlank()) {
+            launchRemoteSync {
+                supabaseClient.upsertChapterStageRemote(
+                    circleId = circleId,
+                    chapterId = chapter.id,
+                    chapterNo = chapter.chapterNo,
+                    statusLabel = "Reading in Progress",
+                    completedSections = nextSections
+                ).getOrThrow()
+            }
         }
     }
 
     fun declareReadingCompleted(chapter: ChapterItem) {
-        val circleId = _state.value.activeCircleId ?: _state.value.circles.first().id
+        val circleId = _state.value.activeCircleId ?: _state.value.circles.firstOrNull()?.id.orEmpty()
         _state.update { s ->
             val existing = s.myChapterProgress[chapter.chapterNo] ?: return@update s
             val updated = existing.copy(stage = ProgressStage.READING_COMPLETED)
@@ -1386,14 +1405,16 @@ class SparcRepository(
                 }
             )
         }
-        launchRemoteSync {
-            supabaseClient.upsertChapterStageRemote(
-                circleId = circleId,
-                chapterId = chapter.id,
-                chapterNo = chapter.chapterNo,
-                statusLabel = "Reading Completed"
-            ).getOrThrow()
-            syncFromSupabaseNow(silent = true)
+        if (circleId.isNotBlank()) {
+            launchRemoteSync {
+                supabaseClient.upsertChapterStageRemote(
+                    circleId = circleId,
+                    chapterId = chapter.id,
+                    chapterNo = chapter.chapterNo,
+                    statusLabel = "Reading Completed"
+                ).getOrThrow()
+                syncFromSupabaseNow(silent = true)
+            }
         }
     }
 
@@ -1402,7 +1423,7 @@ class SparcRepository(
         answers: Map<String, String>,
         isReattempt: Boolean = false
     ) {
-        val circleId = _state.value.activeCircleId ?: _state.value.circles.first().id
+        val circleId = _state.value.activeCircleId ?: _state.value.circles.firstOrNull()?.id.orEmpty()
         var proceedRemote = true
         _state.update { s ->
             val existing = s.myChapterProgress[chapter.chapterNo] ?: ChapterProgressState(
@@ -1429,7 +1450,7 @@ class SparcRepository(
                 firstAutoScore = existing.firstAutoScore ?: scaledAuto,
                 autoScore = scaledAuto,
                 reattemptUsed = if (isReattempt) true else existing.reattemptUsed,
-                supervisorScore = existing.supervisorScore ?: 18,
+                supervisorScore = existing.supervisorScore,
                 genuinenessPassed = autoOutcome.genuinenessPassed
             )
             val evaluated = SparcDomainEngine.evaluateProgressVerification(baseUpdated, chapter.type)
@@ -1443,7 +1464,7 @@ class SparcRepository(
                 }
             )
         }
-        if (proceedRemote) {
+        if (proceedRemote && circleId.isNotBlank()) {
             launchRemoteSync {
                 val progId = supabaseClient.upsertChapterStageRemote(
                     circleId = circleId,
@@ -1555,7 +1576,7 @@ class SparcRepository(
             }
             return
         }
-        val circleId = _state.value.activeCircleId ?: _state.value.circles.first().id
+        val circleId = _state.value.activeCircleId ?: _state.value.circles.firstOrNull()?.id.orEmpty()
         val lang = _state.value.appLanguage
         _state.update { s ->
             val existing = s.myChapterProgress[chapter.chapterNo] ?: ChapterProgressState(
@@ -1592,9 +1613,11 @@ class SparcRepository(
                 }
             )
         }
-        launchRemoteSync {
-            supabaseClient.submitWritingTaskRemote(circleId, chapter.chapterNo, content, lang).getOrThrow()
-            syncFromSupabaseNow(silent = true)
+        if (circleId.isNotBlank()) {
+            launchRemoteSync {
+                supabaseClient.submitWritingTaskRemote(circleId, chapter.chapterNo, content, lang).getOrThrow()
+                syncFromSupabaseNow(silent = true)
+            }
         }
     }
 
@@ -1745,7 +1768,8 @@ class SparcRepository(
                     permissionDeclared = permissionDeclared
                 ).getOrThrow()
             } else {
-                val book = targetBook ?: _state.value.books.first()
+                val book = targetBook ?: _state.value.books.firstOrNull()
+                    ?: throw IllegalStateException(msg("আগে একটি নতুন বই যোগ করুন।", "Please create a new book first."))
                 if (uploadedPdfUrl != null || uploadedAudioUrl != null) {
                     supabaseClient.attachMediaToBookRemote(
                         bookId = book.id,
@@ -1840,7 +1864,7 @@ class SparcRepository(
                             flashNotes = parsed.flashNotes.ifEmpty { listOf("পাঠের মূল নোট") },
                             sections = listOf(ChapterSection("s-${parsed.chapterNo}-1", "মূল আলোচনা", "1-${parsed.totalPages}", emptyList())),
                             learningOutcomes = parsed.learningOutcomes.ifEmpty { listOf("পাঠের মূল ধারণা বিশ্লেষণ") },
-                            questions = mappedQs.ifEmpty { b.chapters.first().questions },
+                            questions = mappedQs.ifEmpty { b.chapters.firstOrNull()?.questions.orEmpty() },
                             writingTaskPrompt = parsed.writingPrompt.ifBlank { "এই পাঠের আলোকে বিশ্লেষণমূলক অনুচ্ছেদ লিখুন।" },
                             minWords = parsed.minWords,
                             maxWords = parsed.maxWords
@@ -1942,7 +1966,7 @@ class SparcRepository(
                             flashNotes = cleanFlash.ifEmpty { listOf("নতুন অধ্যায়ের মূল নোট") },
                             sections = listOf(ChapterSection("s-$safeNo-1", "মূল আলোচনা", "1-$safePages", emptyList())),
                             learningOutcomes = cleanOutcomes.ifEmpty { listOf("অধ্যায়ের মূল ধারণা বিশ্লেষণ") },
-                            questions = b.chapters.first().questions,
+                            questions = b.chapters.firstOrNull()?.questions.orEmpty(),
                             writingTaskPrompt = writingPrompt.trim().ifBlank { "এই অধ্যায়ের আলোকে একাডেমিক অনুচ্ছেদ লিখুন।" },
                             minWords = safeMin,
                             maxWords = safeMax
@@ -2056,6 +2080,42 @@ class SparcRepository(
     }
 
     companion object {
+        fun createCleanEmptyState(): SparcAppState {
+            val cleanUser = UserProfile(
+                id = "u-guest",
+                name = "গবেষক",
+                department = "",
+                researchInterests = emptyList(),
+                skills = emptyList(),
+                role = UserRole.MEMBER,
+                rating = 5.0,
+                gamificationPoints = 0,
+                readingStreakDays = 0,
+                referralCode = "",
+                walletBalanceBdt = 0.0,
+                earnedBadges = emptyList()
+            )
+            return SparcAppState(
+                currentUser = cleanUser,
+                directoryMembers = emptyList(),
+                messages = emptyList(),
+                books = emptyList(),
+                highlights = emptyList(),
+                bookOrders = emptyList(),
+                circles = emptyList(),
+                pokesToday = emptyList(),
+                polls = emptyList(),
+                debateComments = emptyList(),
+                memberStageByUserId = emptyMap(),
+                myChapterProgress = emptyMap(),
+                circleMemberProgress = emptyList(),
+                coAuthorUserIds = emptySet(),
+                sessions = emptyList(),
+                supervisionDeals = emptyList(),
+                walletHistory = emptyList()
+            )
+        }
+
         fun createInitialSeededState(): SparcAppState {
             val me = UserProfile(
                 id = "u-me",

@@ -48,15 +48,36 @@ fun AssessmentAndSessionScreen(
 ) {
     var subTab by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
-    val circle = state.circles.find { it.id == state.activeCircleId } ?: state.circles.first()
-    val book = state.books.find { it.id == circle.bookId } ?: state.books.first()
+    val circle = state.circles.find { it.id == state.activeCircleId } ?: state.circles.firstOrNull()
+    val book = circle?.let { c -> state.books.find { it.id == c.bookId } } ?: state.books.firstOrNull()
+    if (circle == null || book == null || book.chapters.isEmpty()) {
+        val p = LocalSparcPalette.current
+        Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            SparcScholarlyCard {
+                Text(
+                    tr("📝 এখনো কোনো পাঠ অনুশীলনী সক্রিয় নেই", "📝 No Active Guided Reading & Practice Yet"),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = p.text
+                )
+                Text(
+                    tr(
+                        "অনুশীলনী, লাইভ সেশন ও মেন্টর মূল্যায়ন ব্যবহার করতে আগে একটি বই ও স্টাডি সার্কেলে যুক্ত হন।",
+                        "Join or create a Study Circle around a published book to access exercises, live sessions, and Mentor evaluation."
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = p.muted
+                )
+            }
+        }
+        return
+    }
     var selectedChIdx by remember(book.id) {
         mutableIntStateOf(
             book.chapters.indexOfFirst { it.chapterNo == circle.currentGroupChapter }.coerceAtLeast(0)
         )
     }
     val safeChIdx = selectedChIdx.coerceIn(0, (book.chapters.size - 1).coerceAtLeast(0))
-    val chapter = book.chapters.getOrElse(safeChIdx) { book.chapters.first() }
+    val chapter = book.chapters[safeChIdx]
     val progress = state.myChapterProgress[chapter.chapterNo] ?: ChapterProgressState(
         id = "init",
         circleId = circle.id,
@@ -425,6 +446,41 @@ private fun LiveSessionAndClinicView(
     onOpenExternal: (String) -> Unit
 ) {
     val p = LocalSparcPalette.current
+    if (sessions.isEmpty()) {
+        val instantSession = OnlineSessionItem(
+            id = "instant-live",
+            circleId = null,
+            chapterNo = 1,
+            title = tr("স্টাডি সার্কেল লাইভ রুম", "Study Circle Live Room"),
+            scheduleLabel = tr("৪০ মিনিট সেশন", "40 Min Session"),
+            presenterName = "",
+            hoursUntilSession = 0,
+            jitsiRoomName = "SPARC_Circle_Live",
+            externalMeetingUrl = "https://meet.jit.si/SPARC_Circle_Live"
+        )
+        Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            SparcScholarlyCard {
+                Text(
+                    tr("🎥 নির্ধারিত কোনো অনলাইন সেশন নেই", "🎥 No Scheduled Online Session Yet"),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = p.text
+                )
+                Text(
+                    tr(
+                        "সার্কেলের ৮০% সদস্য অনুশীলনী সম্পন্ন করলে স্বয়ংক্রিয়ভাবে সেশন ঘোষিত হবে, অথবা এখনই ইনস্ট্যান্ট লাইভ রুমে যুক্ত হতে পারেন।",
+                        "A group session is announced automatically at 80% completion, or you can open an instant live room now."
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = p.muted
+                )
+                SparcPrimaryButton(
+                    text = tr("📹 ইনস্ট্যান্ট Jitsi লাইভ রুমে জয়েন করুন", "📹 Join Instant Jitsi Live Room"),
+                    onClick = { onJoinJitsi(instantSession) }
+                )
+            }
+        }
+        return
+    }
     val mainSession = sessions.first()
     val clinicSession = sessions.last()
 
