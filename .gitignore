@@ -1,0 +1,28 @@
+# Android
+android-app/.gradle/
+android-app/build/
+android-app/app/build/
+android-app/local.properties
+*.apk
+*.aab
+*.iml
+
+# Node / Next.js
+admin-web/node_modules/
+admin-web/.next/
+admin-web/out/
+.env
+.env.local
+.env.*.local
+
+# OS / IDE
+.DS_Store
+.idea/
+
+# Signing keys — never commit
+*.jks
+*.keystore
+KEYSTORE_PASSWORDS.txt
+
+# Kotlin compiler cache
+.kotlin/
