@@ -220,8 +220,12 @@ export default function SparcAdminPortal() {
         {current === "brand" && <BrandTab {...tabProps} />}
       </main>
 
-      <footer className="text-center text-[11px] text-slate-500 py-4">
-        SPARC Study Circle • বই পড়তে পড়তে লেখা শেখা • মানব মেন্টরের মূল্যায়নই চূড়ান্ত
+      <footer className="text-center text-[11px] text-slate-500 py-4 space-x-3">
+        <span>SPARC Study Circle • বই পড়তে পড়তে লেখা শেখা</span>
+        <span>•</span>
+        <a href="/privacy" className="underline hover:text-slate-800">গোপনীয়তা নীতি</a>
+        <span>•</span>
+        <a href="/delete-account" className="underline hover:text-slate-800">অ্যাকাউন্ট মুছুন</a>
       </footer>
     </div>
   );
@@ -290,6 +294,10 @@ function LoginScreen({ onReconfigure }: { onReconfigure: () => void }) {
             সার্ভার সংযোগ পরিবর্তন করুন
           </button>
         )}
+        <div className="pt-2 border-t border-slate-100 flex justify-center gap-4 text-[11px] text-slate-500">
+          <a href="/privacy" className="underline hover:text-slate-800">গোপনীয়তা নীতি</a>
+          <a href="/delete-account" className="underline hover:text-slate-800">অ্যাকাউন্ট মুছুন</a>
+        </div>
       </form>
     </FullScreen>
   );
