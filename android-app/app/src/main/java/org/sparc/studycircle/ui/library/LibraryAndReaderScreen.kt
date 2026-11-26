@@ -154,10 +154,13 @@ fun LibraryAndReaderScreen(
     orderDialogBook?.let { book ->
         HardcopyOrderDialog(
             book = book,
+            walletBalanceBdt = state.currentUser.walletBalanceBdt,
+            bkashNumber = state.appCustomization.bkashMerchantNumber,
+            nagadNumber = state.appCustomization.nagadMerchantNumber,
             borrowDepositBdt = state.appCustomization.borrowDepositBdt,
             onDismiss = { orderDialogBook = null },
-            onConfirm = { mode, addr, phone ->
-                repository.placePhysicalBookOrder(book, mode, addr, phone)
+            onConfirm = { mode, addr, phone, payOption, directTrx ->
+                repository.placePhysicalBookOrder(book, mode, addr, phone, payOption, directTrx)
                 orderDialogBook = null
             }
         )
@@ -1673,12 +1676,20 @@ private fun resolveDisplayName(context: Context, uri: Uri, fallback: String): St
 @Composable
 private fun HardcopyOrderDialog(
     book: BookItem,
+    walletBalanceBdt: Double = 0.0,
+    bkashNumber: String = "01700-000000",
+    nagadNumber: String = "01800-000000",
     borrowDepositBdt: Double = 150.0,
     onDismiss: () -> Unit,
-    onConfirm: (String, String, String) -> Unit
+    onConfirm: (String, String, String, String, String) -> Unit
 ) {
     val p = LocalSparcPalette.current
     var mode by remember { mutableStateOf("Purchase") }
+    val cost = if (mode == "Purchase") book.physicalPriceBdt else borrowDepositBdt
+    var paymentOption by remember(walletBalanceBdt, cost) {
+        mutableStateOf(if (walletBalanceBdt >= cost && cost > 0) "wallet" else "cod")
+    }
+    var directTrxId by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
 
@@ -1689,11 +1700,14 @@ private fun HardcopyOrderDialog(
         textContentColor = p.text,
         title = { Text(tr("হার্ডকপি বই অর্ডার / সংগ্রহ", "Order or Borrow Hardcopy Book")) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text(
                     tr(
-                        "গোপনীয়তা: শুধুমাত্র SPARC অ্যাডমিন, শিক্ষক বা প্রতিনিধি দেখতে পাবেন।",
-                        "Privacy: Visible strictly to SPARC Admin, Supervisor, or Representative."
+                        "গোপনীয়তা: ঠিকানা ও নম্বর শুধুমাত্র SPARC অ্যাডমিন বা প্রতিনিধি দেখতে পাবেন।",
+                        "Privacy: Visible strictly to SPARC Admin or Representative."
                     ),
                     fontSize = 12.sp,
                     color = p.primary
@@ -1710,16 +1724,57 @@ private fun HardcopyOrderDialog(
                         label = { Text(tr("ধার (জামানত ৳${borrowDepositBdt.toInt()})", "Borrow (৳${borrowDepositBdt.toInt()} dep.)")) }
                     )
                 }
-                OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text(tr("ঠিকানা", "Delivery Address")) })
+
+                if (cost > 0) {
+                    Text(
+                        tr("পেমেন্ট মাধ্যম বেছে নিন:", "Select Payment Method:"),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = p.text
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(
+                            selected = paymentOption == "cod",
+                            onClick = { paymentOption = "cod" },
+                            label = { Text(tr("🚚 ক্যাশ অন ডেলিভারি", "🚚 COD"), fontSize = 11.sp) }
+                        )
+                        FilterChip(
+                            selected = paymentOption == "direct_trx",
+                            onClick = { paymentOption = "direct_trx" },
+                            label = { Text(tr("📱 TrxID", "📱 TrxID"), fontSize = 11.sp) }
+                        )
+                        FilterChip(
+                            selected = paymentOption == "wallet",
+                            onClick = { paymentOption = "wallet" },
+                            label = { Text(tr("💳 ওয়ালেট", "💳 Wallet"), fontSize = 11.sp) }
+                        )
+                    }
+                    if (paymentOption == "direct_trx") {
+                        Text(
+                            "bKash: $bkashNumber • Nagad: $nagadNumber (৳${cost.toInt()})",
+                            fontSize = 11.5.sp,
+                            color = p.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        OutlinedTextField(
+                            value = directTrxId,
+                            onValueChange = { directTrxId = it },
+                            label = { Text("bKash / Nagad TrxID") },
+                            singleLine = true
+                        )
+                    }
+                }
+
+                OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text(tr("ডেলিভারি ঠিকানা", "Delivery Address")) })
                 OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text(tr("মোবাইল নম্বর", "Phone Number")) })
             }
         },
         confirmButton = {
             Button(
-                onClick = { onConfirm(mode, address, phone) },
+                onClick = { onConfirm(mode, address, phone, paymentOption, directTrxId) },
                 colors = ButtonDefaults.buttonColors(containerColor = p.primary)
             ) {
-                Text(tr("নিশ্চিত করুন", "Confirm Order"))
+                Text(tr("অর্ডার নিশ্চিত করুন", "Confirm Order"))
             }
         },
         dismissButton = {

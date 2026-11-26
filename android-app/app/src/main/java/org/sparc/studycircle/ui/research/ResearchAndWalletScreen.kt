@@ -1,10 +1,13 @@
 package org.sparc.studycircle.ui.research
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -307,12 +310,29 @@ private fun CreditWalletAndSupervisionView(
 ) {
     val p = LocalSparcPalette.current
     val lang = LocalAppLanguage.current
+    val context = LocalContext.current
     val cfg = state.appCustomization
-    val minTop = cfg.minTopupBdt.toInt().coerceAtLeast(100)
-    val presetAmts = remember(minTop) { listOf(minTop, minTop * 2, minTop * 4) }
-    var selectedAmt by remember(minTop) { mutableIntStateOf(presetAmts[1]) }
-    var selectedMethod by remember { mutableStateOf(PaymentMethod.BKASH_PGW) }
+    val minTop = cfg.minTopupBdt.toInt().coerceAtLeast(50)
+    val presetAmts = remember(minTop) { listOf(minTop, minTop * 2, (minTop * 5).coerceAtLeast(1000)) }
+    var amountText by remember(minTop) { mutableStateOf(minTop.toString()) }
+    var selectedMethod by remember(cfg.onlineGatewayEnabled) {
+        mutableStateOf(if (cfg.onlineGatewayEnabled) PaymentMethod.BKASH_PGW else PaymentMethod.MANUAL_TRX)
+    }
+    var selectedChannel by remember { mutableStateOf("bKash") }
+    var senderPhoneInput by remember { mutableStateOf("") }
     var trxIdInput by remember { mutableStateOf("") }
+
+    val parsedAmount = amountText.toIntOrNull() ?: minTop
+
+    fun copyNumber(label: String, number: String) {
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        cm?.setPrimaryClip(ClipData.newPlainText(label, number))
+        Toast.makeText(
+            context,
+            if (lang == "en") "$label number copied: $number" else "$label নম্বর কপি হয়েছে: $number",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -335,20 +355,30 @@ private fun CreditWalletAndSupervisionView(
                     fontSize = 28.sp,
                     fontWeight = FontWeight.ExtraBold
                 )
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color.White.copy(alpha = 0.18f)
-                ) {
-                    Text(
-                        text = tr(
-                            "রেফারেল কোড: ${state.currentUser.referralCode} (+৳৫০ বোনাস)",
-                            "Referral Code: ${state.currentUser.referralCode} (+৳50 Bonus)"
-                        ),
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
-                    )
+                Text(
+                    text = tr(
+                        "হার্ডকপি বই ও লাইভ মানব মেন্টর সুপারভিশন ফি পরিশোধের জন্য",
+                        "For physical hardcopy books & live human Mentor supervision"
+                    ),
+                    color = Color.White.copy(alpha = 0.9f),
+                    fontSize = 11.5.sp
+                )
+                if (state.currentUser.referralCode.isNotBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.White.copy(alpha = 0.18f)
+                    ) {
+                        Text(
+                            text = tr(
+                                "রেফারেল কোড: ${state.currentUser.referralCode} (+৳৫০ বোনাস)",
+                                "Referral Code: ${state.currentUser.referralCode} (+৳50 Bonus)"
+                            ),
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                        )
+                    }
                 }
             }
         }
@@ -362,13 +392,13 @@ private fun CreditWalletAndSupervisionView(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     presetAmts.forEach { amt ->
-                        val active = selectedAmt == amt
+                        val active = parsedAmount == amt
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = if (active) p.primary else p.cardAlt,
                             modifier = Modifier
                                 .weight(1f)
-                                .clickable { selectedAmt = amt }
+                                .clickable { amountText = amt.toString() }
                         ) {
                             Text(
                                 text = "৳$amt",
@@ -382,56 +412,121 @@ private fun CreditWalletAndSupervisionView(
                     }
                 }
 
-                PaymentMethod.entries.forEach { pm ->
-                    val active = selectedMethod == pm
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (active) p.primarySoft else p.cardAlt,
-                        border = BorderStroke(1.dp, if (active) p.primary else p.border),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { selectedMethod = pm }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { amountText = it.filter { ch -> ch.isDigit() } },
+                    label = { Text(tr("টাকার পরিমাণ (৳)", "Amount in BDT (৳)")) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (cfg.onlineGatewayEnabled) {
+                    PaymentMethod.entries.forEach { pm ->
+                        val active = selectedMethod == pm
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (active) p.primarySoft else p.cardAlt,
+                            border = BorderStroke(1.dp, if (active) p.primary else p.border),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedMethod = pm }
                         ) {
-                            RadioButton(selected = active, onClick = { selectedMethod = pm })
-                            Spacer(Modifier.width(6.dp))
-                            Text(pm.label(lang), fontWeight = FontWeight.SemiBold, color = p.text)
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(selected = active, onClick = { selectedMethod = pm })
+                                Spacer(Modifier.width(6.dp))
+                                Text(pm.label(lang), fontWeight = FontWeight.SemiBold, color = p.text)
+                            }
                         }
                     }
                 }
 
-                if (selectedMethod == PaymentMethod.MANUAL_TRX) {
-                    Surface(shape = RoundedCornerShape(12.dp), color = p.accentSoft) {
-                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(
-                                tr("অফিশিয়াল সেন্ড-মানি / মার্চেন্ট নম্বর:", "Official Merchant / Send-Money Numbers:"),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = p.accentText
-                            )
-                            Text(
-                                "bKash: ${cfg.bkashMerchantNumber} • Nagad: ${cfg.nagadMerchantNumber} • Rocket: ${cfg.rocketMerchantNumber}",
-                                fontSize = 11.5.sp,
-                                color = p.accentText
-                            )
+                if (!cfg.onlineGatewayEnabled || selectedMethod == PaymentMethod.MANUAL_TRX) {
+                    val channels = listOf(
+                        "bKash" to cfg.bkashMerchantNumber,
+                        "Nagad" to cfg.nagadMerchantNumber,
+                        "Rocket" to cfg.rocketMerchantNumber
+                    )
+                    Text(
+                        text = if (lang == "en") cfg.paymentInstructionsEn else cfg.paymentInstructionsBn,
+                        fontSize = 12.sp,
+                        color = p.muted
+                    )
+                    channels.forEach { (chName, chNum) ->
+                        val isPicked = selectedChannel == chName
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isPicked) p.primarySoft else p.cardAlt,
+                            border = BorderStroke(1.dp, if (isPicked) p.primary else p.border),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedChannel = chName }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(selected = isPicked, onClick = { selectedChannel = chName })
+                                    Column {
+                                        Text(chName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = p.text)
+                                        Text(chNum, fontSize = 12.sp, color = p.primary, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = p.accentSoft,
+                                    modifier = Modifier.clickable { copyNumber(chName, chNum) }
+                                ) {
+                                    Text(
+                                        tr("📋 কপি", "📋 Copy"),
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = p.accentText,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    )
+                                }
+                            }
                         }
                     }
+
+                    OutlinedTextField(
+                        value = senderPhoneInput,
+                        onValueChange = { senderPhoneInput = it },
+                        label = { Text(tr("যে নম্বর থেকে পাঠিয়েছেন (প্রেরকের নম্বর)", "Sender Phone Number")) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
                     OutlinedTextField(
                         value = trxIdInput,
                         onValueChange = { trxIdInput = it },
-                        label = { Text("bKash / Nagad / Rocket TrxID") },
+                        label = { Text("$selectedChannel Transaction ID (TrxID)") },
+                        singleLine = true,
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
 
                 SparcPrimaryButton(
-                    text = tr("৳$selectedAmt ওয়ালেটে লোড করুন", "Add ৳$selectedAmt to Wallet"),
+                    text = if (!cfg.onlineGatewayEnabled || selectedMethod == PaymentMethod.MANUAL_TRX) {
+                        tr("✓ ৳$parsedAmount পেমেন্ট তথ্য জমা দিন (যাচাইয়ের জন্য)", "✓ Submit ৳$parsedAmount TrxID for Verification")
+                    } else {
+                        tr("৳$parsedAmount অনলাইন পেমেন্ট করুন", "Pay ৳$parsedAmount Online")
+                    },
                     onClick = {
-                        repository.topUpWallet(selectedAmt.toDouble(), selectedMethod, trxIdInput)
+                        val effectiveMethod = if (cfg.onlineGatewayEnabled) selectedMethod else PaymentMethod.MANUAL_TRX
+                        repository.topUpWallet(
+                            amountBdt = parsedAmount.toDouble(),
+                            method = effectiveMethod,
+                            manualTrxId = trxIdInput,
+                            senderPhone = senderPhoneInput,
+                            channel = selectedChannel
+                        )
                         trxIdInput = ""
                     }
                 )

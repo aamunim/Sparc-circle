@@ -888,7 +888,12 @@ class SupabaseRestClient(
         rocketMerchantNumber = o["rocket_merchant_number"]?.jsonPrimitive?.contentOrNull ?: "01900-000000",
         defaultSupervisionFeeBdt = o["default_supervision_fee_bdt"]?.jsonPrimitive?.doubleOrNull ?: 300.0,
         borrowDepositBdt = o["borrow_deposit_bdt"]?.jsonPrimitive?.doubleOrNull ?: 150.0,
-        minTopupBdt = o["min_topup_bdt"]?.jsonPrimitive?.doubleOrNull ?: 500.0
+        minTopupBdt = o["min_topup_bdt"]?.jsonPrimitive?.doubleOrNull ?: 200.0,
+        onlineGatewayEnabled = o["online_gateway_enabled"]?.jsonPrimitive?.booleanOrNull ?: false,
+        paymentInstructionsBn = o["payment_instructions_bn"]?.jsonPrimitive?.contentOrNull
+            ?: "উপরের নম্বরে সেন্ড মানি / পেমেন্ট করে নিচের ঘরে প্রেরকের নম্বর ও TrxID জমা দিন।",
+        paymentInstructionsEn = o["payment_instructions_en"]?.jsonPrimitive?.contentOrNull
+            ?: "Send money to the number above, then submit your sender phone number and TrxID below."
     )
 
     private fun parseProfile(o: JsonObject): UserProfile {
@@ -945,6 +950,9 @@ class SupabaseRestClient(
                     put("p_supervision_fee_bdt", config.defaultSupervisionFeeBdt)
                     put("p_borrow_deposit_bdt", config.borrowDepositBdt)
                     put("p_min_topup_bdt", config.minTopupBdt)
+                    put("p_online_gateway_enabled", config.onlineGatewayEnabled)
+                    put("p_payment_instructions_bn", config.paymentInstructionsBn.trim())
+                    put("p_payment_instructions_en", config.paymentInstructionsEn.trim())
                 }
             )
             Unit
@@ -1432,7 +1440,9 @@ class SupabaseRestClient(
     suspend fun topUpWalletRemote(
         method: PaymentMethod,
         amountBdt: Double,
-        manualTrxId: String
+        manualTrxId: String,
+        paymentPhone: String = "",
+        channel: String = "bKash"
     ): Result<JsonObject> = withContext(Dispatchers.IO) {
         runCatching {
             check(hasAuthenticatedUser)
@@ -1448,6 +1458,8 @@ class SupabaseRestClient(
                     put("p_amount_bdt", amountBdt)
                     if (method == PaymentMethod.MANUAL_TRX) {
                         put("p_manual_trx_id", manualTrxId.trim())
+                        if (paymentPhone.isNotBlank()) put("p_payment_phone", paymentPhone.trim())
+                        if (channel.isNotBlank()) put("p_channel", channel.trim())
                     }
                 }
             ).jsonObject
@@ -1458,7 +1470,9 @@ class SupabaseRestClient(
         bookId: String,
         mode: String,
         address: String,
-        phone: String
+        phone: String,
+        paymentOption: String = "wallet",
+        directTrxId: String = ""
     ): Result<JsonObject> = withContext(Dispatchers.IO) {
         runCatching {
             check(hasAuthenticatedUser && isUuid(bookId))
@@ -1469,6 +1483,10 @@ class SupabaseRestClient(
                     put("p_order_mode", mode.lowercase())
                     put("p_address", address.trim())
                     put("p_phone", phone.trim())
+                    put("p_payment_option", paymentOption.lowercase())
+                    if (directTrxId.isNotBlank()) {
+                        put("p_direct_trx_id", directTrxId.trim())
+                    }
                 }
             ).jsonObject
         }

@@ -28,6 +28,7 @@ interface OrderRow {
   contact_phone: string;
   amount_bdt: number;
   paid_via_wallet: boolean;
+  admin_notes: string | null;
   status: string;
   created_at: string;
 }
@@ -58,7 +59,7 @@ export default function WalletOrdersTab({ me, notify }: TabProps) {
           .limit(100),
         sb
           .from("physical_book_orders")
-          .select("id,user_id,book_id,order_mode,delivery_address,contact_phone,amount_bdt,paid_via_wallet,status,created_at")
+          .select("id,user_id,book_id,order_mode,delivery_address,contact_phone,amount_bdt,paid_via_wallet,admin_notes,status,created_at")
           .order("created_at", { ascending: false })
           .limit(100),
       ]);
@@ -129,7 +130,7 @@ export default function WalletOrdersTab({ me, notify }: TabProps) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="space-y-3">
           <h3 className="text-sm font-bold flex items-center gap-2">
-            <CreditCard className="w-4 h-4 text-[#0F5132]" /> ওয়ালেট টপ-আপ ও ম্যানুয়াল TrxID
+            <CreditCard className="w-4 h-4 text-[#0F5132]" /> ওয়ালেট টপ-আপ ও ম্যানুয়াল TrxID যাচাই
           </h3>
           {!isAdmin && <p className="text-xs text-slate-500">ওয়ালেট অনুমোদন শুধুমাত্র অ্যাডমিন করতে পারেন।</p>}
           {wallets.length === 0 && !loading && <Empty>কোনো টপ-আপ রিকোয়েস্ট নেই।</Empty>}
@@ -137,11 +138,13 @@ export default function WalletOrdersTab({ me, notify }: TabProps) {
             <div key={w.id} className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-wrap justify-between items-center gap-2">
               <div className="text-xs space-y-0.5">
                 <p className="font-semibold text-sm">
-                  {people[w.user_id] ?? "ইউজার"} — ৳{Number(w.amount_bdt).toFixed(0)}
+                  {people[w.user_id] ?? "ইউজার"} — <span className="text-[#0F5132]">৳{Number(w.amount_bdt).toFixed(0)}</span>
                 </p>
-                <p className="text-slate-600">
-                  TrxID: <strong>{w.manual_trx_id || w.gateway_ref || "—"}</strong> • ফোন: {w.payment_phone || "—"}
+                <p className="text-slate-700">
+                  TrxID: <strong className="font-mono bg-white px-1.5 py-0.5 rounded border">{w.manual_trx_id || w.gateway_ref || "—"}</strong>
+                  {w.payment_phone ? ` • প্রেরক: ${w.payment_phone}` : ""}
                 </p>
+                {w.notes && <p className="text-slate-500">{w.notes}</p>}
                 <p className="text-slate-400">{shortDate(w.created_at)}</p>
               </div>
               {w.status === "pending" && isAdmin ? (
@@ -169,12 +172,16 @@ export default function WalletOrdersTab({ me, notify }: TabProps) {
             <div key={o.id} className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-wrap justify-between items-start gap-2">
               <div className="text-xs space-y-0.5">
                 <p className="font-semibold text-sm">
-                  {people[o.user_id] ?? "ইউজার"} • {o.order_mode === "purchase" ? `ক্রয় ৳${Number(o.amount_bdt).toFixed(0)}` : "ধার"}
-                  {o.paid_via_wallet && " (ওয়ালেট)"}
+                  {people[o.user_id] ?? "ইউজার"} •{" "}
+                  {o.order_mode === "purchase" ? `ক্রয় ৳${Number(o.amount_bdt).toFixed(0)}` : `ধার (জামানত ৳${Number(o.amount_bdt).toFixed(0)})`}{" "}
+                  <Pill tone={o.paid_via_wallet ? "green" : "amber"}>
+                    {o.paid_via_wallet ? "ওয়ালেট পরিশোধিত" : "COD / TrxID"}
+                  </Pill>
                 </p>
-                <p className="text-slate-700">{books[o.book_id] ?? "বই"}</p>
+                <p className="text-slate-800 font-medium">{books[o.book_id] ?? "বই"}</p>
+                {o.admin_notes && <p className="text-emerald-800 font-medium">{o.admin_notes}</p>}
                 <p className="text-slate-500">
-                  {o.delivery_address} • {o.contact_phone} • {shortDate(o.created_at)}
+                  📍 {o.delivery_address} • 📞 {o.contact_phone} • {shortDate(o.created_at)}
                 </p>
               </div>
               <select

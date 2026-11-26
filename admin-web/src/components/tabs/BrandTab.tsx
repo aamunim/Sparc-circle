@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { friendlyError, server } from "@/lib/server";
-import { Btn, Card, ErrorBox, Loading, SectionTitle, inputCls } from "@/components/ui";
+import { Btn, Card, ErrorBox, Loading, Pill, SectionTitle, inputCls } from "@/components/ui";
 import type { TabProps } from "@/components/SparcAdminPortal";
 
 interface BrandRow {
@@ -20,6 +20,9 @@ interface BrandRow {
   default_supervision_fee_bdt: number;
   borrow_deposit_bdt: number;
   min_topup_bdt: number;
+  online_gateway_enabled: boolean;
+  payment_instructions_bn: string;
+  payment_instructions_en: string;
 }
 
 export default function BrandTab({ notify }: TabProps) {
@@ -34,7 +37,30 @@ export default function BrandTab({ notify }: TabProps) {
     try {
       const { data, error } = await server().from("app_customization").select("*").eq("id", "global").single();
       if (error) throw error;
-      setForm(data as BrandRow);
+      const d = data as Partial<BrandRow>;
+      setForm({
+        app_title: d.app_title ?? "SPARC Study Circle",
+        app_tagline_bn: d.app_tagline_bn ?? "",
+        app_tagline_en: d.app_tagline_en ?? "",
+        splash_quote_bn: d.splash_quote_bn ?? "",
+        splash_quote_en: d.splash_quote_en ?? "",
+        announcement_banner_bn: d.announcement_banner_bn ?? "",
+        announcement_banner_en: d.announcement_banner_en ?? "",
+        show_announcement_banner: d.show_announcement_banner ?? true,
+        bkash_merchant_number: d.bkash_merchant_number ?? "01700-000000",
+        nagad_merchant_number: d.nagad_merchant_number ?? "01800-000000",
+        rocket_merchant_number: d.rocket_merchant_number ?? "01900-000000",
+        default_supervision_fee_bdt: Number(d.default_supervision_fee_bdt ?? 300),
+        borrow_deposit_bdt: Number(d.borrow_deposit_bdt ?? 150),
+        min_topup_bdt: Number(d.min_topup_bdt ?? 200),
+        online_gateway_enabled: Boolean(d.online_gateway_enabled ?? false),
+        payment_instructions_bn:
+          d.payment_instructions_bn ??
+          "উপরের নম্বরে সেন্ড মানি / পেমেন্ট করে নিচের ঘরে প্রেরকের নম্বর ও TrxID জমা দিন।",
+        payment_instructions_en:
+          d.payment_instructions_en ??
+          "Send money to the number above, then submit your sender phone number and TrxID below.",
+      });
     } catch (e) {
       setErr(friendlyError(e));
     } finally {
@@ -68,9 +94,12 @@ export default function BrandTab({ notify }: TabProps) {
         p_supervision_fee_bdt: Number(form.default_supervision_fee_bdt),
         p_borrow_deposit_bdt: Number(form.borrow_deposit_bdt),
         p_min_topup_bdt: Number(form.min_topup_bdt),
+        p_online_gateway_enabled: form.online_gateway_enabled,
+        p_payment_instructions_bn: form.payment_instructions_bn,
+        p_payment_instructions_en: form.payment_instructions_en,
       });
       if (error) throw error;
-      notify("ব্র্যান্ড, নোটিশ ও পেমেন্ট নম্বর সংরক্ষিত হয়েছে — অ্যান্ড্রয়েড অ্যাপে সরাসরি প্রতিফলিত হবে।");
+      notify("ব্র্যান্ড, নোটিশ ও পেমেন্ট সেটিংস সংরক্ষিত হয়েছে — অ্যাপে সরাসরি প্রতিফলিত হবে।");
     } catch (er) {
       notify(friendlyError(er), "err");
     } finally {
@@ -81,7 +110,7 @@ export default function BrandTab({ notify }: TabProps) {
   return (
     <div className="space-y-4">
       <SectionTitle onRefresh={load} loading={loading}>
-        🏛️ ব্র্যান্ড, নোটিশ ব্যানার ও পেমেন্ট নম্বর
+        🏛️ ব্র্যান্ড, নোটিশ ব্যানার ও পেমেন্ট সেটিংস
       </SectionTitle>
       <ErrorBox message={err} />
       {loading && !form && <Loading />}
@@ -125,9 +154,15 @@ export default function BrandTab({ notify }: TabProps) {
           </Card>
 
           <Card className="space-y-3">
-            <h3 className="text-sm font-bold">💳 পেমেন্ট নম্বর ও ডিফল্ট ফি</h3>
+            <div className="flex flex-wrap justify-between items-center gap-2">
+              <h3 className="text-sm font-bold">💳 পেমেন্ট নম্বর, ফি ও গেটওয়ে মোড</h3>
+              <Pill tone={form.online_gateway_enabled ? "green" : "amber"}>
+                {form.online_gateway_enabled ? "🟢 অনলাইন গেটওয়ে চালু" : "🔒 ম্যানুয়াল TrxID যাচাই মোড"}
+              </Pill>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <Field label="bKash নম্বর">
+              <Field label="bKash নম্বর (Send Money / Payment)">
                 <input value={form.bkash_merchant_number} onChange={(e) => set("bkash_merchant_number", e.target.value)} className={inputCls} />
               </Field>
               <Field label="Nagad নম্বর">
@@ -136,15 +171,38 @@ export default function BrandTab({ notify }: TabProps) {
               <Field label="Rocket নম্বর">
                 <input value={form.rocket_merchant_number} onChange={(e) => set("rocket_merchant_number", e.target.value)} className={inputCls} />
               </Field>
-              <Field label="সুপারভিশন ফি (৳)">
+              <Field label="সুপারভিশন ফি (৳/সেশন)">
                 <input type="number" value={form.default_supervision_fee_bdt} onChange={(e) => set("default_supervision_fee_bdt", Number(e.target.value) || 0)} className={inputCls} />
               </Field>
               <Field label="বই ধার জামানত (৳)">
                 <input type="number" value={form.borrow_deposit_bdt} onChange={(e) => set("borrow_deposit_bdt", Number(e.target.value) || 0)} className={inputCls} />
               </Field>
-              <Field label="ন্যূনতম টপ-আপ (৳)">
-                <input type="number" value={form.min_topup_bdt} onChange={(e) => set("min_topup_bdt", Number(e.target.value) || 0)} className={inputCls} />
+              <Field label="ন্যূনতম ওয়ালেট টপ-আপ (৳)">
+                <input type="number" min={50} value={form.min_topup_bdt} onChange={(e) => set("min_topup_bdt", Number(e.target.value) || 50)} className={inputCls} />
               </Field>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Field label="পেমেন্ট নির্দেশনা (বাংলা)">
+                <input value={form.payment_instructions_bn} onChange={(e) => set("payment_instructions_bn", e.target.value)} className={inputCls} />
+              </Field>
+              <Field label="পেমেন্ট নির্দেশনা (English)">
+                <input value={form.payment_instructions_en} onChange={(e) => set("payment_instructions_en", e.target.value)} className={inputCls} />
+              </Field>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
+              <label className="flex items-center gap-2 text-xs font-bold text-amber-950 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.online_gateway_enabled}
+                  onChange={(e) => set("online_gateway_enabled", e.target.checked)}
+                />
+                অনলাইন পেমেন্ট গেটওয়ে (SSLCommerz / bKash PGW) চালু করুন
+              </label>
+              <p className="text-[11px] text-amber-900">
+                গেটওয়ে API কী যুক্ত না করা পর্যন্ত এটি <strong>বন্ধ</strong> রাখুন। বন্ধ থাকলে অ্যাপে শুধুমাত্র যাচাইকৃত bKash/Nagad/Rocket TrxID পেমেন্ট দেখাবে এবং অনুমোদন ছাড়া কোনো ক্রেডিট যোগ হবে না।
+              </p>
             </div>
           </Card>
 

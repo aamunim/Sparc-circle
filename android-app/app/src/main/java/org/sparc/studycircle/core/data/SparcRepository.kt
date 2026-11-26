@@ -549,8 +549,15 @@ class SparcRepository(
     }
 
     // Section 2.3: Wallet Top-Up (Uses Dynamic Customized Min Top-Up)
-    fun topUpWallet(amountBdt: Double, method: PaymentMethod, manualTrxId: String = "") {
-        val minTopup = _state.value.appCustomization.minTopupBdt
+    fun topUpWallet(
+        amountBdt: Double,
+        method: PaymentMethod,
+        manualTrxId: String = "",
+        senderPhone: String = "",
+        channel: String = "bKash"
+    ) {
+        val cfg = _state.value.appCustomization
+        val minTopup = cfg.minTopupBdt
         if (amountBdt < minTopup) {
             _state.update {
                 it.copy(
@@ -563,44 +570,71 @@ class SparcRepository(
             }
             return
         }
-        if (method == PaymentMethod.MANUAL_TRX && manualTrxId.trim().length < 6) {
+        if (!useSeedFixtures && method != PaymentMethod.MANUAL_TRX && !cfg.onlineGatewayEnabled) {
             _state.update {
                 it.copy(
-                    statusBannerMessage = if (it.appLanguage == "en") "Please enter a valid bKash/Nagad TrxID." else "সঠিক bKash/Nagad TrxID লিখুন।"
+                    statusBannerMessage = if (it.appLanguage == "en") {
+                        "Online payment gateway is currently disabled. Please send via bKash/Nagad/Rocket and submit TrxID."
+                    } else {
+                        "অনলাইন পেমেন্ট গেটওয়ে বর্তমানে বন্ধ আছে। অনুগ্রহ করে bKash/Nagad/Rocket নম্বরে পাঠিয়ে TrxID জমা দিন।"
+                    }
+                )
+            }
+            return
+        }
+        if (method == PaymentMethod.MANUAL_TRX && manualTrxId.trim().length < 5) {
+            _state.update {
+                it.copy(
+                    statusBannerMessage = if (it.appLanguage == "en") "Please enter a valid Transaction ID (TrxID)." else "সঠিক Transaction ID (TrxID) লিখুন।"
                 )
             }
             return
         }
         _state.update { s ->
-            val isInstantGateway = method != PaymentMethod.MANUAL_TRX
-            val ref = if (isInstantGateway) {
+            val allowInstantTestCredit = useSeedFixtures && method != PaymentMethod.MANUAL_TRX
+            val ref = if (method != PaymentMethod.MANUAL_TRX) {
                 "PGW-${System.currentTimeMillis().toString().takeLast(6)}"
             } else {
                 manualTrxId.trim().uppercase()
+            }
+            val desc = if (method == PaymentMethod.MANUAL_TRX) {
+                buildString {
+                    append(channel.ifBlank { "bKash" })
+                    append(" TrxID")
+                    if (senderPhone.isNotBlank()) append(" • ${senderPhone.trim()}")
+                }
+            } else {
+                "${method.label(s.appLanguage)} Top-Up"
             }
             val tx = WalletTransactionItem(
                 id = UUID.randomUUID().toString(),
                 method = method,
                 amountBdt = amountBdt,
-                status = if (isInstantGateway) "Verified" else "Pending",
+                status = if (allowInstantTestCredit) "Verified" else "Pending",
                 reference = ref,
-                description = "${method.label(s.appLanguage)} Top-Up"
+                description = desc
             )
             s.copy(
-                currentUser = if (isInstantGateway) {
+                currentUser = if (allowInstantTestCredit) {
                     s.currentUser.copy(walletBalanceBdt = s.currentUser.walletBalanceBdt + amountBdt)
                 } else s.currentUser,
                 walletHistory = listOf(tx) + s.walletHistory,
                 statusBannerMessage = when {
-                    isInstantGateway && s.appLanguage == "en" -> "৳${amountBdt.toInt()} added to your wallet!"
-                    isInstantGateway -> "৳${amountBdt.toInt()} ওয়ালেটে যুক্ত হয়েছে!"
-                    s.appLanguage == "en" -> "Manual TrxID ($ref) submitted; pending admin verification."
-                    else -> "ম্যানুয়াল TrxID ($ref) জমা হয়েছে; অ্যাডমিন যাচাই করলে ব্যালেন্স যোগ হবে।"
+                    allowInstantTestCredit && s.appLanguage == "en" -> "৳${amountBdt.toInt()} added to your wallet!"
+                    allowInstantTestCredit -> "৳${amountBdt.toInt()} ওয়ালেটে যুক্ত হয়েছে!"
+                    s.appLanguage == "en" -> "✓ Payment ($ref) submitted as Pending! Balance updates once Admin verifies."
+                    else -> "✓ আপনার পেমেন্ট রিকোয়েস্ট ($ref) জমা হয়েছে! অ্যাডমিন যাচাই করলেই ওয়ালেটে ৳${amountBdt.toInt()} যোগ হবে।"
                 }
             )
         }
         launchRemoteSync {
-            supabaseClient.topUpWalletRemote(method, amountBdt, manualTrxId).getOrThrow()
+            supabaseClient.topUpWalletRemote(
+                method = method,
+                amountBdt = amountBdt,
+                manualTrxId = manualTrxId,
+                paymentPhone = senderPhone,
+                channel = channel
+            ).getOrThrow()
             syncFromSupabaseNow(silent = true)
         }
     }
@@ -667,8 +701,15 @@ class SparcRepository(
         }
     }
 
-    // Section 3.5: Physical Book Order (Restricted to Admin, Teacher/Supervisor, SPARC Rep)
-    fun placePhysicalBookOrder(book: BookItem, mode: String, address: String, phone: String) {
+    // Section 3.5: Physical Book Order (Supports Wallet, COD, and Direct TrxID)
+    fun placePhysicalBookOrder(
+        book: BookItem,
+        mode: String,
+        address: String,
+        phone: String,
+        paymentOption: String = "wallet",
+        directTrxId: String = ""
+    ) {
         if (address.isBlank() || phone.isBlank()) {
             _state.update {
                 it.copy(
@@ -677,14 +718,24 @@ class SparcRepository(
             }
             return
         }
-        val cost = if (mode == "Purchase") book.physicalPriceBdt else 0.0
-        if (cost > 0 && _state.value.currentUser.walletBalanceBdt < cost) {
+        val cfg = _state.value.appCustomization
+        val cost = if (mode == "Purchase") book.physicalPriceBdt else cfg.borrowDepositBdt
+        val payOpt = paymentOption.lowercase()
+        if (payOpt == "direct_trx" && directTrxId.trim().length < 5) {
+            _state.update {
+                it.copy(
+                    statusBannerMessage = if (it.appLanguage == "en") "Please enter a valid TrxID for direct payment." else "সরাসরি পেমেন্টের জন্য সঠিক TrxID লিখুন।"
+                )
+            }
+            return
+        }
+        if (payOpt == "wallet" && cost > 0 && _state.value.currentUser.walletBalanceBdt < cost) {
             _state.update { s ->
                 s.copy(
                     statusBannerMessage = if (s.appLanguage == "en") {
-                        "Insufficient wallet balance (requires ৳${cost.toInt()})."
+                        "Insufficient wallet balance (requires ৳${cost.toInt()}). Choose Cash on Delivery (COD) or top up first."
                     } else {
-                        "ওয়ালেটে পর্যাপ্ত ক্রেডিট নেই (প্রয়োজন ৳${cost.toInt()})।"
+                        "ওয়ালেটে পর্যাপ্ত ক্রেডিট নেই (প্রয়োজন ৳${cost.toInt()})। ক্যাশ অন ডেলিভারি (COD) বেছে নিন অথবা ওয়ালেট টপ-আপ করুন।"
                     }
                 )
             }
@@ -703,19 +754,26 @@ class SparcRepository(
                 status = "Pending"
             )
             s.copy(
-                currentUser = s.currentUser.copy(
-                    walletBalanceBdt = s.currentUser.walletBalanceBdt - cost
-                ),
+                currentUser = if (payOpt == "wallet" && cost > 0) {
+                    s.currentUser.copy(walletBalanceBdt = s.currentUser.walletBalanceBdt - cost)
+                } else s.currentUser,
                 bookOrders = listOf(order) + s.bookOrders,
                 statusBannerMessage = if (s.appLanguage == "en") {
-                    "Hardcopy order placed securely (visible only to SPARC Admin/Rep)."
+                    "✓ Hardcopy book order placed (${payOpt.uppercase()})!"
                 } else {
-                    "হার্ডকপি অর্ডারের অনুরোধ সফলভাবে প্লেস হয়েছে (গোপনীয়তা সুরক্ষিত)।"
+                    "✓ হার্ডকপি বই অর্ডারের অনুরোধ সফলভাবে জমা হয়েছে!"
                 }
             )
         }
         launchRemoteSync {
-            supabaseClient.placeBookOrderRemote(book.id, mode, address, phone).getOrThrow()
+            supabaseClient.placeBookOrderRemote(
+                bookId = book.id,
+                mode = mode,
+                address = address,
+                phone = phone,
+                paymentOption = payOpt,
+                directTrxId = directTrxId
+            ).getOrThrow()
             syncFromSupabaseNow(silent = true)
         }
     }

@@ -82,7 +82,10 @@ data class AppCustomizationConfig(
     val rocketMerchantNumber: String = "01900-000000",
     val defaultSupervisionFeeBdt: Double = 300.0,
     val borrowDepositBdt: Double = 150.0,
-    val minTopupBdt: Double = 500.0
+    val minTopupBdt: Double = 200.0,
+    val onlineGatewayEnabled: Boolean = false,
+    val paymentInstructionsBn: String = "উপরের নম্বরে সেন্ড মানি / পেমেন্ট করে নিচের ঘরে প্রেরকের নম্বর ও TrxID জমা দিন।",
+    val paymentInstructionsEn: String = "Send money to the number above, then submit your sender phone number and TrxID below."
 )
 
 @Serializable

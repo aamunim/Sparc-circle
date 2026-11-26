@@ -594,5 +594,46 @@ class SparcDomainEngineTest {
         assertTrue(st.supervisionDeals.isEmpty())
         assertEquals(0.0, st.currentUser.walletBalanceBdt, 0.001)
         assertEquals(0, st.currentUser.gamificationPoints)
+
+        // Gateway auto-credit is strictly blocked when onlineGatewayEnabled == false
+        prodRepo.topUpWallet(500.0, PaymentMethod.BKASH_PGW)
+        assertEquals(0.0, prodRepo.state.value.currentUser.walletBalanceBdt, 0.001)
+        assertTrue(prodRepo.state.value.walletHistory.isEmpty())
+
+        // Manual TrxID submits as Pending with 0.0 balance until Admin verifies
+        prodRepo.topUpWallet(
+            amountBdt = 500.0,
+            method = PaymentMethod.MANUAL_TRX,
+            manualTrxId = "BKH998877",
+            senderPhone = "01711223344",
+            channel = "bKash"
+        )
+        assertEquals(0.0, prodRepo.state.value.currentUser.walletBalanceBdt, 0.001)
+        assertEquals(1, prodRepo.state.value.walletHistory.size)
+        assertEquals("Pending", prodRepo.state.value.walletHistory.first().status)
+        assertTrue(prodRepo.state.value.walletHistory.first().description.contains("01711223344"))
+
+        // COD book order works even when wallet balance is 0.0
+        val sampleBook = BookItem(
+            id = "b-real-1",
+            title = "Qualitative Fieldwork Guide",
+            subtitle = "",
+            author = "SPARC Press",
+            category = "Research",
+            physicalPriceBdt = 420.0,
+            totalChapters = 1,
+            isFirstChapterFree = true,
+            minMembersRequired = 5,
+            chapters = emptyList()
+        )
+        prodRepo.placePhysicalBookOrder(
+            book = sampleBook,
+            mode = "Purchase",
+            address = "TSC, Dhaka University",
+            phone = "01711223344",
+            paymentOption = "cod"
+        )
+        assertEquals(1, prodRepo.state.value.bookOrders.size)
+        assertEquals(0.0, prodRepo.state.value.currentUser.walletBalanceBdt, 0.001)
     }
 }
