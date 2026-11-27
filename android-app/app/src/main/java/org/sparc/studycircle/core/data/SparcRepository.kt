@@ -1818,12 +1818,16 @@ class SparcRepository(
         audioFileName: String?,
         sourceAttribution: String = "",
         permissionDeclared: Boolean = true,
-        exerciseTemplateRaw: String? = null
+        exerciseTemplateRaw: String? = null,
+        directTextContent: String = "",
+        contentMode: String = "pdf",
+        subtitleRaw: String = ""
     ): Result<Unit> {
-        if (pdfBytes == null && audioBytes == null && exerciseTemplateRaw.isNullOrBlank()) {
+        val hasDirectText = directTextContent.isNotBlank() || subtitleRaw.isNotBlank()
+        if (pdfBytes == null && audioBytes == null && exerciseTemplateRaw.isNullOrBlank() && !hasDirectText) {
             return Result.failure(
                 IllegalArgumentException(
-                    msg("অনুগ্রহ করে অন্তত একটি PDF, অডিও বা অনুশীলনী টেমপ্লেট সিলেক্ট করুন।", "Please select at least a PDF, audio file, or exercise template.")
+                    msg("অনুগ্রহ করে অন্তত টেক্সট, PDF, অডিও বা অনুশীলনী টেমপ্লেট দিন।", "Please provide chapter text, PDF, audio, or an exercise template.")
                 )
             )
         }
@@ -1848,12 +1852,18 @@ class SparcRepository(
             parseRes.getOrNull()
         } else null
 
-        if (!supabaseClient.hasAuthenticatedUser && (pdfBytes != null || audioBytes != null)) {
+        val parsedSub = if (subtitleRaw.isNotBlank()) {
+            val subRes = runCatching { org.sparc.studycircle.core.domain.WordSyncEngine.parseSubtitleToWordTimestamps(subtitleRaw) }
+            if (subRes.isFailure) return Result.failure(subRes.exceptionOrNull()!!)
+            subRes.getOrNull()
+        } else null
+
+        if (!supabaseClient.hasAuthenticatedUser && (pdfBytes != null || audioBytes != null || hasDirectText)) {
             return Result.failure(
                 IllegalStateException(
                     msg(
-                        "সার্ভারে ফাইল আপলোড করতে আগে নিজের ইমেইল দিয়ে লগইন/সাইন-আপ করুন।",
-                        "Please sign in with your email account to upload files to the Server."
+                        "সার্ভারে বই/টেক্সট আপলোড করতে আগে নিজের ইমেইল দিয়ে লগইন/সাইন-আপ করুন।",
+                        "Please sign in with your email account to publish to the Server."
                     )
                 )
             )
@@ -1917,6 +1927,28 @@ class SparcRepository(
                 book.id
             }
 
+            if (hasDirectText && resolvedBookId.isNotBlank()) {
+                val finalText = parsedSub?.first?.takeIf { it.isNotBlank() } ?: directTextContent.trim()
+                val estDurationMs = parsedSub?.second?.lastOrNull()?.e
+                    ?: (finalText.split(Regex("\\s+")).count { it.isNotBlank() } * 420L).coerceAtLeast(15_000L)
+                val finalCues = parsedSub?.second
+                    ?: org.sparc.studycircle.core.domain.WordSyncEngine.buildAutoWordTimeline(finalText, estDurationMs)
+                val effectiveMode = when {
+                    contentMode in listOf("text", "pdf", "hybrid") -> contentMode
+                    uploadedPdfUrl != null -> "hybrid"
+                    else -> "text"
+                }
+                supabaseClient.upsertChapterTextAndSyncRemote(
+                    bookId = resolvedBookId,
+                    chapterNo = chapterNo.coerceAtLeast(1),
+                    contentMode = effectiveMode,
+                    fullTextContent = finalText,
+                    audioUrl = uploadedAudioUrl,
+                    audioDurationSeconds = (estDurationMs / 1000L).toInt().coerceAtLeast(10),
+                    wordTimestamps = finalCues
+                ).getOrThrow()
+            }
+
             if (parsedTemplate != null && resolvedBookId.isNotBlank()) {
                 val adjusted = parsedTemplate.copy(chapterNo = chapterNo.coerceAtLeast(parsedTemplate.chapterNo))
                 supabaseClient.importExerciseTemplateRemote(
@@ -1930,12 +1962,92 @@ class SparcRepository(
             _state.update { s ->
                 s.copy(
                     statusBannerMessage = if (s.appLanguage == "en") {
-                        "✓ PDF/Audio & Exercise Template uploaded to Server & synced!"
+                        "✓ Book text, word-timestamps & media synced to Server!"
                     } else {
-                        "✓ PDF / অডিও এবং অনুশীলনী টেমপ্লেট সার্ভারে আপলোড ও সিঙ্ক হয়েছে!"
+                        "✓ বইয়ের টেক্সট, শব্দে-শব্দে টাইমস্ট্যাম্প ও মিডিয়া সার্ভারে আপলোড হয়েছে!"
                     }
                 )
             }
+        }
+    }
+
+    fun saveChapterDirectText(
+        bookId: String,
+        chapterNo: Int,
+        chapterTitle: String,
+        contentMode: String = "text",
+        fullTextContent: String,
+        subtitleRaw: String = ""
+    ) {
+        val safeCh = chapterNo.coerceAtLeast(1)
+        val parsedSub = if (subtitleRaw.isNotBlank()) {
+            runCatching { org.sparc.studycircle.core.domain.WordSyncEngine.parseSubtitleToWordTimestamps(subtitleRaw) }.getOrNull()
+        } else null
+        val finalText = parsedSub?.first?.takeIf { it.isNotBlank() } ?: fullTextContent.trim()
+        val estDurMs = parsedSub?.second?.lastOrNull()?.e
+            ?: (finalText.split(Regex("\\s+")).count { it.isNotBlank() } * 420L).coerceAtLeast(15_000L)
+        val finalCues = parsedSub?.second
+            ?: org.sparc.studycircle.core.domain.WordSyncEngine.buildAutoWordTimeline(finalText, estDurMs)
+
+        _state.update { s ->
+            val updatedBooks = s.books.map { b ->
+                if (b.id != bookId) b else {
+                    val existing = b.chapters.find { it.chapterNo == safeCh }
+                    val nextCh = if (existing != null) {
+                        existing.copy(
+                            title = chapterTitle.ifBlank { existing.title },
+                            contentMode = contentMode,
+                            fullTextContent = finalText,
+                            wordTimestamps = finalCues
+                        )
+                    } else {
+                        ChapterItem(
+                            id = UUID.randomUUID().toString(),
+                            bookId = b.id,
+                            chapterNo = safeCh,
+                            title = chapterTitle.ifBlank { "অধ্যায় $safeCh" },
+                            type = ChapterType.STANDARD,
+                            totalPages = (finalText.split(Regex("\\s+")).size / 250).coerceAtLeast(1),
+                            defaultReadingMinutes = 15,
+                            audioSummaryTitle = "বাংলা অডিও সামারি (অধ্যায় $safeCh)",
+                            audioDurationMinutes = (estDurMs / 60_000L).toInt().coerceAtLeast(1),
+                            flashNotes = listOf("অডিওর সাথে মিলিয়ে মূল যুক্তি চিহ্নিত করুন"),
+                            sections = emptyList(),
+                            learningOutcomes = listOf("পাঠের মূল ধারণা বিশ্লেষণ"),
+                            questions = emptyList(),
+                            writingTaskPrompt = "এই অধ্যায়ের আলোকে ৪০০–৬০০ শব্দে আপনার বিশ্লেষণ লিখুন।",
+                            contentMode = contentMode,
+                            fullTextContent = finalText,
+                            wordTimestamps = finalCues
+                        )
+                    }
+                    b.copy(
+                        totalChapters = maxOf(b.totalChapters, safeCh),
+                        chapters = (b.chapters.filter { it.chapterNo != safeCh } + nextCh).sortedBy { it.chapterNo }
+                    )
+                }
+            }
+            s.copy(
+                books = updatedBooks,
+                statusBannerMessage = if (s.appLanguage == "en") {
+                    "✓ Chapter $safeCh Read-Along text (${finalCues.size} synced words) saved!"
+                } else {
+                    "✓ অধ্যায় $safeCh-এর Read-Along টেক্সট (${finalCues.size}টি শব্দের টাইমস্ট্যাম্পসহ) সংরক্ষিত হয়েছে!"
+                }
+            )
+        }
+
+        launchRemoteSync {
+            supabaseClient.upsertChapterTextAndSyncRemote(
+                bookId = bookId,
+                chapterNo = safeCh,
+                title = chapterTitle.ifBlank { null },
+                contentMode = contentMode,
+                fullTextContent = finalText,
+                audioDurationSeconds = (estDurMs / 1000L).toInt().coerceAtLeast(10),
+                wordTimestamps = finalCues
+            ).getOrThrow()
+            syncFromSupabaseNow(silent = true)
         }
     }
 

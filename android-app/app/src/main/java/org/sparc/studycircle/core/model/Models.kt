@@ -295,6 +295,14 @@ data class ChapterSection(
 )
 
 @Serializable
+data class WordTimestampCue(
+    val w: String,
+    val s: Long,
+    val e: Long,
+    val p: Int = 0
+)
+
+@Serializable
 data class ChapterItem(
     val id: String,
     val bookId: String,
@@ -312,7 +320,10 @@ data class ChapterItem(
     val questions: List<AssessmentQuestion>,
     val writingTaskPrompt: String,
     val minWords: Int = 500,
-    val maxWords: Int = 700
+    val maxWords: Int = 700,
+    val contentMode: String = "pdf",
+    val fullTextContent: String = "",
+    val wordTimestamps: List<WordTimestampCue> = emptyList()
 )
 
 @Serializable

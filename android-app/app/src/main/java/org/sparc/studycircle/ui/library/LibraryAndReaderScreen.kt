@@ -381,6 +381,17 @@ private fun AcademicLibraryCatalogView(
                                     )
                                 }
                             }
+                            if (book.chapters.any { it.fullTextContent.isNotBlank() || it.contentMode == "text" || it.contentMode == "hybrid" }) {
+                                Surface(shape = RoundedCornerShape(8.dp), color = p.primarySoft) {
+                                    Text(
+                                        text = tr("📝 টেক্সট সিঙ্ক", "📝 Read-Along"),
+                                        color = p.primarySoftText,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
                         }
 
                         Text(book.title, style = MaterialTheme.typography.titleMedium, color = p.text)
@@ -621,32 +632,83 @@ private fun SmartPaperReaderView(
             }
         }
 
-        // 1. Real Native Android PdfRenderer Viewer + Auto Cloud Supabase Storage PDF Download!
+        // 1. Read-Along Synchronized Text Reader + Optional PDF Switcher
         item {
-            NativePdfBookViewerCard(
-                bookTitle = book.title,
-                cloudPdfUrl = book.pdfUrl,
-                onDownloadCloudPdf = { url, targetFile -> repository.downloadCloudPdf(url, targetFile) },
-                onQuickHighlightPage = { pageNo ->
-                    repository.addHighlightAndLogReading(
-                        bookId = book.id,
-                        chapterNo = chapter.chapterNo,
-                        pageNo = pageNo,
-                        selectedText = "PDF Page $pageNo — $activeQuote",
-                        note = "Saved from PDF Reader",
-                        isUnderline = false,
-                        visibility = selectedPrivacy
+            val prefersTextDefault = chapter.fullTextContent.isNotBlank() || chapter.contentMode == "text" || chapter.contentMode == "hybrid"
+            var readerModeIdx by remember(chapter.id, prefersTextDefault) {
+                mutableIntStateOf(if (prefersTextDefault) 0 else 1)
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SparcSegmentedPills(
+                    options = listOf(
+                        tr("🎧 Read-Along টেক্সট ও টাইমস্ট্যাম্প", "🎧 Read-Along Text"),
+                        tr("📄 মূল PDF ভিউয়ার", "📄 PDF Viewer")
+                    ),
+                    selectedIndex = readerModeIdx,
+                    onSelect = { readerModeIdx = it }
+                )
+
+                if (readerModeIdx == 0) {
+                    SynchronizedTextReaderCard(
+                        bookTitle = book.title,
+                        chapter = chapter,
+                        audioController = audioController,
+                        paperTheme = ui.readerPaperTheme,
+                        fontSizeSp = ui.readerFontSizeSp,
+                        lineSpacingMultiplier = ui.readerLineSpacingMultiplier,
+                        onSaveHighlight = { paraNo, snippet ->
+                            repository.addHighlightAndLogReading(
+                                bookId = book.id,
+                                chapterNo = chapter.chapterNo,
+                                pageNo = paraNo,
+                                selectedText = snippet,
+                                note = "Read-Along Paragraph $paraNo",
+                                isUnderline = false,
+                                visibility = selectedPrivacy
+                            )
+                        },
+                        onSaveEditedText = { chTitle, cMode, fullTxt, subRaw ->
+                            repository.saveChapterDirectText(
+                                bookId = book.id,
+                                chapterNo = chapter.chapterNo,
+                                chapterTitle = chTitle,
+                                contentMode = cMode,
+                                fullTextContent = fullTxt,
+                                subtitleRaw = subRaw
+                            )
+                        }
+                    )
+                } else {
+                    NativePdfBookViewerCard(
+                        bookTitle = book.title,
+                        cloudPdfUrl = book.pdfUrl,
+                        onDownloadCloudPdf = { url, targetFile -> repository.downloadCloudPdf(url, targetFile) },
+                        onQuickHighlightPage = { pageNo ->
+                            repository.addHighlightAndLogReading(
+                                bookId = book.id,
+                                chapterNo = chapter.chapterNo,
+                                pageNo = pageNo,
+                                selectedText = "PDF Page $pageNo — $activeQuote",
+                                note = "Saved from PDF Reader",
+                                isUnderline = false,
+                                visibility = selectedPrivacy
+                            )
+                        }
                     )
                 }
-            )
+            }
         }
 
-        // 2. Real Media3 ExoPlayer Audio Summary Player
+        // 2. Real Media3 ExoPlayer Audio Summary Waveform Scrubbing Bar
         item {
-            val audioTitle = if (audioController.isStreamingCloudAudio) {
-                tr("☁️ ক্লাউড বাংলা অডিও সামারি (Live MP3)", "☁️ Cloud Audio Summary (Live MP3)")
-            } else {
-                tr("বাংলা অডিও সামারি (ExoPlayer)", "Chapter Audio Summary (ExoPlayer)")
+            val audioTitle = when {
+                audioController.isTtsSpeaking ->
+                    tr("🗣️ বাংলা/ইংরেজি অডিও রিডার (লাইভ ওয়ার্ড সিঙ্ক)", "🗣️ Live Voice Read-Along")
+                audioController.isStreamingCloudAudio ->
+                    tr("☁️ ক্লাউড বাংলা অডিও সামারি (Live MP3)", "☁️ Cloud Audio Summary (Live MP3)")
+                else ->
+                    tr("বাংলা অডিও সামারি (ExoPlayer)", "Chapter Audio Summary (ExoPlayer)")
             }
             SparcAudioWaveformBar(
                 title = audioTitle,
@@ -1250,33 +1312,137 @@ private fun CloudMediaUploadBottomSheet(
                 }
             }
 
-            // File Pickers: PDF (`sparc-books`) + MP3/Audio (`sparc-audio`)
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = p.cardAlt,
-                border = BorderStroke(1.dp, if (pickedPdfUri != null) p.primary else p.border),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(enabled = !isUploading) { pdfLauncher.launch(arrayOf("application/pdf")) }
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = p.primary)
-                    Column(modifier = Modifier.weight(1f)) {
+            var directChapterText by remember { mutableStateOf("") }
+            var directSubtitleRaw by remember { mutableStateOf("") }
+            var selectedContentMode by remember { mutableStateOf("text") }
+            val directTextLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.OpenDocument()
+            ) { uri: Uri? ->
+                if (uri != null) {
+                    scope.launch {
+                        val txt = withContext(Dispatchers.IO) {
+                            runCatching {
+                                context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.readText()
+                            }.getOrNull()
+                        }
+                        if (!txt.isNullOrBlank()) {
+                            if (txt.contains("-->") || txt.trimStart().startsWith("[")) {
+                                directSubtitleRaw = txt
+                            } else {
+                                directChapterText = txt
+                            }
+                            errorMsg = null
+                        }
+                    }
+                }
+            }
+
+            // Content Mode Selector: Direct Text vs PDF vs Hybrid
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(
+                    "text" to tr("📝 সরাসরি টেক্সট", "📝 Direct Text"),
+                    "pdf" to tr("📄 শুধু PDF", "📄 PDF Only"),
+                    "hybrid" to tr("📚 টেক্সট + PDF", "📚 Hybrid")
+                ).forEach { (mCode, mLabel) ->
+                    val isSel = selectedContentMode == mCode
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (isSel) p.primary else p.cardAlt,
+                        border = BorderStroke(1.dp, if (isSel) p.primary else p.border),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { selectedContentMode = mCode }
+                    ) {
                         Text(
-                            text = pickedPdfLabel ?: tr("ফোন থেকে বই বা প্রবন্ধের PDF ফাইল সিলেক্ট করুন", "Select Book or Paper PDF File from Phone"),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            color = p.text
-                        )
-                        Text(
-                            text = tr("Bucket: sparc-books • সব সদস্যের রিডারে সরাসরি ওপেন হবে", "Bucket: sparc-books • Auto-loads in Smart PDF Reader"),
+                            mLabel,
+                            color = if (isSel) Color.White else p.text,
                             fontSize = 11.sp,
-                            color = p.muted
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                         )
+                    }
+                }
+            }
+
+            if (selectedContentMode == "text" || selectedContentMode == "hybrid") {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = p.cardAlt,
+                    border = BorderStroke(1.dp, if (directChapterText.isNotBlank() || directSubtitleRaw.isNotBlank()) p.primary else p.border),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                tr("📝 অধ্যায়ের মূল টেক্সট (শব্দে-শব্দে অডিও সিঙ্ক)", "📝 Direct Chapter Text (Word-Synced)"),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.5.sp,
+                                color = p.text
+                            )
+                            Text(
+                                text = tr("📂 .txt/.srt দিন", "📂 Pick .txt/.srt"),
+                                color = p.primary,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable {
+                                    directTextLauncher.launch(arrayOf("text/*", "application/json", "*/*"))
+                                }
+                            )
+                        }
+                        OutlinedTextField(
+                            value = directChapterText,
+                            onValueChange = { directChapterText = it },
+                            placeholder = { Text(tr("PDF ছাড়াই সরাসরি অধ্যায়ের বাংলা/ইংরেজি পাঠ্য পেস্ট করুন...", "Paste full chapter text directly without PDF..."), fontSize = 11.5.sp) },
+                            minLines = 4,
+                            maxLines = 7,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (directSubtitleRaw.isNotBlank()) {
+                            Text(
+                                tr("✓ .srt / .vtt টাইমস্ট্যাম্প যুক্ত হয়েছে!", "✓ .srt / .vtt word timestamps attached!"),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = p.primary
+                            )
+                        }
+                    }
+                }
+            }
+
+            // File Pickers: PDF (`sparc-books`) + MP3/Audio (`sparc-audio`)
+            if (selectedContentMode == "pdf" || selectedContentMode == "hybrid") {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = p.cardAlt,
+                    border = BorderStroke(1.dp, if (pickedPdfUri != null) p.primary else p.border),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !isUploading) { pdfLauncher.launch(arrayOf("application/pdf")) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = p.primary)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = pickedPdfLabel ?: tr("ফোন থেকে বই বা প্রবন্ধের PDF ফাইল সিলেক্ট করুন", "Select Book or Paper PDF File from Phone"),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = p.text
+                            )
+                            Text(
+                                text = tr("Bucket: sparc-books • সব সদস্যের রিডারে সরাসরি ওপেন হবে", "Bucket: sparc-books • Auto-loads in Smart PDF Reader"),
+                                fontSize = 11.sp,
+                                color = p.muted
+                            )
+                        }
                     }
                 }
             }
@@ -1297,13 +1463,13 @@ private fun CloudMediaUploadBottomSheet(
                     Icon(Icons.Default.AudioFile, contentDescription = null, tint = p.accent)
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = pickedAudioLabel ?: tr("বাংলা অডিও সামারি (MP3/M4A — ঐচ্ছিক)", "Bangla Audio Summary (MP3/M4A — Optional)"),
+                            text = pickedAudioLabel ?: tr("বাংলা অডিও ফাইল (MP3/M4A — শব্দে-শব্দে সিঙ্কের জন্য, ঐচ্ছিক)", "Audio File (MP3/M4A — Optional for Word Sync)"),
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
                             color = p.text
                         )
                         Text(
-                            text = tr("Bucket: sparc-audio • ExoPlayer-এ লাইভ স্ট্রিম হবে", "Bucket: sparc-audio • Streams live in ExoPlayer"),
+                            text = tr("অডিও না দিলেও বিল্ট-ইন ভয়েস রিডার দিয়ে শব্দে-শব্দে চলবে!", "Works with built-in Voice Reader even without MP3!"),
                             fontSize = 11.sp,
                             color = p.muted
                         )
@@ -1375,7 +1541,7 @@ private fun CloudMediaUploadBottomSheet(
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.5.dp, color = p.primary)
                     Text(
-                        tr("ক্লাউডে PDF ও অনুশীলনী আপলোড হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন", "Uploading PDF & Exercise Template... please wait"),
+                        tr("সার্ভারে বইয়ের টেক্সট, টাইমস্ট্যাম্প ও মিডিয়া আপলোড হচ্ছে...", "Syncing text, word-timestamps & media to Server..."),
                         fontSize = 12.sp,
                         color = p.primary,
                         fontWeight = FontWeight.Bold
@@ -1418,7 +1584,10 @@ private fun CloudMediaUploadBottomSheet(
                             audioFileName = pickedAudioLabel,
                             sourceAttribution = sourceAttribution,
                             permissionDeclared = permissionChecked,
-                            exerciseTemplateRaw = inlineTemplateRaw.takeIf { it.isNotBlank() }
+                            exerciseTemplateRaw = inlineTemplateRaw.takeIf { it.isNotBlank() },
+                            directTextContent = directChapterText,
+                            contentMode = selectedContentMode,
+                            subtitleRaw = directSubtitleRaw
                         )
                         isUploading = false
                         res.onSuccess { onDismiss() }

@@ -682,5 +682,61 @@ class SparcDomainEngineTest {
         assertTrue(repo.deleteMyAccount().isSuccess)
         assertFalse(repo.state.value.isAuthenticated)
     }
+
+    @Test
+    fun `v4_1 read-along engine builds monotonic word timestamps, parses SRT subtitles, and saves direct text chapters`() {
+        val sampleText = """গবেষণা শুরু হয় কৌতূহল থেকে। সমাজকে বোঝার জন্য প্রশ্ন করা জরুরি।
+
+দ্বিতীয় অনুচ্ছেদে আমরা তথ্য সংগ্রহ ও বিশ্লেষণ শিখব।"""
+
+        val autoCues = WordSyncEngine.buildAutoWordTimeline(sampleText, totalDurationMs = 20_000L)
+        assertEquals(19, autoCues.size)
+        assertEquals(0, autoCues.first().p)
+        assertEquals(1, autoCues.last().p)
+        assertEquals(0L, autoCues.first().s)
+        assertEquals(20_000L, autoCues.last().e)
+        for (i in 1 until autoCues.size) {
+            assertTrue(autoCues[i].s >= autoCues[i - 1].s)
+            assertTrue(autoCues[i].e > autoCues[i].s)
+        }
+
+        val midCue = autoCues[7]
+        val foundIdx = WordSyncEngine.findActiveWordIndex(autoCues, (midCue.s + midCue.e) / 2)
+        assertEquals(7, foundIdx)
+        assertEquals("01:05", WordSyncEngine.formatTimestampMs(65_400L))
+
+        val srt = """
+1
+00:00:01,000 --> 00:00:04,000
+বই পড়তে পড়তে লেখা শেখা।
+
+2
+00:00:04,500 --> 00:00:08,500
+যৌথ পাঠচক্রে গবেষণা অনুশীলন।
+""".trimIndent()
+        val (parsedText, srtCues) = WordSyncEngine.parseSubtitleToWordTimestamps(srt)
+        assertTrue(parsedText.contains("বই পড়তে পড়তে লেখা শেখা।"))
+        assertEquals(9, srtCues.size)
+        assertEquals(1_000L, srtCues.first().s)
+        assertEquals(8_500L, srtCues.last().e)
+
+        // Verify SparcRepository.saveChapterDirectText
+        val repo = org.sparc.studycircle.core.data.SparcRepository(
+            supabaseClient = org.sparc.studycircle.core.data.SupabaseRestClient("", ""),
+            useSeedFixtures = true
+        )
+        val bookId = repo.state.value.books.first().id
+        repo.saveChapterDirectText(
+            bookId = bookId,
+            chapterNo = 1,
+            chapterTitle = "অধ্যায় ১: সরাসরি পাঠ",
+            contentMode = "text",
+            fullTextContent = sampleText
+        )
+        val ch1 = repo.state.value.books.first { it.id == bookId }.chapters.first { it.chapterNo == 1 }
+        assertEquals("text", ch1.contentMode)
+        assertEquals(19, ch1.wordTimestamps.size)
+    }
 }
+
 

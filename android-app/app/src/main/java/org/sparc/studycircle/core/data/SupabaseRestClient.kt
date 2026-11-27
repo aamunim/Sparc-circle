@@ -440,6 +440,19 @@ class SupabaseRestClient(
                 val outcomes = o["learning_outcomes"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
                 val liveFlashNotes = o["flash_notes"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }
                     ?.takeIf { it.isNotEmpty() } ?: fallbackCh1Flash
+                val parsedWordCues = runCatching {
+                    o["word_timestamps"]?.jsonArray?.mapNotNull { cEl ->
+                        val co = cEl.jsonObject
+                        val w = co["w"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                        val s = co["s"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
+                        val e = co["e"]?.jsonPrimitive?.longOrNull ?: (s + 250L)
+                        val pIdx = co["p"]?.jsonPrimitive?.intOrNull ?: 0
+                        WordTimestampCue(w = w, s = s, e = e, p = pIdx)
+                    }
+                }.getOrNull() ?: emptyList()
+                val rawFullText = o["full_text_content"]?.jsonPrimitive?.contentOrNull ?: ""
+                val rawContentMode = o["content_mode"]?.jsonPrimitive?.contentOrNull
+                    ?: if (rawFullText.isNotBlank()) "text" else "pdf"
 
                 bId to ChapterItem(
                     id = chId,
@@ -458,7 +471,10 @@ class SupabaseRestClient(
                     questions = questionsByChapterId[chId].orEmpty(),
                     writingTaskPrompt = o["writing_task_prompt"]?.jsonPrimitive?.contentOrNull ?: "",
                     minWords = o["writing_min_words"]?.jsonPrimitive?.intOrNull ?: 500,
-                    maxWords = o["writing_max_words"]?.jsonPrimitive?.intOrNull ?: 700
+                    maxWords = o["writing_max_words"]?.jsonPrimitive?.intOrNull ?: 700,
+                    contentMode = rawContentMode,
+                    fullTextContent = rawFullText,
+                    wordTimestamps = parsedWordCues
                 )
             }.groupBy({ it.first }, { it.second })
 
@@ -1929,6 +1945,51 @@ Target Word Range: $minWords-$maxWords words (Current: $wordCount words)."""
                 }
             ).jsonObject
             obj["certificate_code"]?.jsonPrimitive?.contentOrNull ?: ""
+        }
+    }
+
+    suspend fun upsertChapterTextAndSyncRemote(
+        bookId: String,
+        chapterNo: Int,
+        title: String? = null,
+        contentMode: String = "text",
+        fullTextContent: String,
+        audioUrl: String? = null,
+        audioDurationSeconds: Int? = null,
+        wordTimestamps: List<WordTimestampCue> = emptyList()
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser && isUuid(bookId))
+            postRpc(
+                "upsert_chapter_text_and_sync_rpc",
+                buildJsonObject {
+                    put("p_book_id", bookId)
+                    put("p_chapter_no", chapterNo.coerceAtLeast(1))
+                    if (!title.isNullOrBlank()) put("p_title", title.trim())
+                    put("p_content_mode", contentMode)
+                    put("p_full_text_content", fullTextContent)
+                    if (!audioUrl.isNullOrBlank()) put("p_audio_url", audioUrl)
+                    if (audioDurationSeconds != null && audioDurationSeconds > 0) {
+                        put("p_audio_duration_seconds", audioDurationSeconds)
+                    }
+                    put(
+                        "p_word_timestamps",
+                        buildJsonArray {
+                            wordTimestamps.forEach { c ->
+                                add(
+                                    buildJsonObject {
+                                        put("w", c.w)
+                                        put("s", c.s)
+                                        put("e", c.e)
+                                        put("p", c.p)
+                                    }
+                                )
+                            }
+                        }
+                    )
+                }
+            )
+            Unit
         }
     }
 }
