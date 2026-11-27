@@ -12,8 +12,10 @@ import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.util.LruCache
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -94,6 +96,7 @@ import org.sparc.studycircle.core.model.*
 import org.sparc.studycircle.core.theme.LocalSparcPalette
 import org.sparc.studycircle.core.theme.SparcCrimson
 import org.sparc.studycircle.core.theme.tr
+import org.sparc.studycircle.ui.LocalSparcFullScreenOverlay
 import org.sparc.studycircle.ui.components.SparcScholarlyCard
 import java.io.File
 import java.io.FileOutputStream
@@ -565,9 +568,10 @@ fun NativePdfBookViewerCard(
     }
 
     // ========================================================================
-    // ALL-IN-ONE FULL-SCREEN IMMERSIVE SMART PDF STUDIO (Mockups 1 + 2 + 3 + 4)
+    // ALL-IN-ONE FULL-SCREEN IMMERSIVE SMART PDF STUDIO (Mounted in MainActivity Root Window!)
     // ========================================================================
-    if (showFullScreenReader) {
+    val setFullScreenOverlay = LocalSparcFullScreenOverlay.current
+    val latestOverlayContent = rememberUpdatedState<@Composable () -> Unit> {
         FullScreenSmartPdfDialog(
             bookId = bookId,
             bookTitle = customPdfName ?: bookTitle,
@@ -597,6 +601,17 @@ fun NativePdfBookViewerCard(
             onDismiss = { showFullScreenReader = false }
         )
     }
+
+    DisposableEffect(showFullScreenReader) {
+        if (showFullScreenReader) {
+            setFullScreenOverlay { latestOverlayContent.value() }
+        } else {
+            setFullScreenOverlay(null)
+        }
+        onDispose {
+            setFullScreenOverlay(null)
+        }
+    }
 }
 
 @Composable
@@ -624,6 +639,8 @@ private fun FullScreenSmartPdfDialog(
     onAddPageAnnotation: (Int, String, String, HighlightVisibility) -> Unit,
     onDismiss: () -> Unit
 ) {
+    BackHandler(onBack = onDismiss)
+
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val safeTotal = totalPageCount.coerceAtLeast(1)
@@ -678,27 +695,15 @@ private fun FullScreenSmartPdfDialog(
     val bgContainer = if (paperTheme == ReaderPaperTheme.AMOLED_NIGHT) Color(0xFF070B14) else Color(paperTheme.bgHex)
     val isOfflineReady = cachedCloudFile != null || customUri != null
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = true
-        )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bgContainer)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {}
     ) {
-        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
-        SideEffect {
-            dialogWindow?.setLayout(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(bgContainer)
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-        ) {
             // ================================================================
             // MAIN PDF READING CANVAS (Horizontal Swipe OR Continuous Vertical)
             // ================================================================
@@ -789,17 +794,16 @@ private fun FullScreenSmartPdfDialog(
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Surface(
-                        color = Color(0xFF0F172A).copy(alpha = 0.90f),
+                        color = Color(0xFF0F172A).copy(alpha = 0.94f),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .statusBarsPadding()
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
@@ -1344,7 +1348,6 @@ private fun FullScreenSmartPdfDialog(
                     onDismiss = { showNavigatorSheet = false }
                 )
             }
-        }
     }
 }
 
@@ -2007,7 +2010,7 @@ private suspend fun renderPdfPageCached(
     val docKey = customUri?.toString()
         ?: cachedCloudFile?.absolutePath
         ?: "sample_cpar_pdf"
-    val cacheKey = "$docKey|p=$requestedPage|trim=$trimMargins|thumb=$isThumbnail"
+    val cacheKey = "v2|$docKey|p=$requestedPage|trim=$trimMargins|thumb=$isThumbnail"
     val countKey = "$docKey|count"
 
     PdfRenderMutex.withLock {
@@ -2072,17 +2075,17 @@ private fun trimPdfWhitespace(src: Bitmap): Bitmap {
     var maxX = 0
     var minY = h
     var maxY = 0
-    val step = 6
+    val step = 2
 
-    var y = 8
-    while (y < h - 8) {
-        var x = 8
-        while (x < w - 8) {
+    var y = 6
+    while (y < h - 6) {
+        var x = 6
+        while (x < w - 6) {
             val px = src.getPixel(x, y)
             val r = (px shr 16) and 0xFF
             val g = (px shr 8) and 0xFF
             val b = px and 0xFF
-            if (r < 242 || g < 242 || b < 242) {
+            if (r < 244 || g < 244 || b < 244) {
                 if (x < minX) minX = x
                 if (x > maxX) maxX = x
                 if (y < minY) minY = y
@@ -2095,10 +2098,10 @@ private fun trimPdfWhitespace(src: Bitmap): Bitmap {
 
     if (maxX <= minX + 80 || maxY <= minY + 80) return src
 
-    val padX = (w * 0.025f).roundToInt()
-    val padY = (h * 0.022f).roundToInt()
-    val maxCropX = (w * 0.22f).roundToInt()
-    val maxCropY = (h * 0.20f).roundToInt()
+    val padX = (w * 0.045f).roundToInt()
+    val padY = (h * 0.025f).roundToInt()
+    val maxCropX = (w * 0.16f).roundToInt()
+    val maxCropY = (h * 0.18f).roundToInt()
 
     val left = (minX - padX).coerceIn(0, maxCropX)
     val top = (minY - padY).coerceIn(0, maxCropY)

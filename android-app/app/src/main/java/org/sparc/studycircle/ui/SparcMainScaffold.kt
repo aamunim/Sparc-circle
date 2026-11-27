@@ -44,6 +44,8 @@ import org.sparc.studycircle.ui.onboarding.OnboardingAndDirectoryScreen
 import org.sparc.studycircle.ui.research.ResearchAndWalletScreen
 import org.sparc.studycircle.ui.settings.SparcSettingsScreen
 
+val LocalSparcFullScreenOverlay = compositionLocalOf<((@Composable () -> Unit)?) -> Unit> { {} }
+
 enum class MainTab(val titleBn: String, val titleEn: String, val icon: ImageVector) {
     DIRECTORY("ডিরেক্টরি", "Directory", Icons.Default.People),
     LIBRARY("লাইব্রেরি", "Library", Icons.AutoMirrored.Filled.MenuBook),
@@ -69,6 +71,7 @@ fun SparcMainScaffold(repository: SparcRepository) {
     var libraryInitialSubTab by remember { mutableIntStateOf(0) }
     var directoryInitialSubTab by remember { mutableIntStateOf(0) }
     var showSettingsPage by remember { mutableStateOf(false) }
+    var fullScreenOverlay by remember { mutableStateOf<(@Composable () -> Unit)?>(null) }
     var announcementDismissedLocally by remember { mutableStateOf(false) }
 
     // Continuous Live Multi-User Supabase Sync (every 12s while authenticated)
@@ -81,6 +84,7 @@ fun SparcMainScaffold(repository: SparcRepository) {
         }
     }
 
+    CompositionLocalProvider(LocalSparcFullScreenOverlay provides { fullScreenOverlay = it }) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -434,5 +438,12 @@ fun SparcMainScaffold(repository: SparcRepository) {
                 currentTab = MainTab.DIRECTORY
             }
         )
+    }
+
+    fullScreenOverlay?.let { overlayContent ->
+        Box(modifier = Modifier.fillMaxSize()) {
+            overlayContent()
+        }
+    }
     }
 }
