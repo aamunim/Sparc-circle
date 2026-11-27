@@ -91,6 +91,15 @@ data class AppCustomizationConfig(
 )
 
 @Serializable
+data class PdfBookmarkItem(
+    val id: String,
+    val bookId: String,
+    val pageNo: Int,
+    val label: String,
+    val createdAtLabel: String = ""
+)
+
+@Serializable
 data class UserUiCustomization(
     val accentPreset: SparcAccentPreset? = null,
     val readerFontSizeSp: Int = 16,
@@ -101,7 +110,11 @@ data class UserUiCustomization(
     val showHomeStatsRow: Boolean = true,
     val showHomePokeCard: Boolean = true,
     val launcherIconPreset: LauncherIconPreset = LauncherIconPreset.CLASSIC,
-    val quietHoursEnabled: Boolean = true
+    val quietHoursEnabled: Boolean = true,
+    val pdfScrollVertical: Boolean = false,
+    val pdfTrimMargins: Boolean = true,
+    val lastPdfPageByBookId: Map<String, Int> = emptyMap(),
+    val pdfBookmarks: List<PdfBookmarkItem> = emptyList()
 )
 
 @Serializable

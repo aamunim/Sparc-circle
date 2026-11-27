@@ -680,9 +680,89 @@ private fun SmartPaperReaderView(
                         }
                     )
                 } else {
+                    val savedLastPage = ui.lastPdfPageByBookId[book.id] ?: 1
+                    val bookHighlights = remember(state.highlights, book.id) {
+                        state.highlights.filter { it.bookId == book.id }
+                    }
                     NativePdfBookViewerCard(
+                        bookId = book.id,
                         bookTitle = book.title,
+                        bookAuthor = book.author,
+                        chapters = book.chapters,
                         cloudPdfUrl = book.pdfUrl,
+                        paperTheme = ui.readerPaperTheme,
+                        trimMargins = ui.pdfTrimMargins,
+                        scrollVertical = ui.pdfScrollVertical,
+                        initialSavedPage = savedLastPage,
+                        bookmarks = ui.pdfBookmarks,
+                        bookHighlights = bookHighlights,
+                        audioController = audioController,
+                        onChangePaperTheme = { chosen ->
+                            repository.updateUiCustomization(ui.copy(readerPaperTheme = chosen), null, null)
+                        },
+                        onToggleTrimMargins = { enabled ->
+                            repository.updateUiCustomization(
+                                ui.copy(pdfTrimMargins = enabled),
+                                if (enabled) "✂️ অটো মার্জিন ট্রিম চালু (+৩৫% বড় লেখা)" else "মার্জিন ট্রিম বন্ধ করা হয়েছে",
+                                if (enabled) "✂️ Smart Margin Trim enabled (+35% larger text)" else "Margin trim disabled"
+                            )
+                        },
+                        onToggleScrollVertical = { vertical ->
+                            repository.updateUiCustomization(
+                                ui.copy(pdfScrollVertical = vertical),
+                                if (vertical) "↕ উপর-নিচ একটানা স্ক্রল মোড চালু" else "↔ ডানে-বামে সোয়াইপ মোড চালু",
+                                if (vertical) "↕ Continuous vertical scroll enabled" else "↔ Horizontal swipe mode enabled"
+                            )
+                        },
+                        onSaveLastPage = { pNo ->
+                            if (ui.lastPdfPageByBookId[book.id] != pNo) {
+                                repository.updateUiCustomization(
+                                    ui.copy(lastPdfPageByBookId = ui.lastPdfPageByBookId + (book.id to pNo)),
+                                    null,
+                                    null
+                                )
+                            }
+                        },
+                        onToggleBookmark = { pageNo, bmLabel ->
+                            val existing = ui.pdfBookmarks.find { it.bookId == book.id && it.pageNo == pageNo }
+                            val updated = if (existing != null) {
+                                ui.pdfBookmarks.filterNot { it.id == existing.id }
+                            } else {
+                                val dateStr = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date())
+                                listOf(
+                                    org.sparc.studycircle.core.model.PdfBookmarkItem(
+                                        id = java.util.UUID.randomUUID().toString(),
+                                        bookId = book.id,
+                                        pageNo = pageNo,
+                                        label = bmLabel,
+                                        createdAtLabel = dateStr
+                                    )
+                                ) + ui.pdfBookmarks
+                            }
+                            repository.updateUiCustomization(
+                                ui.copy(pdfBookmarks = updated),
+                                if (existing != null) "বুকমার্ক সরানো হয়েছে" else "🔖 পৃষ্ঠা $pageNo বুকমার্ক করা হয়েছে",
+                                if (existing != null) "Bookmark removed" else "🔖 Page $pageNo bookmarked"
+                            )
+                        },
+                        onRemoveBookmark = { bmId ->
+                            repository.updateUiCustomization(
+                                ui.copy(pdfBookmarks = ui.pdfBookmarks.filterNot { it.id == bmId }),
+                                null,
+                                null
+                            )
+                        },
+                        onAddPageAnnotation = { pageNo, markerLabel, noteBody, vis ->
+                            repository.addHighlightAndLogReading(
+                                bookId = book.id,
+                                chapterNo = chapter.chapterNo,
+                                pageNo = pageNo,
+                                selectedText = markerLabel,
+                                note = noteBody,
+                                isUnderline = false,
+                                visibility = vis
+                            )
+                        },
                         onDownloadCloudPdf = { url, targetFile -> repository.downloadCloudPdf(url, targetFile) },
                         onQuickHighlightPage = { pageNo ->
                             repository.addHighlightAndLogReading(
@@ -690,7 +770,7 @@ private fun SmartPaperReaderView(
                                 chapterNo = chapter.chapterNo,
                                 pageNo = pageNo,
                                 selectedText = "PDF Page $pageNo — $activeQuote",
-                                note = "Saved from PDF Reader",
+                                note = "Saved from PDF Reader (Page $pageNo)",
                                 isUnderline = false,
                                 visibility = selectedPrivacy
                             )
