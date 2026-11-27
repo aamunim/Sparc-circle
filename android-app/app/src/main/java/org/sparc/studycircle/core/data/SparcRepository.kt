@@ -407,6 +407,26 @@ class SparcRepository(
         }
     }
 
+    suspend fun changeMyPassword(newPassword: String): Result<Unit> {
+        if (newPassword.length < 6) {
+            return Result.failure(
+                IllegalArgumentException(
+                    msg("নতুন পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।", "New password must be at least 6 characters.")
+                )
+            )
+        }
+        if (supabaseClient.hasAuthenticatedUser) {
+            val res = supabaseClient.changeMyPasswordRemote(newPassword)
+            if (res.isFailure) return res
+        }
+        _state.update {
+            it.copy(
+                statusBannerMessage = msg("✓ আপনার পাসওয়ার্ড সফলভাবে পরিবর্তন হয়েছে।", "✓ Your password has been updated.")
+            )
+        }
+        return Result.success(Unit)
+    }
+
     fun logout() {
         initialSyncDone = false
         alertedKeys.clear()

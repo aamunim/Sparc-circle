@@ -909,7 +909,10 @@ class SupabaseRestClient(
         paymentInstructionsBn = o["payment_instructions_bn"]?.jsonPrimitive?.contentOrNull
             ?: "উপরের নম্বরে সেন্ড মানি / পেমেন্ট করে নিচের ঘরে প্রেরকের নম্বর ও TrxID জমা দিন।",
         paymentInstructionsEn = o["payment_instructions_en"]?.jsonPrimitive?.contentOrNull
-            ?: "Send money to the number above, then submit your sender phone number and TrxID below."
+            ?: "Send money to the number above, then submit your sender phone number and TrxID below.",
+        customJitsiServerUrl = o["custom_jitsi_server_url"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+            ?: "https://meet.jit.si",
+        aiCoachEnabled = o["ai_coach_enabled"]?.jsonPrimitive?.booleanOrNull ?: true
     )
 
     private fun parseProfile(o: JsonObject): UserProfile {
@@ -1682,57 +1685,8 @@ class SupabaseRestClient(
         runCatching {
             val words = content.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
             val wordCount = words.size
-            val userGeminiKey = vaultConfig.geminiApiKey.trim()
-            val langName = if (language == "en") "English" else "Bengali"
 
-            if (userGeminiKey.isNotBlank()) {
-                val sysText = """You are SPARC Study Circle's Academic Writing Coach.
-Do NOT rewrite the student's paper. Give constructive feedback in $langName strictly as JSON with keys:
-- grammar_feedback (string[])
-- academic_tone_score (number 0-100)
-- tone_feedback (string)
-- structure_feedback (string[])
-Chapter $chapterNo Task: $prompt
-Target Word Range: $minWords-$maxWords words (Current: $wordCount words)."""
-
-                val geminiPayload = buildJsonObject {
-                    put("contents", buildJsonArray {
-                        add(buildJsonObject {
-                            put("role", "user")
-                            put("parts", buildJsonArray {
-                                add(buildJsonObject { put("text", "$sysText\n\nStudent Draft:\n$content") })
-                            })
-                        })
-                    })
-                    put("generationConfig", buildJsonObject {
-                        put("responseMimeType", "application/json")
-                        put("temperature", 0.3)
-                    })
-                }.toString()
-
-                val directReq = Request.Builder()
-                    .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$userGeminiKey")
-                    .post(geminiPayload.toRequestBody(jsonMedia))
-                    .build()
-
-                http.newCall(directReq).execute().use { resp ->
-                    if (!resp.isSuccessful) error("Gemini API error (${resp.code})")
-                    val root = json.parseToJsonElement(resp.body?.string() ?: "{}").jsonObject
-                    val rawJson = root["candidates"]?.jsonArray?.firstOrNull()
-                        ?.jsonObject?.get("content")?.jsonObject?.get("parts")?.jsonArray?.firstOrNull()
-                        ?.jsonObject?.get("text")?.jsonPrimitive?.content ?: "{}"
-                    val parsed = json.parseToJsonElement(rawJson).jsonObject
-                    return@runCatching AiWritingFeedback(
-                        wordCount = wordCount,
-                        academicToneScore = parsed["academic_tone_score"]?.jsonPrimitive?.intOrNull ?: 85,
-                        toneFeedback = parsed["tone_feedback"]?.jsonPrimitive?.contentOrNull ?: "",
-                        grammarSuggestions = parsed["grammar_feedback"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),
-                        structureSuggestions = parsed["structure_feedback"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
-                    )
-                }
-            }
-
-            check(isConfigured) { "No Gemini key or Server URL configured" }
+            check(isConfigured) { "Server not configured" }
             val payload = buildJsonObject {
                 put("chapter_no", chapterNo)
                 put("prompt", prompt)
@@ -1906,6 +1860,31 @@ Target Word Range: $minWords-$maxWords words (Current: $wordCount words)."""
                     .post(buildJsonObject { put("email", email.trim()) }.toString().toRequestBody(jsonMedia))
                     .build()
                 http.newCall(recReq).execute().close()
+            }
+            Unit
+        }
+    }
+
+    suspend fun changeMyPasswordRemote(newPassword: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            check(hasAuthenticatedUser) { "Not signed in to live server" }
+            val payload = buildJsonObject {
+                put("action", "change_my_password")
+                put("new_password", newPassword)
+            }.toString()
+            val (code, raw) = executeAuthed { token ->
+                Request.Builder()
+                    .url("${activeSupabaseUrl.trimEnd('/')}/functions/v1/auth-register")
+                    .addHeader("apikey", activeAnonKey)
+                    .addHeader("Authorization", "Bearer $token")
+                    .post(payload.toRequestBody(jsonMedia))
+                    .build()
+            }
+            if (code !in 200..299) {
+                val errMsg = runCatching {
+                    json.parseToJsonElement(raw).jsonObject["error"]?.jsonPrimitive?.contentOrNull
+                }.getOrNull() ?: "HTTP $code"
+                error(errMsg)
             }
             Unit
         }

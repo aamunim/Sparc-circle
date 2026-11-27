@@ -2,7 +2,8 @@
 // 1. Default action: Creates an auto-confirmed user via Admin API (bypassing SMTP 2/hr HTTP 429 rate limits)
 //    and immediately returns an authenticated session token + provisioned researcher profile.
 // 2. action === "admin_reset_password": Allows an authenticated SPARC Admin (base_role = 'admin')
-//    to reset any researcher's password in 1 click without SMTP bottlenecks.
+//    to reset any researcher's password in 1 click (and optionally email via Resend if configured in admin_api_vault).
+// 3. action === "change_my_password": Allows any signed-in user to update their own password securely.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -32,7 +33,35 @@ serve(async (req: Request) => {
     const payload = await req.json();
 
     // ------------------------------------------------------------------------
-    // Admin 1-Click Password Reset
+    // Self-Service Authenticated Password Change (from redesigned Settings Page)
+    // ------------------------------------------------------------------------
+    if (payload?.action === "change_my_password") {
+      const authHeader = req.headers.get("Authorization") ?? "";
+      const jwt = authHeader.replace(/^Bearer\s+/i, "").trim();
+      if (!jwt) throw new Error("Authentication required.");
+
+      const { data: callerAuth, error: callerErr } = await adminClient.auth.getUser(jwt);
+      if (callerErr || !callerAuth?.user) throw new Error("সেশনটির মেয়াদ শেষ হয়েছে। আবার সাইন ইন করুন।");
+
+      const newPassword = String(payload.new_password ?? "");
+      if (newPassword.length < 6) {
+        throw new Error("নতুন পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।");
+      }
+
+      const { error: updErr } = await adminClient.auth.admin.updateUserById(callerAuth.user.id, {
+        password: newPassword,
+        email_confirm: true,
+      });
+      if (updErr) throw updErr;
+
+      return new Response(
+        JSON.stringify({ updated: true }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ------------------------------------------------------------------------
+    // Admin 1-Click Password Reset (+ Optional Resend Email from admin_api_vault)
     // ------------------------------------------------------------------------
     if (payload?.action === "admin_reset_password") {
       const authHeader = req.headers.get("Authorization") ?? "";
@@ -58,7 +87,7 @@ serve(async (req: Request) => {
         throw new Error("নতুন পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।");
       }
 
-      const { error: updErr } = await adminClient.auth.admin.updateUserById(targetUserId, {
+      const { data: targetUser, error: updErr } = await adminClient.auth.admin.updateUserById(targetUserId, {
         password: newPassword,
         email_confirm: true,
       });
@@ -70,8 +99,38 @@ serve(async (req: Request) => {
         .eq("user_id", targetUserId)
         .eq("status", "pending");
 
+      // Optional: dispatch email via Resend if configured in admin_api_vault
+      let emailed = false;
+      const { data: vault } = await adminClient
+        .from("admin_api_vault")
+        .select("resend_api_key")
+        .eq("id", "global")
+        .maybeSingle();
+      const resendKey = String(vault?.resend_api_key ?? "").trim();
+      const targetEmail = targetUser?.user?.email;
+      if (resendKey && targetEmail) {
+        try {
+          const mailResp = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${resendKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              from: "SPARC Study Circle <onboarding@resend.dev>",
+              to: [targetEmail],
+              subject: "SPARC Study Circle — পাসওয়ার্ড রিসেট সম্পন্ন",
+              html: `<p>আসসালামু আলাইকুম,</p><p>আপনার SPARC Study Circle অ্যাকাউন্টের নতুন অস্থায়ী পাসওয়ার্ড: <strong>${newPassword}</strong></p><p>অ্যাপে সাইন ইন করার পর সেটিংস পেইজ থেকে পাসওয়ার্ড পরিবর্তন করে নিন।</p>`,
+            }),
+          });
+          emailed = mailResp.ok;
+        } catch (_e) {
+          emailed = false;
+        }
+      }
+
       return new Response(
-        JSON.stringify({ updated: true }),
+        JSON.stringify({ updated: true, emailed }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }

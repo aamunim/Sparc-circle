@@ -27,6 +27,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import org.sparc.studycircle.core.data.SparcRepository
 import org.sparc.studycircle.core.theme.LocalSparcPalette
 import org.sparc.studycircle.core.theme.tr
@@ -34,10 +39,10 @@ import org.sparc.studycircle.core.theme.trContent
 import org.sparc.studycircle.ui.assessment.AssessmentAndSessionScreen
 import org.sparc.studycircle.ui.circle.StudyCircleScreen
 import org.sparc.studycircle.ui.components.SparcAvatarCircle
-import org.sparc.studycircle.ui.components.SparcSettingsBottomSheet
 import org.sparc.studycircle.ui.library.LibraryAndReaderScreen
 import org.sparc.studycircle.ui.onboarding.OnboardingAndDirectoryScreen
 import org.sparc.studycircle.ui.research.ResearchAndWalletScreen
+import org.sparc.studycircle.ui.settings.SparcSettingsScreen
 
 enum class MainTab(val titleBn: String, val titleEn: String, val icon: ImageVector) {
     DIRECTORY("ডিরেক্টরি", "Directory", Icons.Default.People),
@@ -63,7 +68,7 @@ fun SparcMainScaffold(repository: SparcRepository) {
     var researchInitialSubTab by remember { mutableIntStateOf(0) }
     var libraryInitialSubTab by remember { mutableIntStateOf(0) }
     var directoryInitialSubTab by remember { mutableIntStateOf(0) }
-    var showSettingsSheet by remember { mutableStateOf(false) }
+    var showSettingsPage by remember { mutableStateOf(false) }
     var announcementDismissedLocally by remember { mutableStateOf(false) }
 
     // Continuous Live Multi-User Supabase Sync (every 12s while authenticated)
@@ -165,7 +170,7 @@ fun SparcMainScaffold(repository: SparcRepository) {
                         IconButton(onClick = { scope.launch { repository.syncFromSupabaseNow(silent = false) } }) {
                             Icon(Icons.Default.Sync, contentDescription = tr("সার্ভার সিঙ্ক", "Server Sync"), tint = Color.White)
                         }
-                        IconButton(onClick = { showSettingsSheet = true }) {
+                        IconButton(onClick = { showSettingsPage = true }) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings & Customization", tint = Color.White)
                         }
                     }
@@ -255,7 +260,7 @@ fun SparcMainScaffold(repository: SparcRepository) {
                         IconButton(onClick = { scope.launch { repository.syncFromSupabaseNow(silent = false) } }) {
                             Icon(Icons.Default.Sync, contentDescription = tr("সার্ভার সিঙ্ক", "Server Sync"), tint = p.primary)
                         }
-                        IconButton(onClick = { showSettingsSheet = true }) {
+                        IconButton(onClick = { showSettingsPage = true }) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings & Customization", tint = p.text)
                         }
                     }
@@ -414,35 +419,20 @@ fun SparcMainScaffold(repository: SparcRepository) {
         }
     }
 
-    if (showSettingsSheet) {
-        SparcSettingsBottomSheet(
-            currentTheme = state.visualTheme,
-            currentLanguage = state.appLanguage,
-            currentRole = state.currentUser.role,
-            appCustomization = state.appCustomization,
-            uiCustomization = state.uiCustomization,
-            apiVault = state.apiVault,
-            isServerConnected = state.isSupabaseConnected,
-            onSelectTheme = { chosen -> repository.setVisualTheme(chosen) },
-            onChangeLanguage = { lang -> repository.setAppLanguage(lang) },
-            onSwitchRolePreview = { role -> repository.switchMyRolePreview(role) },
-            onUpdateUiCustomization = { newUi, bnMsg, enMsg ->
-                repository.updateUiCustomization(newUi, bnMsg, enMsg)
-            },
-            onSaveAppCustomization = { newAppCfg ->
-                announcementDismissedLocally = false
-                repository.saveAppCustomization(newAppCfg)
-            },
-            onUpdateApiVault = { vault, msg -> repository.updateApiVault(vault, msg) },
-            onLogout = { repository.logout() },
-            onDeleteAccount = {
-                scope.launch {
-                    repository.deleteMyAccount().onFailure { err ->
-                        repository.dismissBanner()
-                    }
-                }
-            },
-            onDismiss = { showSettingsSheet = false }
+    AnimatedVisibility(
+        visible = showSettingsPage,
+        enter = slideInHorizontally(initialOffsetX = { it / 3 }) + fadeIn(),
+        exit = slideOutHorizontally(targetOffsetX = { it / 3 }) + fadeOut()
+    ) {
+        SparcSettingsScreen(
+            state = state,
+            repository = repository,
+            onClose = { showSettingsPage = false },
+            onOpenProfileEdit = {
+                showSettingsPage = false
+                directoryInitialSubTab = 1
+                currentTab = MainTab.DIRECTORY
+            }
         )
     }
 }

@@ -1,5 +1,6 @@
-// Supabase Edge Function: wallet-payment
-// Supports BOTH Automated Payment Gateways (SSLCommerz / bKash PGW) AND Manual bKash/Nagad TrxID submissions
+// Server Edge Function: wallet-payment
+// Reads bKash PGW & SSLCommerz credentials securely from `public.admin_api_vault`
+// (managed exclusively in the Web Admin Portal) or falls back to environment variables.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -23,10 +24,9 @@ serve(async (req: Request) => {
     const payload = await req.json();
     const { action, user_id, amount_bdt, method, manual_trx_id, payment_phone, tx_id, admin_id } = payload;
 
-    // Minimum wallet top-up validation (500 BDT, 1000 BDT or higher per Section 2.3)
     if (action === "initiate_topup") {
-      if (!amount_bdt || amount_bdt < 500) {
-        throw new Error("ন্যূনতম ৫০০ টাকা ক্রেডিট লোড করতে হবে।");
+      if (!amount_bdt || amount_bdt < 50) {
+        throw new Error("ন্যূনতম ৫০ টাকা ক্রেডিট লোড করতে হবে।");
       }
 
       if (method === "manual_trx") {
@@ -54,7 +54,23 @@ serve(async (req: Request) => {
         );
       }
 
-      // SSLCommerz / bKash PGW Checkout Session Creation
+      // Read gateway credentials from locked server admin_api_vault
+      const { data: vault } = await supabase
+        .from("admin_api_vault")
+        .select("gateway_environment,bkash_app_key,sslcommerz_store_id")
+        .eq("id", "global")
+        .maybeSingle();
+
+      const isLive = vault?.gateway_environment === "live";
+      const storeId =
+        String(vault?.sslcommerz_store_id ?? "").trim() ||
+        Deno.env.get("SSLCOMMERZ_STORE_ID") ||
+        "sparc_sandbox";
+      const bkashKey =
+        String(vault?.bkash_app_key ?? "").trim() ||
+        Deno.env.get("BKASH_APP_KEY") ||
+        "";
+
       const txType = method === "bkash_pgw" ? "topup_bkash_pgw" : "topup_sslcommerz";
       const gatewayRef = `SPARC-${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`;
 
@@ -66,21 +82,28 @@ serve(async (req: Request) => {
           amount_bdt,
           status: "pending",
           gateway_ref: gatewayRef,
-          notes: `Initiated ${method} top-up`,
+          notes: `Initiated ${method} (${isLive ? "live" : "sandbox"}) top-up`,
         })
         .select()
         .single();
 
       if (error) throw error;
 
-      const storeId = Deno.env.get("SSLCOMMERZ_STORE_ID") ?? "sparc_sandbox";
+      const bkashHost = isLive
+        ? "https://checkout.pay.bka.sh/v1.2.0-beta/checkout"
+        : "https://checkout.sandbox.bka.sh/v1.2.0-beta/checkout";
+      const sslHost = isLive
+        ? "https://securepay.sslcommerz.com/EasyCheckOut/testcde"
+        : "https://sandbox.sslcommerz.com/EasyCheckOut/testcde";
+
       const checkoutUrl = method === "bkash_pgw"
-        ? `https://checkout.sandbox.bka.sh/v1.2.0-beta/checkout?invoice=${gatewayRef}&amount=${amount_bdt}`
-        : `https://sandbox.sslcommerz.com/EasyCheckOut/testcde?store_id=${storeId}&tran_id=${gatewayRef}&total_amount=${amount_bdt}`;
+        ? `${bkashHost}?invoice=${gatewayRef}&amount=${amount_bdt}${bkashKey ? `&app_key=${encodeURIComponent(bkashKey)}` : ""}`
+        : `${sslHost}?store_id=${encodeURIComponent(storeId)}&tran_id=${gatewayRef}&total_amount=${amount_bdt}`;
 
       return new Response(
         JSON.stringify({
           mode: "gateway_redirect",
+          environment: isLive ? "live" : "sandbox",
           checkout_url: checkoutUrl,
           gateway_ref: gatewayRef,
           transaction: txRecord,
@@ -89,7 +112,6 @@ serve(async (req: Request) => {
       );
     }
 
-    // Webhook / Admin approval handler — atomically marks verified & triggers wallet balance sync
     if (action === "verify_topup") {
       const { data, error } = await supabase
         .from("wallet_transactions")

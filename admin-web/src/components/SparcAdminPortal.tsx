@@ -6,6 +6,7 @@ import {
   BookOpen,
   CheckCircle2,
   CreditCard,
+  KeyRound,
   LogOut,
   Palette,
   ShieldCheck,
@@ -32,8 +33,9 @@ import UsersTab from "@/components/tabs/UsersTab";
 import LibraryTab from "@/components/tabs/LibraryTab";
 import WalletOrdersTab from "@/components/tabs/WalletOrdersTab";
 import BrandTab from "@/components/tabs/BrandTab";
+import ApiVaultTab from "@/components/tabs/ApiVaultTab";
 
-export type TabKey = "overview" | "grading" | "circles" | "users" | "library" | "wallet_orders" | "brand";
+export type TabKey = "overview" | "grading" | "circles" | "users" | "library" | "wallet_orders" | "brand" | "api_vault";
 
 export interface TabProps {
   me: PortalMe;
@@ -48,6 +50,7 @@ const TABS: { key: TabKey; label: string; icon: React.ElementType; access: Porta
   { key: "library", label: "লাইব্রেরি স্টুডিও", icon: BookOpen, access: ["admin", "sparc_rep"] },
   { key: "wallet_orders", label: "ওয়ালেট ও বই অর্ডার", icon: CreditCard, access: ["admin", "sparc_rep"] },
   { key: "brand", label: "ব্র্যান্ড ও নোটিশ", icon: Palette, access: ["admin"] },
+  { key: "api_vault", label: "API ও ইন্টিগ্রেশন", icon: KeyRound, access: ["admin"] },
 ];
 
 export default function SparcAdminPortal() {
@@ -218,6 +221,7 @@ export default function SparcAdminPortal() {
         {current === "library" && <LibraryTab {...tabProps} />}
         {current === "wallet_orders" && <WalletOrdersTab {...tabProps} />}
         {current === "brand" && <BrandTab {...tabProps} />}
+        {current === "api_vault" && <ApiVaultTab {...tabProps} />}
       </main>
 
       <footer className="text-center text-[11px] text-slate-500 py-4 space-x-3">

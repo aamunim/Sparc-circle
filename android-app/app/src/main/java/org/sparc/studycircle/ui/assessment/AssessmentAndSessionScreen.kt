@@ -159,7 +159,7 @@ fun AssessmentAndSessionScreen(
     }
 
     activeJitsiSession?.let { sess ->
-        val jitsiBase = state.apiVault.customJitsiServerUrl.trim().trimEnd('/').ifBlank { "https://meet.jit.si" }
+        val jitsiBase = state.appCustomization.customJitsiServerUrl.trim().trimEnd('/').ifBlank { "https://meet.jit.si" }
         InAppJitsiVideoDialog(
             session = sess,
             jitsiBaseUrl = jitsiBase,

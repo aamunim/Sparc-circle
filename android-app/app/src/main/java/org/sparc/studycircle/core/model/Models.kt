@@ -85,7 +85,9 @@ data class AppCustomizationConfig(
     val minTopupBdt: Double = 200.0,
     val onlineGatewayEnabled: Boolean = false,
     val paymentInstructionsBn: String = "উপরের নম্বরে সেন্ড মানি / পেমেন্ট করে নিচের ঘরে প্রেরকের নম্বর ও TrxID জমা দিন।",
-    val paymentInstructionsEn: String = "Send money to the number above, then submit your sender phone number and TrxID below."
+    val paymentInstructionsEn: String = "Send money to the number above, then submit your sender phone number and TrxID below.",
+    val customJitsiServerUrl: String = "https://meet.jit.si",
+    val aiCoachEnabled: Boolean = true
 )
 
 @Serializable
@@ -98,7 +100,8 @@ data class UserUiCustomization(
     val compactHomeCards: Boolean = false,
     val showHomeStatsRow: Boolean = true,
     val showHomePokeCard: Boolean = true,
-    val launcherIconPreset: LauncherIconPreset = LauncherIconPreset.CLASSIC
+    val launcherIconPreset: LauncherIconPreset = LauncherIconPreset.CLASSIC,
+    val quietHoursEnabled: Boolean = true
 )
 
 @Serializable

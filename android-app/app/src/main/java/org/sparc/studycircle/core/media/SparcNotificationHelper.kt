@@ -38,8 +38,8 @@ object SparcNotificationHelper {
     fun isQuietHoursNow(now: LocalTime = LocalTime.now()): Boolean =
         now.hour >= 22 || now.hour < 7
 
-    fun dispatchAlert(context: Context, title: String, body: String) {
-        if (isQuietHoursNow()) return
+    fun dispatchAlert(context: Context, title: String, body: String, enforceQuietHours: Boolean = true) {
+        if (enforceQuietHours && isQuietHoursNow()) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val granted = ContextCompat.checkSelfPermission(
                 context,

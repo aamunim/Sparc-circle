@@ -30,10 +30,11 @@ class SparcApp : Application() {
         val savedName = prefs.getString("user_name", null)
         val savedDept = prefs.getString("user_dept", null)
         val savedLang = prefs.getString("app_language", "bn") ?: "bn"
-        val savedVaultJson = prefs.getString("api_key_vault", null)
-        val initialVault = savedVaultJson?.let {
-            runCatching { json.decodeFromString<ApiKeyVaultConfig>(it) }.getOrNull()
-        } ?: ApiKeyVaultConfig()
+        // Purge any legacy client-side API key vault from device storage (all keys now live in Admin Server Vault)
+        if (prefs.contains("api_key_vault")) {
+            prefs.edit().remove("api_key_vault").apply()
+        }
+        val initialVault = ApiKeyVaultConfig()
 
         val savedSessionJson = prefs.getString("supabase_auth_session", null)
         val initialSession = savedSessionJson?.let {
@@ -73,8 +74,8 @@ class SparcApp : Application() {
             onPersistLanguage = { lang ->
                 prefs.edit().putString("app_language", lang).apply()
             },
-            onPersistApiVault = { vault ->
-                prefs.edit().putString("api_key_vault", json.encodeToString(vault)).apply()
+            onPersistApiVault = { _ ->
+                prefs.edit().remove("api_key_vault").apply()
             },
             onPersistSession = { sess ->
                 val ed = prefs.edit()
@@ -92,7 +93,8 @@ class SparcApp : Application() {
                 prefs.edit().putString("user_ui_customization", json.encodeToString(uiCfg)).apply()
             },
             onSystemAlert = { title, body ->
-                SparcNotificationHelper.dispatchAlert(this@SparcApp, title, body)
+                val enforceQuiet = runCatching { repository.state.value.uiCustomization.quietHoursEnabled }.getOrDefault(true)
+                SparcNotificationHelper.dispatchAlert(this@SparcApp, title, body, enforceQuietHours = enforceQuiet)
             }
         )
     }
