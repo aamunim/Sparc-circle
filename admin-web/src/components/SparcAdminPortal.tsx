@@ -250,9 +250,11 @@ function BrandHeader({ subtitle }: { subtitle: string }) {
 }
 
 function LoginScreen({ onReconfigure }: { onReconfigure: () => void }) {
+  const [mode, setMode] = useState<"signin" | "signup" | "forgot">("signin");
+  const [name, setName] = useState("");
+  const [department, setDepartment] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [forgotMode, setForgotMode] = useState(false);
   const [contactNote, setContactNote] = useState("");
   const [resetSentMsg, setResetSentMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -266,33 +268,109 @@ function LoginScreen({ onReconfigure }: { onReconfigure: () => void }) {
     setBusy(true);
     setErr(null);
     setResetSentMsg(null);
-    if (forgotMode) {
-      const { error } = await sb.rpc("request_password_reset_rpc", {
-        p_email: email.trim(),
-        p_contact_note: contactNote.trim(),
-      });
-      await sb.auth.resetPasswordForEmail(email.trim()).catch(() => null);
-      setBusy(false);
-      if (error) setErr(friendlyError(error));
-      else {
+
+    try {
+      if (mode === "forgot") {
+        const { error } = await sb.rpc("request_password_reset_rpc", {
+          p_email: email.trim(),
+          p_contact_note: contactNote.trim(),
+        });
+        await sb.auth.resetPasswordForEmail(email.trim()).catch(() => null);
+        if (error) throw error;
         setResetSentMsg("✓ আপনার পাসওয়ার্ড রিসেট অনুরোধ অ্যাডমিন কিউতে জমা হয়েছে। অ্যাডমিন নতুন পাসওয়ার্ড সেট করে জানাবেন।");
+        return;
       }
-      return;
+
+      if (mode === "signup") {
+        if (password.length < 6) {
+          throw new Error("পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।");
+        }
+        const { data, error } = await sb.functions.invoke("auth-register", {
+          body: {
+            email: email.trim(),
+            password,
+            name: name.trim(),
+            department: department.trim() || "Academic Research",
+            skills: [],
+          },
+        });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        if (data?.access_token && data?.refresh_token) {
+          await sb.auth.setSession({
+            access_token: data.access_token,
+            refresh_token: data.refresh_token,
+          });
+          return;
+        }
+      }
+
+      const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
+      if (error) throw error;
+    } catch (er) {
+      setErr(friendlyError(er));
+    } finally {
+      setBusy(false);
     }
-    const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
-    setBusy(false);
-    if (error) setErr(friendlyError(error));
   };
 
   return (
     <FullScreen>
       <form onSubmit={submit} className="w-full max-w-sm bg-white p-8 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-        <BrandHeader subtitle={forgotMode ? "পাসওয়ার্ড রিসেট অনুরোধ" : "অ্যাডমিন ও মেন্টর পোর্টালে সাইন ইন করুন"} />
+        <BrandHeader
+          subtitle={
+            mode === "forgot"
+              ? "পাসওয়ার্ড রিসেট অনুরোধ"
+              : mode === "signup"
+              ? "নতুন অ্যাকাউন্ট তৈরি করুন"
+              : "অ্যাডমিন ও মেন্টর পোর্টালে সাইন ইন করুন"
+          }
+        />
+
+        {mode !== "forgot" && (
+          <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => {
+                setMode("signin");
+                setErr(null);
+              }}
+              className={`py-2 rounded-lg transition ${mode === "signin" ? "bg-white text-[#0F5132] shadow-sm font-bold" : "text-slate-600"}`}
+            >
+              সাইন ইন
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode("signup");
+                setErr(null);
+              }}
+              className={`py-2 rounded-lg transition ${mode === "signup" ? "bg-white text-[#0F5132] shadow-sm font-bold" : "text-slate-600"}`}
+            >
+              নতুন অ্যাকাউন্ট
+            </button>
+          </div>
+        )}
+
+        {mode === "signup" && (
+          <>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700">পূর্ণ নাম</label>
+              <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="আপনার নাম" className={inputCls} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700">বিভাগ / প্রতিষ্ঠান</label>
+              <input value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="যেমন: সমাজবিজ্ঞান, ঢাবি" className={inputCls} />
+            </div>
+          </>
+        )}
+
         <div className="space-y-1">
           <label className="text-xs font-semibold text-slate-700">ইমেইল</label>
           <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} autoComplete="email" />
         </div>
-        {forgotMode ? (
+
+        {mode === "forgot" ? (
           <div className="space-y-1">
             <label className="text-xs font-semibold text-slate-700">যোগাযোগের নম্বর / নোট (যাতে অ্যাডমিন জানাতে পারেন)</label>
             <input
@@ -306,31 +384,45 @@ function LoginScreen({ onReconfigure }: { onReconfigure: () => void }) {
           <div className="space-y-1">
             <div className="flex justify-between items-center">
               <label className="text-xs font-semibold text-slate-700">পাসওয়ার্ড</label>
-              <button
-                type="button"
-                onClick={() => {
-                  setForgotMode(true);
-                  setErr(null);
-                  setResetSentMsg(null);
-                }}
-                className="text-[11px] text-[#0F5132] font-semibold underline"
-              >
-                পাসওয়ার্ড ভুলে গেছেন?
-              </button>
+              {mode === "signin" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("forgot");
+                    setErr(null);
+                    setResetSentMsg(null);
+                  }}
+                  className="text-[11px] text-[#0F5132] font-semibold underline"
+                >
+                  পাসওয়ার্ড ভুলে গেছেন?
+                </button>
+              )}
             </div>
-            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} autoComplete="current-password" />
+            <input
+              type="password"
+              required
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="কমপক্ষে ৬ অক্ষর"
+              className={inputCls}
+              autoComplete={mode === "signup" ? "new-password" : "current-password"}
+            />
           </div>
         )}
+
         {err && <p className="text-xs text-red-700 bg-red-50 px-3 py-2 rounded-lg">{err}</p>}
         {resetSentMsg && <p className="text-xs text-emerald-900 bg-emerald-50 px-3 py-2 rounded-lg">{resetSentMsg}</p>}
+
         <Btn type="submit" busy={busy} className="w-full py-2.5 text-sm">
-          {forgotMode ? "রিসেট অনুরোধ পাঠান" : "সাইন ইন"}
+          {mode === "forgot" ? "রিসেট অনুরোধ পাঠান" : mode === "signup" ? "অ্যাকাউন্ট খুলুন ও প্রবেশ করুন" : "সাইন ইন"}
         </Btn>
-        {forgotMode && (
+
+        {mode === "forgot" && (
           <button
             type="button"
             onClick={() => {
-              setForgotMode(false);
+              setMode("signin");
               setErr(null);
               setResetSentMsg(null);
             }}
@@ -339,8 +431,9 @@ function LoginScreen({ onReconfigure }: { onReconfigure: () => void }) {
             ← সাইন ইনে ফিরে যান
           </button>
         )}
+
         <p className="text-[11px] text-slate-500 text-center">
-          অ্যান্ড্রয়েড অ্যাপের একই অ্যাকাউন্ট দিয়ে সাইন ইন করুন। শুধু মেন্টর, SPARC প্রতিনিধি ও অ্যাডমিন প্রবেশ করতে পারবেন।
+          শুধু মেন্টর, SPARC প্রতিনিধি ও অ্যাডমিন এই পোর্টালে প্রবেশ করতে পারবেন।
         </p>
         {cfg.source === "browser" && (
           <button
