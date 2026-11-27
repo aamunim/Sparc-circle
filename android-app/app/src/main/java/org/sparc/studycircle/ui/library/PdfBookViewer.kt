@@ -29,8 +29,10 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -70,8 +72,10 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
+import android.view.ViewGroup
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -677,13 +682,22 @@ private fun FullScreenSmartPdfDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false
+            decorFitsSystemWindows = true
         )
     ) {
+        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+        SideEffect {
+            dialogWindow?.setLayout(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(bgContainer)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
         ) {
             // ================================================================
             // MAIN PDF READING CANVAS (Horizontal Swipe OR Continuous Vertical)
@@ -692,7 +706,7 @@ private fun FullScreenSmartPdfDialog(
                 LazyColumn(
                     state = verticalListState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(top = 64.dp, bottom = 96.dp, start = 8.dp, end = 8.dp),
+                    contentPadding = PaddingValues(top = 64.dp, bottom = 112.dp, start = 8.dp, end = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     items(safeTotal, key = { it }) { idx ->
@@ -888,10 +902,12 @@ private fun FullScreenSmartPdfDialog(
                             color = Color.White,
                             shadowElevation = 8.dp,
                             border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                            modifier = Modifier.padding(top = 8.dp, start = 16.dp, end = 16.dp)
+                            modifier = Modifier.padding(top = 8.dp, start = 12.dp, end = 12.dp)
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                modifier = Modifier
+                                    .horizontalScroll(rememberScrollState())
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -931,6 +947,8 @@ private fun FullScreenSmartPdfDialog(
                                         color = Color.White,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                        softWrap = false,
                                         modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp)
                                     )
                                 }
@@ -953,6 +971,7 @@ private fun FullScreenSmartPdfDialog(
                                 color = Color.White,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
+                                maxLines = 1,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
                             )
                         }
@@ -970,42 +989,48 @@ private fun FullScreenSmartPdfDialog(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
+                    .padding(start = 10.dp, end = 10.dp, bottom = 16.dp)
             ) {
                 if (!showFilmstripDock) {
-                    // Mockup 1: Sleek Translucent Floating Zen Capsule Pill
+                    // Mockup 1: Sleek Translucent Floating Zen Capsule Pill (Zero Horizontal/Vertical Clipping)
                     Surface(
                         shape = RoundedCornerShape(50),
-                        color = Color(0xFF1E293B).copy(alpha = 0.92f),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+                        color = Color(0xFF1E293B).copy(alpha = 0.94f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
                         shadowElevation = 10.dp,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+                        modifier = Modifier.wrapContentWidth()
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                            modifier = Modifier
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            horizontalArrangement = Arrangement.spacedBy(9.dp)
                         ) {
                             Text(
                                 text = "$currentPageNo / $safeTotal",
                                 color = Color.White,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 12.sp,
+                                maxLines = 1,
+                                softWrap = false,
                                 modifier = Modifier.clickable { showFilmstripDock = true }
                             )
 
-                            Box(Modifier.width(1.dp).height(16.dp).background(Color.White.copy(alpha = 0.2f)))
+                            Box(Modifier.width(1.dp).height(15.dp).background(Color.White.copy(alpha = 0.22f)))
 
                             Text(
                                 text = if (trimMargins) "✂️ +35%" else "✂️ Trim",
                                 color = if (trimMargins) Color(0xFF6EE7B7) else Color(0xFFCBD5E1),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 11.5.sp,
+                                maxLines = 1,
+                                softWrap = false,
                                 modifier = Modifier.clickable { onToggleTrimMargins(!trimMargins) }
                             )
 
-                            Box(Modifier.width(1.dp).height(16.dp).background(Color.White.copy(alpha = 0.2f)))
+                            Box(Modifier.width(1.dp).height(15.dp).background(Color.White.copy(alpha = 0.22f)))
 
-                            // Cycle Paper Theme in 1 Tap
                             val themeLabel = when (paperTheme) {
                                 ReaderPaperTheme.PURE_WHITE -> "☀️ White"
                                 ReaderPaperTheme.WARM_SEPIA -> "📜 Sepia"
@@ -1017,6 +1042,8 @@ private fun FullScreenSmartPdfDialog(
                                 color = Color(0xFFFDE68A),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 11.5.sp,
+                                maxLines = 1,
+                                softWrap = false,
                                 modifier = Modifier.clickable {
                                     val all = ReaderPaperTheme.entries
                                     val next = all[(all.indexOf(paperTheme) + 1) % all.size]
@@ -1024,13 +1051,15 @@ private fun FullScreenSmartPdfDialog(
                                 }
                             )
 
-                            Box(Modifier.width(1.dp).height(16.dp).background(Color.White.copy(alpha = 0.2f)))
+                            Box(Modifier.width(1.dp).height(15.dp).background(Color.White.copy(alpha = 0.22f)))
 
                             Text(
                                 text = "📌 ${currentPageHighlights.size}",
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 11.5.sp,
+                                maxLines = 1,
+                                softWrap = false,
                                 modifier = Modifier.clickable { showAnnotationsDrawer = true }
                             )
 
@@ -1057,7 +1086,9 @@ private fun FullScreenSmartPdfDialog(
                                             text = formatClockMs(audioController.currentPositionMs),
                                             color = Color(0xFF064E3B),
                                             fontSize = 11.sp,
-                                            fontWeight = FontWeight.ExtraBold
+                                            fontWeight = FontWeight.ExtraBold,
+                                            maxLines = 1,
+                                            softWrap = false
                                         )
                                     }
                                 }
@@ -1067,9 +1098,10 @@ private fun FullScreenSmartPdfDialog(
                 } else {
                     // Mockup 3: Expanded Dark OLED Page Thumbnail Filmstrip + Scrubber + Mini Audio Bar
                     Surface(
-                        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                        shape = RoundedCornerShape(22.dp),
                         color = Color(0xFF0B1120).copy(alpha = 0.96f),
                         border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                        shadowElevation = 12.dp,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -1081,7 +1113,12 @@ private fun FullScreenSmartPdfDialog(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
                                     ReaderPaperTheme.entries.forEach { pt ->
                                         val sel = paperTheme == pt
                                         Surface(
@@ -1099,14 +1136,17 @@ private fun FullScreenSmartPdfDialog(
                                                 color = if (sel) Color(0xFF064E3B) else Color.White,
                                                 fontSize = 10.5.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                maxLines = 1,
+                                                softWrap = false,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
                                             )
                                         }
                                     }
                                 }
 
-                                IconButton(onClick = { showFilmstripDock = false }, modifier = Modifier.size(26.dp)) {
-                                    Icon(Icons.Default.Close, contentDescription = "Collapse", tint = Color(0xFF94A3B8), modifier = Modifier.size(17.dp))
+                                Spacer(Modifier.width(6.dp))
+                                IconButton(onClick = { showFilmstripDock = false }, modifier = Modifier.size(28.dp)) {
+                                    Icon(Icons.Default.Close, contentDescription = "Collapse", tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
                                 }
                             }
 
@@ -1153,7 +1193,9 @@ private fun FullScreenSmartPdfDialog(
                                         text = "$currentPageNo/$safeTotal",
                                         color = Color.White,
                                         fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 }
                             }
@@ -1167,19 +1209,19 @@ private fun FullScreenSmartPdfDialog(
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                                             modifier = Modifier.weight(1f)
                                         ) {
                                             IconButton(
                                                 onClick = { audioController.togglePlayPause() },
                                                 modifier = Modifier
-                                                    .size(34.dp)
+                                                    .size(32.dp)
                                                     .clip(CircleShape)
                                                     .background(Color(0xFF10B981))
                                             ) {
@@ -1187,57 +1229,67 @@ private fun FullScreenSmartPdfDialog(
                                                     imageVector = if (audioController.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                                     contentDescription = "Play/Pause",
                                                     tint = Color(0xFF064E3B),
-                                                    modifier = Modifier.size(18.dp)
+                                                    modifier = Modifier.size(17.dp)
                                                 )
                                             }
-                                            Column {
+                                            Column(modifier = Modifier.weight(1f)) {
                                                 Text(
-                                                    text = tr("🎧 অধ্যায়ের অডিও সামারি", "🎧 Chapter Audio Summary"),
+                                                    text = tr("🎧 অডিও সামারি", "🎧 Audio Summary"),
                                                     color = Color.White,
                                                     fontSize = 11.5.sp,
-                                                    fontWeight = FontWeight.Bold
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
                                                 )
                                                 Text(
-                                                    text = "${formatClockMs(audioController.currentPositionMs)} / ${formatClockMs(audioController.durationMs)} • ${audioController.speed}x",
+                                                    text = "${formatClockMs(audioController.currentPositionMs)} / ${formatClockMs(audioController.durationMs)}",
                                                     color = Color(0xFF6EE7B7),
-                                                    fontSize = 10.5.sp
+                                                    fontSize = 10.5.sp,
+                                                    maxLines = 1,
+                                                    softWrap = false
                                                 )
                                             }
                                         }
 
-                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                                             Text(
                                                 text = "-10s",
                                                 color = Color.White,
-                                                fontSize = 11.sp,
+                                                fontSize = 10.5.sp,
                                                 fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                softWrap = false,
                                                 modifier = Modifier
                                                     .clip(RoundedCornerShape(8.dp))
                                                     .background(Color.White.copy(alpha = 0.12f))
                                                     .clickable { audioController.skipSeconds(-10) }
-                                                    .padding(horizontal = 8.dp, vertical = 5.dp)
+                                                    .padding(horizontal = 7.dp, vertical = 5.dp)
                                             )
                                             Text(
                                                 text = "+10s",
                                                 color = Color.White,
-                                                fontSize = 11.sp,
+                                                fontSize = 10.5.sp,
                                                 fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                softWrap = false,
                                                 modifier = Modifier
                                                     .clip(RoundedCornerShape(8.dp))
                                                     .background(Color.White.copy(alpha = 0.12f))
                                                     .clickable { audioController.skipSeconds(10) }
-                                                    .padding(horizontal = 8.dp, vertical = 5.dp)
+                                                    .padding(horizontal = 7.dp, vertical = 5.dp)
                                             )
                                             Text(
                                                 text = "${audioController.speed}x",
                                                 color = Color(0xFFFDE68A),
-                                                fontSize = 11.sp,
+                                                fontSize = 10.5.sp,
                                                 fontWeight = FontWeight.ExtraBold,
+                                                maxLines = 1,
+                                                softWrap = false,
                                                 modifier = Modifier
                                                     .clip(RoundedCornerShape(8.dp))
                                                     .background(Color.White.copy(alpha = 0.12f))
                                                     .clickable { audioController.cyclePlaybackSpeed() }
-                                                    .padding(horizontal = 8.dp, vertical = 5.dp)
+                                                    .padding(horizontal = 7.dp, vertical = 5.dp)
                                             )
                                         }
                                     }
@@ -1258,6 +1310,8 @@ private fun FullScreenSmartPdfDialog(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
+                    .imePadding()
+                    .padding(start = 8.dp, end = 8.dp, bottom = 10.dp)
             ) {
                 PageAnnotationsSheet(
                     pageNo = currentPageNo,
